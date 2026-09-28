@@ -1,24 +1,8 @@
 import Link from "next/link";
-
-const portals = [
-  {
-    href: "/owner-dashboard",
-    title: "Owner Dashboard",
-    description: "See the big picture, manage the team, locations, schedules, and company activity.",
-  },
-  {
-    href: "/admin-dashboard",
-    title: "Admin Dashboard",
-    description: "Handle day-to-day scheduling, employee support, tasks, and operating details.",
-  },
-  {
-    href: "/employee-app",
-    title: "Employee App",
-    description: "A simple mobile-friendly home for shifts, time clock, tasks, and team updates.",
-  },
-];
+import { TIERS } from "../lib/tiers";
 
 export default function HomePage() {
+  const tierKeys = ["starter", "plus", "pro"];
   return (
     <main className="site-shell">
       <section className="hero panel">
@@ -26,41 +10,82 @@ export default function HomePage() {
           <div className="brand-mark" aria-hidden="true">WT</div>
           <div>
             <p className="eyebrow">WORKTEAMS</p>
-            <h1>Manage your team without needing an IT department.</h1>
+            <h1>Run your cleaning business from your pocket.</h1>
           </div>
         </div>
         <p className="hero-copy">
-          A straightforward workforce and operations app for small businesses. Start simple, then turn on only the tools your company needs.
+          WorkTeams gives cleaning crews one simple home for shift schedules, a GPS time
+          clock, and payroll-ready hour reports — built mobile-first for the people
+          doing the work.
         </p>
-        <div className="status-pill">Foundation live • Ready for the next build phase</div>
+        <div style={{ marginLeft: 76, display: "flex", gap: 12, flexWrap: "wrap" }}>
+          <Link
+            href="/login"
+            style={{
+              background: "var(--brand)",
+              color: "#fff",
+              fontWeight: 800,
+              padding: "12px 26px",
+              borderRadius: 999,
+            }}
+          >
+            Sign in
+          </Link>
+          <Link
+            href="/login"
+            style={{
+              border: "1px solid var(--line)",
+              background: "#fff",
+              fontWeight: 800,
+              padding: "12px 26px",
+              borderRadius: 999,
+            }}
+          >
+            Get started free
+          </Link>
+        </div>
       </section>
 
-      <section className="portal-grid" aria-label="WorkTeams portals">
-        {portals.map((portal) => (
-          <Link className="portal-card" href={portal.href} key={portal.href}>
-            <span className="card-kicker">Open portal</span>
-            <h2>{portal.title}</h2>
-            <p>{portal.description}</p>
-            <span className="card-link">Continue →</span>
-          </Link>
-        ))}
+      <section aria-label="Plans" style={{ margin: "34px 0" }}>
+        <p className="eyebrow">PLANS</p>
+        <h2 style={{ fontSize: "1.9rem", margin: "6px 0 18px" }}>Three simple tiers. Pick your fit.</h2>
+        <div className="portal-grid">
+          {tierKeys.map((key) => {
+            const tier = TIERS[key];
+            return (
+              <div className="portal-card" key={key}>
+                <span className="card-kicker">{tier.name}</span>
+                <h2>${tier.examplePrice}<span style={{ fontSize: "1rem", fontWeight: 400, color: "var(--muted)" }}>/mo</span></h2>
+                <p style={{ fontStyle: "italic", fontSize: "0.85rem", color: "var(--muted)" }}>Example pricing</p>
+                <p>{tier.tagline}</p>
+                <ul style={{ paddingLeft: 20, margin: "10px 0 20px", color: "var(--ink)" }}>
+                  {tier.features.map((f) => (
+                    <li key={f} style={{ marginBottom: 6 }}>{f}</li>
+                  ))}
+                </ul>
+                <span className="card-link">Sign in to choose →</span>
+              </div>
+            );
+          })}
+        </div>
+        <p style={{ color: "var(--muted)", fontSize: "0.9rem" }}>
+          Starter covers the everyday essentials — scheduling, the time clock, hour
+          reports, and alerts. Plus adds quality and communication tools. Pro unlocks
+          bidding, work orders, supplies, and client tools.
+        </p>
       </section>
 
       <section className="panel foundation-panel">
         <div>
-          <p className="eyebrow">INITIAL FOUNDATION</p>
-          <h2>Built to grow in manageable steps.</h2>
+          <p className="eyebrow">HOW IT WORKS</p>
+          <h2>Built for crews, not desks.</h2>
         </div>
         <div className="chip-row">
-          <span>Employees</span>
-          <span>Schedules</span>
-          <span>Time Clock</span>
-          <span>Attendance</span>
-          <span>Locations</span>
-          <span>Tasks</span>
-          <span>Training</span>
-          <span>Documents</span>
-          <span>Communication</span>
+          <span>Schedule shifts</span>
+          <span>Clock in with GPS</span>
+          <span>Get hour reports</span>
+          <span>Spot late & no-shows</span>
+          <span>Manage locations</span>
         </div>
       </section>
     </main>
