@@ -13,6 +13,7 @@ export default function CompaniesPage() {
   const [name, setName] = useState("");
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
+  const [justJoined, setJustJoined] = useState(0);
 
   useEffect(() => {
     (async () => {
@@ -23,7 +24,8 @@ export default function CompaniesPage() {
       }
       setUser(u);
       const sb = supabase();
-      await linkMemberOnSignIn(sb, u);
+      const claimed = await linkMemberOnSignIn(sb, u);
+      if (claimed > 0) setJustJoined(claimed);
       const { data } = await sb
         .from("company_members")
         .select("role, companies(id, name, tier)")
@@ -74,6 +76,11 @@ export default function CompaniesPage() {
       <section className="panel" style={{ padding: 30 }}>
         <p className="eyebrow">YOUR COMPANIES</p>
         <h2>Where do you want to work today?</h2>
+        {justJoined > 0 && (
+          <p style={{ background: "#ecfdf5", border: "1px solid #a7f3d0", borderRadius: 10, padding: "12px 16px", fontWeight: 600 }}>
+            ✅ You've been added to the team! Pick your company below.
+          </p>
+        )}
         {memberships.length === 0 && (
           <p style={{ color: "var(--muted)" }}>
             You're not on any team yet. Create your first company below — or ask your
