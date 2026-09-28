@@ -17,6 +17,7 @@ const NAV = [
   { key: "inspections", label: "Inspections", href: (c) => `/app/${c}/inspections`, minRole: "manager" },
   { key: "messaging", label: "Messages", href: (c) => `/app/${c}/messages`, minRole: null },
   { key: "bidding", label: "Bids", href: (c) => `/app/${c}/bids`, minRole: "manager" },
+  { key: "walkthroughs", label: "Walkthroughs", href: (c) => `/app/${c}/walkthroughs`, minRole: "manager" },
   { key: "workorders", label: "Work Orders", href: (c) => `/app/${c}/work-orders`, minRole: null },
   { key: "supplies", label: "Supplies", href: (c) => `/app/${c}/supplies`, minRole: "manager" },
   { key: "portal", label: "Client Portal", href: (c) => `/app/${c}/client-portal`, minRole: "manager" },

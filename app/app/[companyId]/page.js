@@ -15,6 +15,7 @@ const TOOL_CARDS = [
   { key: "inspections", label: "Inspections", desc: "Quality checks with photos.", href: "inspections", roles: "manager" },
   { key: "messaging", label: "Crew Messaging", desc: "Message your team.", href: "messages", roles: "all" },
   { key: "bidding", label: "Bids & Proposals", desc: "Quote and win new work.", href: "bids", roles: "manager" },
+  { key: "walkthroughs", label: "Walkthroughs", desc: "Room-by-room measurements & scope.", href: "walkthroughs", roles: "manager" },
   { key: "workorders", label: "Work Orders", desc: "One-time and extra jobs.", href: "work-orders", roles: "all" },
   { key: "supplies", label: "Supplies", desc: "Requests and inventory.", href: "supplies", roles: "manager" },
   { key: "portal", label: "Client Portal", desc: "Let clients see their service.", href: "client-portal", roles: "manager" },

@@ -36,6 +36,7 @@ export default function BidDetailPage() {
   const [items, setItems] = useState([]);
   const [form, setForm] = useState({ description: "", quantity: "1", unit_price: "" });
   const [pricing, setPricing] = useState({ mode: "line_items", hours: "", hourly_rate: "", square_footage: "", rate_per_sqft: "" });
+  const [walkthroughs, setWalkthroughs] = useState([]);
   const [saving, setSaving] = useState(false);
 
   const isManager = member && (member.role === "owner" || member.role === "admin");
@@ -63,6 +64,13 @@ export default function BidDetailPage() {
     });
     const { data: its } = await sb.from("bid_items").select("*").eq("bid_id", bidId).order("created_at");
     setItems(its || []);
+    const { data: wts } = await sb
+      .from("walkthroughs")
+      .select("id, name")
+      .eq("bid_id", bidId)
+      .eq("company_id", company.id)
+      .order("created_at", { ascending: false });
+    setWalkthroughs(wts || []);
   }
 
   useEffect(() => {
@@ -141,6 +149,21 @@ export default function BidDetailPage() {
     const { error } = await supabase().from("bids").delete().eq("id", bidId);
     if (error) alert("Could not delete: " + error.message);
     else router.replace(`/app/${company.id}/bids`);
+  }
+
+  async function startWalkthrough() {
+    const { data, error } = await supabase()
+      .from("walkthroughs")
+      .insert({
+        company_id: company.id,
+        location_id: bid.location_id || null,
+        bid_id: bidId,
+        name: `Walkthrough — ${bid.title}`,
+      })
+      .select("id")
+      .single();
+    if (error) alert("Could not start walkthrough: " + error.message);
+    else router.push(`/app/${company.id}/walkthroughs/${data.id}`);
   }
 
   if (loading || !company) return <p>Loading…</p>;
@@ -311,6 +334,35 @@ export default function BidDetailPage() {
         </form>
       </section>
       )}
+
+      <section className="panel" style={{ padding: 22, margin: "18px 0" }}>
+        <h3 style={{ marginTop: 0 }}>Walkthrough</h3>
+        {walkthroughs.length > 0 ? (
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {walkthroughs.map((w) => (
+              <Link
+                key={w.id}
+                href={`/app/${company.id}/walkthroughs/${w.id}`}
+                style={{ color: "var(--brand-deep)", fontWeight: 700 }}
+              >
+                {w.name} →
+              </Link>
+            ))}
+            <button onClick={startWalkthrough} style={{ ...button, marginTop: 8, alignSelf: "flex-start" }}>
+              Start another walkthrough
+            </button>
+          </div>
+        ) : (
+          <div>
+            <p style={{ color: "var(--muted)", margin: "0 0 12px" }}>
+              Walk the building room by room — measure each area and check off cleaning tasks. The total square footage feeds this bid.
+            </p>
+            <button onClick={startWalkthrough} style={button}>
+              Start walkthrough
+            </button>
+          </div>
+        )}
+      </section>
 
       <section className="panel" style={{ padding: 22, margin: "18px 0" }}>
         <h3 style={{ marginTop: 0 }}>Status</h3>
