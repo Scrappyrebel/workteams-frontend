@@ -8,7 +8,11 @@ import { useCompany } from "../../../../../lib/company-context";
 import { canUse } from "../../../../../lib/tiers";
 import { STANDARD_TASKS } from "../../../../../lib/walkthrough-tasks";
 
-const emptyArea = { area_name: "", square_footage: "", notes: "", custom_task: "" };
+const emptyArea = { area_name: "", length_ft: "", width_ft: "", square_footage: "", notes: "", custom_task: "" };
+
+function dims(a) {
+  return a.length_ft && a.width_ft ? `${a.length_ft} × ${a.width_ft} ft` : "measured";
+}
 
 function buildScope(walkthrough, areas) {
   const total = areas.reduce((s, a) => s + Number(a.square_footage || 0), 0);
@@ -17,7 +21,7 @@ function buildScope(walkthrough, areas) {
   lines.push(`Total: ${Math.round(total).toLocaleString()} sq ft across ${areas.length} area${areas.length === 1 ? "" : "s"}`);
   lines.push("");
   areas.forEach((a, i) => {
-    lines.push(`${i + 1}. ${a.area_name} (${Math.round(Number(a.square_footage || 0)).toLocaleString()} sq ft)`);
+    lines.push(`${i + 1}. ${a.area_name} (${dims(a)} — ${Math.round(Number(a.square_footage || 0)).toLocaleString()} sq ft)`);
     const tasks = Array.isArray(a.tasks) ? a.tasks : [];
     tasks.forEach((t) => lines.push(`   • ${t}`));
     if (a.notes) lines.push(`   Note: ${a.notes}`);
@@ -36,6 +40,7 @@ export default function WalkthroughDetailPage() {
   const [checked, setChecked] = useState([]);
   const [editing, setEditing] = useState(null);
   const [saving, setSaving] = useState(false);
+  const [manualSqft, setManualSqft] = useState(false);
   const [copied, setCopied] = useState(false);
   const [creatingWOs, setCreatingWOs] = useState(false);
 
@@ -84,7 +89,8 @@ export default function WalkthroughDetailPage() {
 
   function startEdit(a) {
     setEditing(a.id);
-    setForm({ area_name: a.area_name, square_footage: String(a.square_footage ?? ""), notes: a.notes || "", custom_task: "" });
+    setForm({ area_name: a.area_name, length_ft: a.length_ft != null ? String(a.length_ft) : "", width_ft: a.width_ft != null ? String(a.width_ft) : "", square_footage: String(a.square_footage ?? ""), notes: a.notes || "", custom_task: "" });
+    setManualSqft(!(a.length_ft && a.width_ft));
     setChecked(Array.isArray(a.tasks) ? [...a.tasks] : []);
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
@@ -93,6 +99,7 @@ export default function WalkthroughDetailPage() {
     setEditing(null);
     setForm(emptyArea);
     setChecked([]);
+    setManualSqft(false);
   }
 
   async function saveArea(e) {
@@ -104,6 +111,8 @@ export default function WalkthroughDetailPage() {
     setSaving(true);
     const payload = {
       area_name: form.area_name.trim(),
+      length_ft: parseFloat(form.length_ft) || null,
+      width_ft: parseFloat(form.width_ft) || null,
       square_footage: parseFloat(form.square_footage) || 0,
       tasks: checked,
       notes: form.notes.trim() || null,
@@ -206,7 +215,7 @@ export default function WalkthroughDetailPage() {
       location_id: walkthrough.location_id,
       title: `${a.area_name} — ${walkthrough.name}`,
       description: [
-        `${Math.round(Number(a.square_footage || 0)).toLocaleString()} sq ft`,
+        `${dims(a)} — ${Math.round(Number(a.square_footage || 0)).toLocaleString()} sq ft`,
         ...(Array.isArray(a.tasks) ? a.tasks : []).map((t) => `• ${t}`),
         a.notes ? `Note: ${a.notes}` : null,
       ].filter(Boolean).join("\n"),
@@ -271,13 +280,57 @@ export default function WalkthroughDetailPage() {
             maxLength={120}
             style={input}
           />
-          <input
-            value={form.square_footage}
-            onChange={(e) => setForm({ ...form, square_footage: e.target.value })}
-            placeholder="Square footage"
-            inputMode="decimal"
-            style={input}
-          />
+          <div style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
+            <label style={{ flex: 1, fontSize: "0.9rem", color: "var(--muted)" }}>
+              Length (ft)
+              <input
+                value={form.length_ft}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  const l = parseFloat(v) || 0, w = parseFloat(form.width_ft) || 0;
+                  setForm({ ...form, length_ft: v, square_footage: l && w ? String(Math.round(l * w * 100) / 100) : form.square_footage });
+                  setManualSqft(false);
+                }}
+                placeholder="e.g. 20"
+                inputMode="decimal"
+                style={{ ...input, marginTop: 6 }}
+              />
+            </label>
+            <span style={{ fontSize: "1.2rem", fontWeight: 800, paddingBottom: 12 }}>×</span>
+            <label style={{ flex: 1, fontSize: "0.9rem", color: "var(--muted)" }}>
+              Width (ft)
+              <input
+                value={form.width_ft}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  const l = parseFloat(form.length_ft) || 0, w = parseFloat(v) || 0;
+                  setForm({ ...form, width_ft: v, square_footage: l && w ? String(Math.round(l * w * 100) / 100) : form.square_footage });
+                  setManualSqft(false);
+                }}
+                placeholder="e.g. 12.5"
+                inputMode="decimal"
+                style={{ ...input, marginTop: 6 }}
+              />
+            </label>
+          </div>
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <div style={{ flex: 1, padding: "11px 13px", borderRadius: 12, border: "1px solid var(--line)", background: "#f7f5f0", fontWeight: 800 }}>
+              = {form.square_footage ? Number(form.square_footage).toLocaleString() : "—"} sq ft
+            </div>
+          </div>
+          {manualSqft ? (
+            <input
+              value={form.square_footage}
+              onChange={(e) => setForm({ ...form, square_footage: e.target.value })}
+              placeholder="Square footage"
+              inputMode="decimal"
+              style={input}
+            />
+          ) : (
+            <button type="button" onClick={() => setManualSqft(true)} style={{ ...ghostBtn, alignSelf: "flex-start" }}>
+              Enter sq ft directly (odd-shaped room)
+            </button>
+          )}
           <div>
             <div style={{ fontWeight: 700, fontSize: "0.9rem", marginBottom: 8 }}>What needs cleaning here?</div>
             <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
@@ -345,7 +398,7 @@ export default function WalkthroughDetailPage() {
               <div style={{ flex: 1 }}>
                 <div style={{ fontWeight: 800 }}>
                   {i + 1}. {a.area_name}
-                  <span style={{ fontWeight: 400, color: "var(--muted)" }}> · {Math.round(Number(a.square_footage || 0)).toLocaleString()} sq ft</span>
+                  <span style={{ fontWeight: 400, color: "var(--muted)" }}> · {dims(a)} · {Math.round(Number(a.square_footage || 0)).toLocaleString()} sq ft</span>
                 </div>
                 {(Array.isArray(a.tasks) ? a.tasks : []).length > 0 ? (
                   <ul style={{ margin: "8px 0 0", paddingLeft: 20, fontSize: "0.9rem" }}>
