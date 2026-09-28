@@ -120,7 +120,7 @@ export default function MessagesPage() {
               {!mine && <div style={{ fontSize: "0.75rem", fontWeight: 800, color: "var(--brand-deep)" }}>{m.sender_name}</div>}
               <div style={{ whiteSpace: "pre-wrap" }}>{m.content}</div>
               <div style={{ fontSize: "0.7rem", opacity: 0.7, marginTop: 4 }}>
-                {new Date(m.created_at).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}
+                {new Date(m.created_at).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit", hour12: true })}
               </div>
             </div>
           );

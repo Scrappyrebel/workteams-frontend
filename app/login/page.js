@@ -8,7 +8,7 @@ import { getSession } from "../../lib/session";
 
 export default function LoginPage() {
   const router = useRouter();
-  const [mode, setMode] = useState("link"); // "link" | "password"
+  const [mode, setMode] = useState("password"); // "link" | "password"
   const [pwMode, setPwMode] = useState("signin"); // "signin" | "signup"
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");

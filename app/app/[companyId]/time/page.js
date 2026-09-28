@@ -136,7 +136,7 @@ export default function TimeClockPage() {
           <div>
             <p style={{ fontWeight: 800, fontSize: "1.1rem" }}>
               🟢 You're clocked in{open.locations ? ` at ${open.locations.name}` : ""} since{" "}
-              {new Date(open.clock_in).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
+              {new Date(open.clock_in).toLocaleTimeString([], { hour: "numeric", minute: "2-digit", hour12: true })}
             </p>
             <button onClick={clockOut} disabled={busy} style={{ ...bigButton, background: "#28704a" }}>
               {busy ? "Working…" : "Clock out"}
@@ -191,9 +191,9 @@ export default function TimeClockPage() {
                 {e.company_members ? ` • ${e.company_members.display_name}` : ""}
               </span>
               <p style={{ margin: "6px 0 0" }}>
-                {new Date(e.clock_in).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })} →{" "}
+                {new Date(e.clock_in).toLocaleTimeString([], { hour: "numeric", minute: "2-digit", hour12: true })} →{" "}
                 {e.clock_out
-                  ? new Date(e.clock_out).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })
+                  ? new Date(e.clock_out).toLocaleTimeString([], { hour: "numeric", minute: "2-digit", hour12: true })
                   : <strong>open</strong>}{" "}
                 {hrs && <span style={{ color: "var(--muted)" }}>({hrs} h)</span>}
               </p>
