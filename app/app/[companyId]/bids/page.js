@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { supabase } from "../../../../lib/supabase";
 import { useCompany } from "../../../../lib/company-context";
 import { canUse } from "../../../../lib/tiers";
+import RateLookup from "../../../../components/RateLookup";
 
 const emptyForm = {
   client_name: "",
@@ -69,7 +70,7 @@ export default function BidsPage() {
       }
     }
     setBids(rows.map((r) => ({ ...r, total: (r.pricing_mode || "line_items") === "line_items" ? (totals[r.id] || 0) : modeTotal(r) })));
-    const { data: locs } = await sb.from("locations").select("id, name, rate_area_id").eq("company_id", company.id).order("name");
+    const { data: locs } = await sb.from("locations").select("id, name, address, rate_area_id").eq("company_id", company.id).order("name");
     setLocations(locs || []);
     const { data: ra } = await sb.from("rate_areas").select("*").eq("company_id", company.id).order("name");
     setRateAreas(ra || []);
@@ -116,6 +117,11 @@ export default function BidsPage() {
     if (!loc?.rate_area_id) return null;
     return rateAreas.find((r) => r.id === loc.rate_area_id) || null;
   })();
+
+  // Area suggestion for the live rate lookup: rate area name, else location address.
+  const selectedLocation = locations.find((l) => l.id === form.location_id);
+  const lookupArea =
+    selectedRateArea?.name || selectedLocation?.address || "";
 
   // Fill empty rate inputs from the area's going rate (never overwrites typing).
   function prefillFromRateArea(next, ra) {
@@ -264,6 +270,7 @@ export default function BidsPage() {
               <span style={{ color: "var(--muted)" }}> — reference only</span>
             </p>
           )}
+          <RateLookup companyId={company.id} defaultArea={lookupArea} />
           <div>
             <div style={{ fontSize: "0.9rem", color: "var(--muted)", marginBottom: 6 }}>Pricing</div>
             <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>

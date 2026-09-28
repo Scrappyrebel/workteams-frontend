@@ -6,6 +6,7 @@ import { useParams, useRouter } from "next/navigation";
 import { supabase } from "../../../../../lib/supabase";
 import { useCompany } from "../../../../../lib/company-context";
 import { canUse } from "../../../../../lib/tiers";
+import RateLookup from "../../../../../components/RateLookup";
 
 const STATUS_LABELS = {
   draft: "Draft",
@@ -37,6 +38,7 @@ export default function BidDetailPage() {
   const [form, setForm] = useState({ description: "", quantity: "1", unit_price: "" });
   const [pricing, setPricing] = useState({ mode: "line_items", hours: "", hourly_rate: "", square_footage: "", rate_per_sqft: "" });
   const [walkthroughs, setWalkthroughs] = useState([]);
+  const [rateAreaName, setRateAreaName] = useState("");
   const [saving, setSaving] = useState(false);
 
   const isManager = member && (member.role === "owner" || member.role === "admin");
@@ -46,7 +48,7 @@ export default function BidDetailPage() {
     const sb = supabase();
     const { data } = await sb
       .from("bids")
-      .select("*, locations(name)")
+      .select("*, locations(name, address, rate_area_id)")
       .eq("id", bidId)
       .eq("company_id", company.id)
       .single();
@@ -71,6 +73,17 @@ export default function BidDetailPage() {
       .eq("company_id", company.id)
       .order("created_at", { ascending: false });
     setWalkthroughs(wts || []);
+    // Resolve the location's rate area name for the rate lookup suggestion.
+    if (data.locations?.rate_area_id) {
+      const { data: ra } = await sb
+        .from("rate_areas")
+        .select("name")
+        .eq("id", data.locations.rate_area_id)
+        .maybeSingle();
+      setRateAreaName(ra?.name || "");
+    } else {
+      setRateAreaName("");
+    }
   }
 
   useEffect(() => {
@@ -277,6 +290,10 @@ export default function BidDetailPage() {
           <p style={{ color: "var(--muted)", marginTop: 0 }}>{pricingSummary}</p>
         )}
         <p style={{ fontWeight: 800, fontSize: "1.2rem", marginBottom: 0 }}>Total: ${total.toFixed(2)}</p>
+        <RateLookup
+          companyId={company.id}
+          defaultArea={rateAreaName || bid.locations?.address || ""}
+        />
       </section>
 
       {mode === "line_items" && (
