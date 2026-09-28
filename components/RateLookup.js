@@ -21,7 +21,7 @@ function domainOf(url) {
   }
 }
 
-export default function RateLookup({ companyId, defaultArea, frequency }) {
+export default function RateLookup({ companyId, defaultArea, frequency, jobType }) {
   const [area, setArea] = useState(defaultArea || "");
   const [touched, setTouched] = useState(false);
   const [results, setResults] = useState([]);
@@ -51,7 +51,7 @@ export default function RateLookup({ companyId, defaultArea, frequency }) {
           "Content-Type": "application/json",
           Authorization: `Bearer ${session?.access_token || ""}`,
         },
-        body: JSON.stringify({ companyId, area: a, frequency: frequency || "" }),
+        body: JSON.stringify({ companyId, area: a, frequency: frequency || "", jobType: jobType || "commercial" }),
       });
       const json = await res.json();
       if (json.ok) {

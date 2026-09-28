@@ -19,10 +19,18 @@ const emptyForm = {
   square_footage: "",
   rate_per_sqft: "",
   frequency: "",
+  job_type: "commercial",
 };
 
 const PRICING_MODES = ["line_items", "hourly", "sqft"];
 const MODE_LABELS = { line_items: "Line items", hourly: "Hourly", sqft: "Sq footage" };
+const JOB_TYPES = ["commercial", "residential", "construction", "moveout"];
+const JOB_LABELS = {
+  commercial: "Commercial",
+  residential: "Home / condo",
+  construction: "Construction cleanup",
+  moveout: "Move-in / move-out",
+};
 
 function modeTotal(b) {
   const mode = b.pricing_mode || "line_items";
@@ -57,7 +65,7 @@ export default function BidsPage() {
     const sb = supabase();
     const { data } = await sb
       .from("bids")
-      .select("id, client_name, title, status, valid_until, created_at, pricing_mode, hours, hourly_rate, square_footage, rate_per_sqft, frequency, locations(name)")
+      .select("id, client_name, title, status, valid_until, created_at, pricing_mode, hours, hourly_rate, square_footage, rate_per_sqft, frequency, job_type, locations(name)")
       .eq("company_id", company.id)
       .order("created_at", { ascending: false });
     const rows = data || [];
@@ -104,6 +112,7 @@ export default function BidsPage() {
       square_footage: pm === "sqft" ? parseFloat(form.square_footage) || null : null,
       rate_per_sqft: pm === "sqft" ? parseFloat(form.rate_per_sqft) || null : null,
       frequency: form.frequency || null,
+      job_type: form.job_type || "commercial",
     });
     setSaving(false);
     if (error) alert("Could not save bid: " + error.message);
@@ -272,7 +281,26 @@ export default function BidsPage() {
               <span style={{ color: "var(--muted)" }}> — reference only</span>
             </p>
           )}
-          <RateLookup companyId={company.id} defaultArea={lookupArea} frequency={form.frequency} />
+          <RateLookup companyId={company.id} defaultArea={lookupArea} frequency={form.frequency} jobType={form.job_type} />
+          <div>
+            <div style={{ fontSize: "0.9rem", color: "var(--muted)", marginBottom: 6 }}>Job type</div>
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+              {JOB_TYPES.map((j) => (
+                <button
+                  type="button"
+                  key={j}
+                  onClick={() => setForm({ ...form, job_type: j })}
+                  style={{
+                    ...chip,
+                    background: form.job_type === j ? "var(--brand)" : "#fff",
+                    color: form.job_type === j ? "#fff" : "var(--ink)",
+                  }}
+                >
+                  {JOB_LABELS[j]}
+                </button>
+              ))}
+            </div>
+          </div>
           <div>
             <div style={{ fontSize: "0.9rem", color: "var(--muted)", marginBottom: 6 }}>How often?</div>
             <select

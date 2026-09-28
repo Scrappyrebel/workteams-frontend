@@ -27,6 +27,22 @@ const MODE_LABELS = {
   hourly: "Hourly",
   sqft: "Square footage",
 };
+const JOB_TYPES = ["commercial", "residential", "construction", "moveout"];
+const JOB_LABELS = {
+  commercial: "Commercial",
+  residential: "Home / condo",
+  construction: "Construction cleanup",
+  moveout: "Move-in / move-out",
+};
+const FREQ_LABELS = {
+  "one-time": "One-time",
+  weekly: "Weekly",
+  "2x-week": "2×/week",
+  "3x-week": "3×/week",
+  "5x-week": "Weekdays",
+  biweekly: "Every 2 weeks",
+  monthly: "Monthly",
+};
 
 export default function BidDetailPage() {
   const params = useParams();
@@ -36,7 +52,7 @@ export default function BidDetailPage() {
   const [bid, setBid] = useState(null);
   const [items, setItems] = useState([]);
   const [form, setForm] = useState({ description: "", quantity: "1", unit_price: "" });
-  const [pricing, setPricing] = useState({ mode: "line_items", hours: "", hourly_rate: "", square_footage: "", rate_per_sqft: "", frequency: "" });
+  const [pricing, setPricing] = useState({ mode: "line_items", hours: "", hourly_rate: "", square_footage: "", rate_per_sqft: "", frequency: "", job_type: "commercial" });
   const [walkthroughs, setWalkthroughs] = useState([]);
   const [rateAreaName, setRateAreaName] = useState("");
   const [saving, setSaving] = useState(false);
@@ -64,6 +80,7 @@ export default function BidDetailPage() {
       square_footage: data.square_footage != null ? String(data.square_footage) : "",
       rate_per_sqft: data.rate_per_sqft != null ? String(data.rate_per_sqft) : "",
       frequency: data.frequency || "",
+      job_type: data.job_type || "commercial",
     });
     const { data: its } = await sb.from("bid_items").select("*").eq("bid_id", bidId).order("created_at");
     setItems(its || []);
@@ -102,12 +119,14 @@ export default function BidDetailPage() {
       : lineTotal;
   const isDraft = bid?.status === "draft";
 
+  const freqText = bid.frequency ? ` · ${FREQ_LABELS[bid.frequency] || bid.frequency}` : "";
+  const jobText = bid.job_type && bid.job_type !== "commercial" ? ` · ${JOB_LABELS[bid.job_type] || bid.job_type}` : "";
   const pricingSummary =
     mode === "hourly"
-      ? `Hourly — ${bid.hours ?? "—"} hrs × $${Number(bid.hourly_rate || 0).toFixed(2)}/hr`
+      ? `Hourly — ${bid.hours ?? "—"} hrs × $${Number(bid.hourly_rate || 0).toFixed(2)}/hr${freqText}${jobText}`
       : mode === "sqft"
-      ? `Square footage — ${bid.square_footage ?? "—"} sq ft × $${Number(bid.rate_per_sqft || 0).toFixed(2)}/sq ft`
-      : "Priced by line items";
+      ? `Square footage — ${bid.square_footage ?? "—"} sq ft × $${Number(bid.rate_per_sqft || 0).toFixed(2)}/sq ft${freqText}${jobText}`
+      : `Priced by line items${freqText}${jobText}`;
 
   async function savePricing() {
     const pm = pricing.mode;
@@ -119,6 +138,7 @@ export default function BidDetailPage() {
       square_footage: pm === "sqft" ? parseFloat(pricing.square_footage) || null : null,
       rate_per_sqft: pm === "sqft" ? parseFloat(pricing.rate_per_sqft) || null : null,
       frequency: pricing.frequency || null,
+      job_type: pricing.job_type || "commercial",
     }).eq("id", bidId);
     setSaving(false);
     if (error) alert("Could not save pricing: " + error.message);
@@ -217,6 +237,25 @@ export default function BidDetailPage() {
         {isDraft ? (
           <>
             <div style={{ marginBottom: 10 }}>
+              <div style={{ fontSize: "0.9rem", color: "var(--muted)", marginBottom: 6 }}>Job type</div>
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                {JOB_TYPES.map((j) => (
+                  <button
+                    type="button"
+                    key={j}
+                    onClick={() => setPricing({ ...pricing, job_type: j })}
+                    style={{
+                      ...chip,
+                      background: (pricing.job_type || "commercial") === j ? "var(--brand)" : "#fff",
+                      color: (pricing.job_type || "commercial") === j ? "#fff" : "var(--ink)",
+                    }}
+                  >
+                    {JOB_LABELS[j]}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div style={{ marginBottom: 10 }}>
               <div style={{ fontSize: "0.9rem", color: "var(--muted)", marginBottom: 6 }}>How often?</div>
               <select
                 value={pricing.frequency}
@@ -313,6 +352,7 @@ export default function BidDetailPage() {
           companyId={company.id}
           defaultArea={rateAreaName || bid.locations?.address || ""}
           frequency={pricing.frequency}
+          jobType={pricing.job_type}
         />
       </section>
 

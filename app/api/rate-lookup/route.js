@@ -15,6 +15,7 @@ export async function POST(req) {
   const companyId = body?.companyId;
   const area = (body?.area || "").trim();
   const frequency = (body?.frequency || "").trim();
+  const jobType = (body?.jobType || "commercial").trim();
   if (!companyId || !area) {
     return Response.json({ ok: false, error: "missing_params" }, { status: 400 });
   }
@@ -67,10 +68,25 @@ export async function POST(req) {
     "monthly": "monthly",
   }[frequency] || "";
   const freqQ = freqLabel ? ` ${freqLabel} cleaning` : "";
-  const queries = [
-    `commercial cleaning rates per square foot${freqQ} ${area}`,
-    `commercial cleaning service hourly rates${freqQ} ${area}`,
-  ];
+  const jobQueries = {
+    commercial: [
+      `commercial cleaning rates per square foot${freqQ} ${area}`,
+      `commercial cleaning service hourly rates${freqQ} ${area}`,
+    ],
+    residential: [
+      `house cleaning rates per square foot${freqQ} ${area}`,
+      `maid service hourly rates${freqQ} ${area}`,
+    ],
+    construction: [
+      `construction cleanup cleaning rates per square foot ${area}`,
+      `post construction cleaning service rates ${area}`,
+    ],
+    moveout: [
+      `move out cleaning rates per square foot ${area}`,
+      `move in move out cleaning service prices ${area}`,
+    ],
+  };
+  const queries = jobQueries[jobType] || jobQueries.commercial;
 
   try {
     const perQuery = await Promise.all(
