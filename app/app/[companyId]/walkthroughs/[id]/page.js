@@ -43,6 +43,7 @@ export default function WalkthroughDetailPage() {
   const [manualSqft, setManualSqft] = useState(false);
   const [copied, setCopied] = useState(false);
   const [creatingWOs, setCreatingWOs] = useState(false);
+  const [loadError, setLoadError] = useState(null);
 
   const isManager = member && (member.role === "owner" || member.role === "admin");
   const allowed = canUse(company?.tier, "walkthroughs");
@@ -56,7 +57,7 @@ export default function WalkthroughDetailPage() {
       .eq("company_id", company.id)
       .single();
     if (!data) {
-      router.replace(`/app/${company.id}/walkthroughs`);
+      setLoadError("Couldn't open this walkthrough. It may have been deleted.");
       return;
     }
     setWalkthrough(data);
@@ -241,6 +242,19 @@ export default function WalkthroughDetailPage() {
           <p>Room-by-room walkthroughs are a <strong>Pro</strong> feature for owners and managers.</p>
           <Link href={`/app/${company.id}/plans`} style={{ color: "var(--brand-deep)", fontWeight: 700 }}>
             See plans →
+          </Link>
+        </section>
+      </div>
+    );
+  }
+  if (loadError) {
+    return (
+      <div>
+        <p className="eyebrow">WALKTHROUGHS</p>
+        <section className="panel" style={{ padding: 22, marginTop: 18 }}>
+          <p>{loadError}</p>
+          <Link href={`/app/${company.id}/walkthroughs`} style={{ color: "var(--brand-deep)", fontWeight: 700 }}>
+            ← Back to walkthroughs
           </Link>
         </section>
       </div>

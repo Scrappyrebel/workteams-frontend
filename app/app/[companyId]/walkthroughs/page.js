@@ -148,20 +148,20 @@ export default function WalkthroughsPage() {
           <p style={{ color: "var(--muted)" }}>No walkthroughs yet — start one above, then add rooms as you walk the building.</p>
         )}
         {walkthroughs.map((w) => (
-          <div key={w.id} className="panel" style={{ padding: 16 }}>
-            <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
-              <div style={{ flex: 1 }}>
-                <Link href={`/app/${company.id}/walkthroughs/${w.id}`} style={{ fontWeight: 800, fontSize: "1.05rem", color: "var(--brand-deep)" }}>
+          <div key={w.id} className="panel" style={{ padding: 0, overflow: "hidden" }}>
+            <div style={{ display: "flex", alignItems: "stretch", gap: 0 }}>
+              <Link href={`/app/${company.id}/walkthroughs/${w.id}`} style={{ flex: 1, padding: 16, textDecoration: "none", color: "inherit", display: "block" }}>
+                <div style={{ fontWeight: 800, fontSize: "1.05rem", color: "var(--brand-deep)" }}>
                   {w.name}
-                </Link>
+                </div>
                 <div style={{ fontSize: "0.85rem", color: "var(--muted)", marginTop: 4 }}>
                   {w.locations?.name || "No location"} · {w.count} area{w.count === 1 ? "" : "s"} · {Math.round(w.sqft).toLocaleString()} sq ft
                 </div>
                 <div style={{ fontSize: "0.8rem", color: "var(--muted)" }}>
                   {new Date(w.created_at).toLocaleDateString([], { month: "short", day: "numeric", year: "numeric" })}
                 </div>
-              </div>
-              <button onClick={() => remove(w.id)} style={dangerGhost} aria-label="Delete walkthrough">✕</button>
+              </Link>
+              <button onClick={() => remove(w.id)} style={{ ...dangerGhost, alignSelf: "center", marginRight: 12 }} aria-label="Delete walkthrough">✕</button>
             </div>
           </div>
         ))}
