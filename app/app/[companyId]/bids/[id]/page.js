@@ -21,6 +21,12 @@ const NEXT_STATUS = {
   declined: ["draft"],
 };
 
+const MODE_LABELS = {
+  line_items: "Line items",
+  hourly: "Hourly",
+  sqft: "Square footage",
+};
+
 export default function BidDetailPage() {
   const params = useParams();
   const router = useRouter();
@@ -29,6 +35,7 @@ export default function BidDetailPage() {
   const [bid, setBid] = useState(null);
   const [items, setItems] = useState([]);
   const [form, setForm] = useState({ description: "", quantity: "1", unit_price: "" });
+  const [pricing, setPricing] = useState({ mode: "line_items", hours: "", hourly_rate: "", square_footage: "", rate_per_sqft: "" });
   const [saving, setSaving] = useState(false);
 
   const isManager = member && (member.role === "owner" || member.role === "admin");
@@ -47,6 +54,13 @@ export default function BidDetailPage() {
       return;
     }
     setBid(data);
+    setPricing({
+      mode: data.pricing_mode || "line_items",
+      hours: data.hours != null ? String(data.hours) : "",
+      hourly_rate: data.hourly_rate != null ? String(data.hourly_rate) : "",
+      square_footage: data.square_footage != null ? String(data.square_footage) : "",
+      rate_per_sqft: data.rate_per_sqft != null ? String(data.rate_per_sqft) : "",
+    });
     const { data: its } = await sb.from("bid_items").select("*").eq("bid_id", bidId).order("created_at");
     setItems(its || []);
   }
@@ -56,7 +70,37 @@ export default function BidDetailPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loading, company, allowed]);
 
-  const total = items.reduce((s, it) => s + Number(it.quantity) * Number(it.unit_price), 0);
+  const lineTotal = items.reduce((s, it) => s + Number(it.quantity) * Number(it.unit_price), 0);
+  const mode = bid?.pricing_mode || "line_items";
+  const total =
+    mode === "hourly"
+      ? Number(bid.hours || 0) * Number(bid.hourly_rate || 0)
+      : mode === "sqft"
+      ? Number(bid.square_footage || 0) * Number(bid.rate_per_sqft || 0)
+      : lineTotal;
+  const isDraft = bid?.status === "draft";
+
+  const pricingSummary =
+    mode === "hourly"
+      ? `Hourly — ${bid.hours ?? "—"} hrs × $${Number(bid.hourly_rate || 0).toFixed(2)}/hr`
+      : mode === "sqft"
+      ? `Square footage — ${bid.square_footage ?? "—"} sq ft × $${Number(bid.rate_per_sqft || 0).toFixed(2)}/sq ft`
+      : "Priced by line items";
+
+  async function savePricing() {
+    const pm = pricing.mode;
+    setSaving(true);
+    const { error } = await supabase().from("bids").update({
+      pricing_mode: pm,
+      hours: pm === "hourly" ? parseFloat(pricing.hours) || null : null,
+      hourly_rate: pm === "hourly" ? parseFloat(pricing.hourly_rate) || null : null,
+      square_footage: pm === "sqft" ? parseFloat(pricing.square_footage) || null : null,
+      rate_per_sqft: pm === "sqft" ? parseFloat(pricing.rate_per_sqft) || null : null,
+    }).eq("id", bidId);
+    setSaving(false);
+    if (error) alert("Could not save pricing: " + error.message);
+    else load();
+  }
 
   async function addItem(e) {
     e.preventDefault();
@@ -131,6 +175,89 @@ export default function BidDetailPage() {
       {bid.description && <p style={{ marginTop: 8 }}>{bid.description}</p>}
 
       <section className="panel" style={{ padding: 22, margin: "18px 0" }}>
+        <h3 style={{ marginTop: 0 }}>Pricing</h3>
+        {isDraft ? (
+          <>
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10 }}>
+              {Object.keys(MODE_LABELS).map((m) => (
+                <button
+                  type="button"
+                  key={m}
+                  onClick={() => setPricing({ ...pricing, mode: m })}
+                  style={{
+                    ...chip,
+                    background: pricing.mode === m ? "var(--brand)" : "#fff",
+                    color: pricing.mode === m ? "#fff" : "var(--ink)",
+                  }}
+                >
+                  {MODE_LABELS[m]}
+                </button>
+              ))}
+            </div>
+            {pricing.mode === "hourly" && (
+              <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
+                <label style={{ flex: 1, fontSize: "0.9rem", color: "var(--muted)" }}>
+                  Estimated hours
+                  <input
+                    type="number"
+                    min="0"
+                    step="any"
+                    value={pricing.hours}
+                    onChange={(e) => setPricing({ ...pricing, hours: e.target.value })}
+                    style={{ ...input, marginTop: 6 }}
+                  />
+                </label>
+                <label style={{ flex: 1, fontSize: "0.9rem", color: "var(--muted)" }}>
+                  Rate per hour ($)
+                  <input
+                    type="number"
+                    min="0"
+                    step="any"
+                    value={pricing.hourly_rate}
+                    onChange={(e) => setPricing({ ...pricing, hourly_rate: e.target.value })}
+                    style={{ ...input, marginTop: 6 }}
+                  />
+                </label>
+              </div>
+            )}
+            {pricing.mode === "sqft" && (
+              <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
+                <label style={{ flex: 1, fontSize: "0.9rem", color: "var(--muted)" }}>
+                  Square footage
+                  <input
+                    type="number"
+                    min="0"
+                    step="any"
+                    value={pricing.square_footage}
+                    onChange={(e) => setPricing({ ...pricing, square_footage: e.target.value })}
+                    style={{ ...input, marginTop: 6 }}
+                  />
+                </label>
+                <label style={{ flex: 1, fontSize: "0.9rem", color: "var(--muted)" }}>
+                  Rate per sq ft ($)
+                  <input
+                    type="number"
+                    min="0"
+                    step="any"
+                    value={pricing.rate_per_sqft}
+                    onChange={(e) => setPricing({ ...pricing, rate_per_sqft: e.target.value })}
+                    style={{ ...input, marginTop: 6 }}
+                  />
+                </label>
+              </div>
+            )}
+            <button onClick={savePricing} disabled={saving} style={{ ...button, marginBottom: 10 }}>
+              {saving ? "Saving…" : "Save pricing"}
+            </button>
+          </>
+        ) : (
+          <p style={{ color: "var(--muted)", marginTop: 0 }}>{pricingSummary}</p>
+        )}
+        <p style={{ fontWeight: 800, fontSize: "1.2rem", marginBottom: 0 }}>Total: ${total.toFixed(2)}</p>
+      </section>
+
+      {mode === "line_items" && (
+      <section className="panel" style={{ padding: 22, margin: "18px 0" }}>
         <h3 style={{ marginTop: 0 }}>Line items</h3>
         {items.length === 0 && <p style={{ color: "var(--muted)" }}>No line items yet — add the first below.</p>}
         <div style={{ display: "grid", gap: 8, marginBottom: 14 }}>
@@ -147,7 +274,6 @@ export default function BidDetailPage() {
             </div>
           ))}
         </div>
-        <p style={{ fontWeight: 800, fontSize: "1.2rem" }}>Total: ${total.toFixed(2)}</p>
         <form onSubmit={addItem} style={{ display: "grid", gap: 10, maxWidth: 520, marginTop: 12 }}>
           <input
             value={form.description}
@@ -184,6 +310,7 @@ export default function BidDetailPage() {
           </button>
         </form>
       </section>
+      )}
 
       <section className="panel" style={{ padding: 22, margin: "18px 0" }}>
         <h3 style={{ marginTop: 0 }}>Status</h3>
@@ -231,4 +358,13 @@ const dangerButton = {
   padding: "7px 14px",
   fontWeight: 700,
   cursor: "pointer",
+};
+
+const chip = {
+  border: "1px solid var(--line)",
+  borderRadius: 999,
+  padding: "7px 16px",
+  fontWeight: 700,
+  cursor: "pointer",
+  fontSize: "0.85rem",
 };

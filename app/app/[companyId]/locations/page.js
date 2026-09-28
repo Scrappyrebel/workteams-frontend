@@ -5,7 +5,7 @@ import { supabase } from "../../../../lib/supabase";
 import { useCompany } from "../../../../lib/company-context";
 import { canUse } from "../../../../lib/tiers";
 
-const emptyForm = { name: "", address: "", client_name: "", client_phone: "", notes: "", lat: "", lng: "", geofence_radius_m: 100 };
+const emptyForm = { name: "", address: "", client_name: "", client_phone: "", notes: "", lat: "", lng: "", geofence_radius_m: 100, rate_area_id: "" };
 
 async function geocodeAddress(address) {
   const url = "https://nominatim.openstreetmap.org/search?format=json&limit=1&q=" + encodeURIComponent(address);
@@ -21,18 +21,25 @@ export default function LocationsPage() {
   const [locations, setLocations] = useState([]);
   const [form, setForm] = useState(emptyForm);
   const [editing, setEditing] = useState(null);
+  const [rateAreas, setRateAreas] = useState([]);
 
   const isManager = member && (member.role === "owner" || member.role === "admin");
   const geoAllowed = canUse(company?.tier, "geofencing");
+  const ratesAllowed = canUse(company?.tier, "bidding");
   const [geoBusy, setGeoBusy] = useState(false);
 
   async function load() {
-    const { data } = await supabase()
+    const sb = supabase();
+    const { data } = await sb
       .from("locations")
       .select("*")
       .eq("company_id", company.id)
       .order("name");
     setLocations(data || []);
+    if (ratesAllowed && isManager) {
+      const { data: ra } = await sb.from("rate_areas").select("id, name").eq("company_id", company.id).order("name");
+      setRateAreas(ra || []);
+    }
   }
 
   useEffect(() => {
@@ -55,6 +62,7 @@ export default function LocationsPage() {
       lat: Number.isFinite(lat) ? lat : null,
       lng: Number.isFinite(lng) ? lng : null,
       geofence_radius_m: parseInt(form.geofence_radius_m, 10) || 100,
+      rate_area_id: form.rate_area_id || null,
     };
     let error;
     if (editing) {
@@ -81,6 +89,7 @@ export default function LocationsPage() {
       lat: l.lat ?? "",
       lng: l.lng ?? "",
       geofence_radius_m: l.geofence_radius_m ?? 100,
+      rate_area_id: l.rate_area_id || "",
     });
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
@@ -126,6 +135,21 @@ export default function LocationsPage() {
             <input value={form.client_phone} onChange={(e) => setForm({ ...form, client_phone: e.target.value })} placeholder="Client phone" style={{ ...input, flex: 1 }} />
           </div>
           <input value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} placeholder="Notes (gate code, access details…)" style={input} />
+          {ratesAllowed && (
+            <label style={{ fontSize: "0.9rem", color: "var(--muted)" }}>
+              Rate area (for bid pricing reference)
+              <select
+                value={form.rate_area_id}
+                onChange={(e) => setForm({ ...form, rate_area_id: e.target.value })}
+                style={{ ...input, marginTop: 6 }}
+              >
+                <option value="">No rate area</option>
+                {rateAreas.map((r) => (
+                  <option key={r.id} value={r.id}>{r.name}</option>
+                ))}
+              </select>
+            </label>
+          )}
           {geoAllowed ? (
             <div style={{ border: "1px solid var(--line)", borderRadius: 12, padding: 12 }}>
               <p style={{ fontSize: "0.9rem", fontWeight: 800, margin: "0 0 8px" }}>📍 Geofence</p>
@@ -165,11 +189,13 @@ export default function LocationsPage() {
         {locations.length === 0 && <p style={{ color: "var(--muted)" }}>No locations yet — add your first job site above.</p>}
         {locations.map((l) => {
           const hasFence = l.lat != null && l.lng != null;
+          const raName = rateAreas.find((r) => r.id === l.rate_area_id)?.name;
           return (
           <div key={l.id} className="portal-card" style={{ minHeight: 0, padding: "16px 20px" }}>
             <span className="card-kicker">{hasFence ? `📍 ${l.geofence_radius_m}m geofence` : "No geofence"}</span>
             <h3 style={{ margin: "6px 0" }}>{l.name}</h3>
             {l.address && <p style={{ color: "var(--muted)", margin: 0 }}>{l.address}</p>}
+            {raName && <p style={{ margin: "4px 0 0", fontSize: "0.9rem" }}>💲 Rate area: {raName}</p>}
             {l.client_name && <p style={{ margin: "4px 0 0" }}>Client: {l.client_name}{l.client_phone ? ` • ${l.client_phone}` : ""}</p>}
             {l.notes && <p style={{ fontSize: "0.9rem", color: "var(--muted)" }}>{l.notes}</p>}
             <div style={{ display: "flex", gap: 6, marginTop: 8 }}>

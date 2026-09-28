@@ -37,15 +37,32 @@ export default function ProfitabilityPage() {
     const locList = locs || [];
     setLocations(locList);
 
-    // Accepted bid totals per location (from line items).
-    let bidQ = sb.from("bids").select("id, location_id").eq("company_id", company.id).eq("status", "accepted");
+    // Accepted bid totals per location (pricing-mode aware).
+    let bidQ = sb.from("bids")
+      .select("id, location_id, pricing_mode, hours, hourly_rate, square_footage, rate_per_sqft")
+      .eq("company_id", company.id)
+      .eq("status", "accepted");
     const { data: bids } = await bidQ;
-    const bidIds = (bids || []).map((b) => b.id);
     const bidLoc = {};
-    for (const b of bids || []) bidLoc[b.id] = b.location_id;
+    const lineIds = [];
     let bidTotals = {};
-    if (bidIds.length > 0) {
-      const { data: items } = await sb.from("bid_items").select("bid_id, quantity, unit_price").in("bid_id", bidIds);
+    for (const b of bids || []) {
+      bidLoc[b.id] = b.location_id;
+      const mode = b.pricing_mode || "line_items";
+      if (mode === "line_items") {
+        lineIds.push(b.id);
+        continue;
+      }
+      const lid = b.location_id;
+      if (!lid) continue;
+      const amt =
+        mode === "hourly"
+          ? Number(b.hours || 0) * Number(b.hourly_rate || 0)
+          : Number(b.square_footage || 0) * Number(b.rate_per_sqft || 0);
+      bidTotals[lid] = (bidTotals[lid] || 0) + amt;
+    }
+    if (lineIds.length > 0) {
+      const { data: items } = await sb.from("bid_items").select("bid_id, quantity, unit_price").in("bid_id", lineIds);
       for (const it of items || []) {
         const lid = bidLoc[it.bid_id];
         if (!lid) continue;
