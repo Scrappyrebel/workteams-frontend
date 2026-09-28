@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { supabase } from "../../../../lib/supabase";
 import { useCompany } from "../../../../lib/company-context";
+import { canUse } from "../../../../lib/tiers";
 
 function getPosition() {
   return new Promise((resolve) => {
@@ -15,6 +16,19 @@ function getPosition() {
   });
 }
 
+// Distance in meters between two GPS points.
+function haversineMeters(lat1, lon1, lat2, lon2) {
+  const R = 6371000;
+  const toRad = (d) => (d * Math.PI) / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLon = toRad(lon2 - lon1);
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
+    Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  return 2 * R * Math.asin(Math.sqrt(a));
+}
+
 export default function TimeClockPage() {
   const { company, member, loading } = useCompany();
   const [open, setOpen] = useState(null);
@@ -25,6 +39,7 @@ export default function TimeClockPage() {
   const [busy, setBusy] = useState(false);
 
   const isManager = member && (member.role === "owner" || member.role === "admin");
+  const geoEnforced = canUse(company?.tier, "geofencing");
 
   async function load() {
     const sb = supabase();
@@ -48,7 +63,7 @@ export default function TimeClockPage() {
     const { data } = await q;
     setEntries(data || []);
 
-    const { data: locs } = await sb.from("locations").select("id, name").eq("company_id", company.id).order("name");
+    const { data: locs } = await sb.from("locations").select("id, name, lat, lng, geofence_radius_m").eq("company_id", company.id).order("name");
     setLocations(locs || []);
   }
 
@@ -63,7 +78,24 @@ export default function TimeClockPage() {
       return;
     }
     setBusy(true);
+    const loc = locations.find((l) => l.id === locationId);
+    const fence = geoEnforced && loc && loc.lat != null && loc.lng != null
+      ? { lat: parseFloat(loc.lat), lng: parseFloat(loc.lng), radius: parseInt(loc.geofence_radius_m, 10) || 100, name: loc.name }
+      : null;
     const pos = await getPosition();
+    if (fence) {
+      if (!pos) {
+        setBusy(false);
+        alert(`Could not get your location. You must be at ${fence.name} to clock in — allow location access and try again.`);
+        return;
+      }
+      const dist = haversineMeters(pos.lat, pos.lng, fence.lat, fence.lng);
+      if (dist > fence.radius) {
+        setBusy(false);
+        alert(`You must be at ${fence.name} to clock in. You're about ${Math.round(dist)}m away (limit: ${fence.radius}m).`);
+        return;
+      }
+    }
     const { error } = await supabase().from("time_entries").insert({
       company_id: company.id,
       member_id: member.id,
@@ -116,6 +148,15 @@ export default function TimeClockPage() {
               <option value="">Choose your work location…</option>
               {locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
             </select>
+            {(() => {
+              const sel = locations.find((l) => l.id === locationId);
+              const fenced = geoEnforced && sel && sel.lat != null && sel.lng != null;
+              return fenced ? (
+                <p style={{ color: "var(--brand-deep)", fontSize: "0.88rem", fontWeight: 700, margin: "0 0 10px" }}>
+                  📍 Geofence active — you must be within {parseInt(sel.geofence_radius_m, 10) || 100}m of {sel.name} to clock in.
+                </p>
+              ) : null;
+            })()}
             <br />
             <button onClick={clockIn} disabled={busy} style={bigButton}>
               {busy ? "Working…" : "Clock in"}

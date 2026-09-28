@@ -3,8 +3,18 @@
 import { useEffect, useState } from "react";
 import { supabase } from "../../../../lib/supabase";
 import { useCompany } from "../../../../lib/company-context";
+import { canUse } from "../../../../lib/tiers";
 
-const emptyForm = { name: "", address: "", client_name: "", client_phone: "", notes: "", geofence_radius_m: 100 };
+const emptyForm = { name: "", address: "", client_name: "", client_phone: "", notes: "", lat: "", lng: "", geofence_radius_m: 100 };
+
+async function geocodeAddress(address) {
+  const url = "https://nominatim.openstreetmap.org/search?format=json&limit=1&q=" + encodeURIComponent(address);
+  const res = await fetch(url, { headers: { Accept: "application/json" } });
+  if (!res.ok) throw new Error("Geocoding request failed");
+  const results = await res.json();
+  if (!results || results.length === 0) return null;
+  return { lat: parseFloat(results[0].lat), lng: parseFloat(results[0].lon) };
+}
 
 export default function LocationsPage() {
   const { company, member, loading } = useCompany();
@@ -13,6 +23,8 @@ export default function LocationsPage() {
   const [editing, setEditing] = useState(null);
 
   const isManager = member && (member.role === "owner" || member.role === "admin");
+  const geoAllowed = canUse(company?.tier, "geofencing");
+  const [geoBusy, setGeoBusy] = useState(false);
 
   async function load() {
     const { data } = await supabase()
@@ -31,6 +43,8 @@ export default function LocationsPage() {
   async function save(e) {
     e.preventDefault();
     const sb = supabase();
+    const lat = form.lat === "" ? null : parseFloat(form.lat);
+    const lng = form.lng === "" ? null : parseFloat(form.lng);
     const payload = {
       company_id: company.id,
       name: form.name.trim(),
@@ -38,6 +52,8 @@ export default function LocationsPage() {
       client_name: form.client_name.trim() || null,
       client_phone: form.client_phone.trim() || null,
       notes: form.notes.trim() || null,
+      lat: Number.isFinite(lat) ? lat : null,
+      lng: Number.isFinite(lng) ? lng : null,
       geofence_radius_m: parseInt(form.geofence_radius_m, 10) || 100,
     };
     let error;
@@ -62,9 +78,28 @@ export default function LocationsPage() {
       client_name: l.client_name || "",
       client_phone: l.client_phone || "",
       notes: l.notes || "",
+      lat: l.lat ?? "",
+      lng: l.lng ?? "",
       geofence_radius_m: l.geofence_radius_m ?? 100,
     });
     window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  async function findCoordinates() {
+    const addr = form.address.trim();
+    if (!addr) {
+      alert("Enter the address first, then tap Find coordinates.");
+      return;
+    }
+    setGeoBusy(true);
+    try {
+      const coords = await geocodeAddress(addr);
+      if (!coords) alert("Could not find that address — you can enter coordinates manually.");
+      else setForm({ ...form, lat: String(coords.lat), lng: String(coords.lng) });
+    } catch (err) {
+      alert("Could not look up the address right now — you can enter coordinates manually.");
+    }
+    setGeoBusy(false);
   }
 
   async function remove(id) {
@@ -91,10 +126,30 @@ export default function LocationsPage() {
             <input value={form.client_phone} onChange={(e) => setForm({ ...form, client_phone: e.target.value })} placeholder="Client phone" style={{ ...input, flex: 1 }} />
           </div>
           <input value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} placeholder="Notes (gate code, access details…)" style={input} />
-          <label style={{ fontSize: "0.9rem", color: "var(--muted)" }}>
-            Geofence radius (meters)
-            <input type="number" min="10" value={form.geofence_radius_m} onChange={(e) => setForm({ ...form, geofence_radius_m: e.target.value })} style={{ ...input, marginTop: 6 }} />
-          </label>
+          {geoAllowed ? (
+            <div style={{ border: "1px solid var(--line)", borderRadius: 12, padding: 12 }}>
+              <p style={{ fontSize: "0.9rem", fontWeight: 800, margin: "0 0 8px" }}>📍 Geofence</p>
+              <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+                <input value={form.lat} onChange={(e) => setForm({ ...form, lat: e.target.value })} placeholder="Latitude" inputMode="decimal" style={{ ...input, flex: 1 }} />
+                <input value={form.lng} onChange={(e) => setForm({ ...form, lng: e.target.value })} placeholder="Longitude" inputMode="decimal" style={{ ...input, flex: 1 }} />
+              </div>
+              <button type="button" onClick={findCoordinates} disabled={geoBusy} style={{ ...ghostButton, width: "100%", marginBottom: 8 }}>
+                {geoBusy ? "Looking up…" : "Find coordinates from address"}
+              </button>
+              <label style={{ fontSize: "0.9rem", color: "var(--muted)" }}>
+                Geofence radius (meters)
+                <input type="number" min="10" value={form.geofence_radius_m} onChange={(e) => setForm({ ...form, geofence_radius_m: e.target.value })} style={{ ...input, marginTop: 6 }} />
+              </label>
+              <p style={{ fontSize: "0.82rem", color: "var(--muted)", margin: "8px 0 0" }}>
+                Clock-ins outside this boundary are blocked.
+              </p>
+            </div>
+          ) : (
+            <p style={{ fontSize: "0.88rem", color: "var(--muted)" }}>
+              🔒 Geofenced clock-in is a <strong>Plus</strong> feature.{" "}
+              <a href={`/app/${company.id}/plans`} style={{ color: "var(--brand-deep)", fontWeight: 700 }}>See plans →</a>
+            </p>
+          )}
           <div style={{ display: "flex", gap: 8 }}>
             <button type="submit" style={{ ...button, flex: 1 }}>{editing ? "Save changes" : "Add location"}</button>
             {editing && (
@@ -108,9 +163,11 @@ export default function LocationsPage() {
 
       <div style={{ display: "grid", gap: 10 }}>
         {locations.length === 0 && <p style={{ color: "var(--muted)" }}>No locations yet — add your first job site above.</p>}
-        {locations.map((l) => (
+        {locations.map((l) => {
+          const hasFence = l.lat != null && l.lng != null;
+          return (
           <div key={l.id} className="portal-card" style={{ minHeight: 0, padding: "16px 20px" }}>
-            <span className="card-kicker">{l.geofence_radius_m}m geofence</span>
+            <span className="card-kicker">{hasFence ? `📍 ${l.geofence_radius_m}m geofence` : "No geofence"}</span>
             <h3 style={{ margin: "6px 0" }}>{l.name}</h3>
             {l.address && <p style={{ color: "var(--muted)", margin: 0 }}>{l.address}</p>}
             {l.client_name && <p style={{ margin: "4px 0 0" }}>Client: {l.client_name}{l.client_phone ? ` • ${l.client_phone}` : ""}</p>}
@@ -120,7 +177,8 @@ export default function LocationsPage() {
               <button onClick={() => remove(l.id)} style={dangerButton}>Delete</button>
             </div>
           </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );

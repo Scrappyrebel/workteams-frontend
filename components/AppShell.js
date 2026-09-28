@@ -14,6 +14,8 @@ const NAV = [
   { key: "payroll", label: "My Hours / Payroll", href: (c) => `/app/${c}/payroll`, minRole: null },
   { key: "locations", label: "Locations", href: (c) => `/app/${c}/locations`, minRole: "manager" },
   { key: "team", label: "Team", href: (c) => `/app/${c}/team`, minRole: null },
+  { key: "inspections", label: "Inspections", href: (c) => `/app/${c}/inspections`, minRole: "manager" },
+  { key: "messaging", label: "Messages", href: (c) => `/app/${c}/messages`, minRole: null },
   { key: "plans", label: "Plans", href: (c) => `/app/${c}/plans`, minRole: null },
   { key: "connections", label: "Connections", href: (c) => `/app/${c}/connections`, minRole: null },
 ];
