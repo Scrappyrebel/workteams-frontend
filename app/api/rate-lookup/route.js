@@ -14,6 +14,7 @@ export async function POST(req) {
   }
   const companyId = body?.companyId;
   const area = (body?.area || "").trim();
+  const frequency = (body?.frequency || "").trim();
   if (!companyId || !area) {
     return Response.json({ ok: false, error: "missing_params" }, { status: 400 });
   }
@@ -56,9 +57,19 @@ export async function POST(req) {
   }
   const useYouCom = !!process.env.YOUCOM_API_KEY;
 
+  const freqLabel = {
+    "one-time": "one-time",
+    "weekly": "weekly",
+    "2x-week": "twice a week",
+    "3x-week": "3 times a week",
+    "5x-week": "daily",
+    "biweekly": "biweekly",
+    "monthly": "monthly",
+  }[frequency] || "";
+  const freqQ = freqLabel ? ` ${freqLabel} cleaning` : "";
   const queries = [
-    `commercial cleaning rates per square foot ${area}`,
-    `commercial cleaning service hourly rates ${area}`,
+    `commercial cleaning rates per square foot${freqQ} ${area}`,
+    `commercial cleaning service hourly rates${freqQ} ${area}`,
   ];
 
   try {

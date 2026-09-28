@@ -36,7 +36,7 @@ export default function BidDetailPage() {
   const [bid, setBid] = useState(null);
   const [items, setItems] = useState([]);
   const [form, setForm] = useState({ description: "", quantity: "1", unit_price: "" });
-  const [pricing, setPricing] = useState({ mode: "line_items", hours: "", hourly_rate: "", square_footage: "", rate_per_sqft: "" });
+  const [pricing, setPricing] = useState({ mode: "line_items", hours: "", hourly_rate: "", square_footage: "", rate_per_sqft: "", frequency: "" });
   const [walkthroughs, setWalkthroughs] = useState([]);
   const [rateAreaName, setRateAreaName] = useState("");
   const [saving, setSaving] = useState(false);
@@ -63,6 +63,7 @@ export default function BidDetailPage() {
       hourly_rate: data.hourly_rate != null ? String(data.hourly_rate) : "",
       square_footage: data.square_footage != null ? String(data.square_footage) : "",
       rate_per_sqft: data.rate_per_sqft != null ? String(data.rate_per_sqft) : "",
+      frequency: data.frequency || "",
     });
     const { data: its } = await sb.from("bid_items").select("*").eq("bid_id", bidId).order("created_at");
     setItems(its || []);
@@ -117,6 +118,7 @@ export default function BidDetailPage() {
       hourly_rate: pm === "hourly" ? parseFloat(pricing.hourly_rate) || null : null,
       square_footage: pm === "sqft" ? parseFloat(pricing.square_footage) || null : null,
       rate_per_sqft: pm === "sqft" ? parseFloat(pricing.rate_per_sqft) || null : null,
+      frequency: pricing.frequency || null,
     }).eq("id", bidId);
     setSaving(false);
     if (error) alert("Could not save pricing: " + error.message);
@@ -214,6 +216,23 @@ export default function BidDetailPage() {
         <h3 style={{ marginTop: 0 }}>Pricing</h3>
         {isDraft ? (
           <>
+            <div style={{ marginBottom: 10 }}>
+              <div style={{ fontSize: "0.9rem", color: "var(--muted)", marginBottom: 6 }}>How often?</div>
+              <select
+                value={pricing.frequency}
+                onChange={(e) => setPricing({ ...pricing, frequency: e.target.value })}
+                style={input}
+              >
+                <option value="">Select frequency…</option>
+                <option value="one-time">One-time clean</option>
+                <option value="weekly">Weekly (1×/week)</option>
+                <option value="2x-week">Twice a week</option>
+                <option value="3x-week">3× a week</option>
+                <option value="5x-week">Weekdays (5×/week)</option>
+                <option value="biweekly">Every 2 weeks</option>
+                <option value="monthly">Monthly</option>
+              </select>
+            </div>
             <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10 }}>
               {Object.keys(MODE_LABELS).map((m) => (
                 <button
@@ -293,6 +312,7 @@ export default function BidDetailPage() {
         <RateLookup
           companyId={company.id}
           defaultArea={rateAreaName || bid.locations?.address || ""}
+          frequency={pricing.frequency}
         />
       </section>
 

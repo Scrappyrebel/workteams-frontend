@@ -18,6 +18,7 @@ const emptyForm = {
   hourly_rate: "",
   square_footage: "",
   rate_per_sqft: "",
+  frequency: "",
 };
 
 const PRICING_MODES = ["line_items", "hourly", "sqft"];
@@ -56,7 +57,7 @@ export default function BidsPage() {
     const sb = supabase();
     const { data } = await sb
       .from("bids")
-      .select("id, client_name, title, status, valid_until, created_at, pricing_mode, hours, hourly_rate, square_footage, rate_per_sqft, locations(name)")
+      .select("id, client_name, title, status, valid_until, created_at, pricing_mode, hours, hourly_rate, square_footage, rate_per_sqft, frequency, locations(name)")
       .eq("company_id", company.id)
       .order("created_at", { ascending: false });
     const rows = data || [];
@@ -102,6 +103,7 @@ export default function BidsPage() {
       hourly_rate: pm === "hourly" ? parseFloat(form.hourly_rate) || null : null,
       square_footage: pm === "sqft" ? parseFloat(form.square_footage) || null : null,
       rate_per_sqft: pm === "sqft" ? parseFloat(form.rate_per_sqft) || null : null,
+      frequency: form.frequency || null,
     });
     setSaving(false);
     if (error) alert("Could not save bid: " + error.message);
@@ -270,7 +272,24 @@ export default function BidsPage() {
               <span style={{ color: "var(--muted)" }}> — reference only</span>
             </p>
           )}
-          <RateLookup companyId={company.id} defaultArea={lookupArea} />
+          <RateLookup companyId={company.id} defaultArea={lookupArea} frequency={form.frequency} />
+          <div>
+            <div style={{ fontSize: "0.9rem", color: "var(--muted)", marginBottom: 6 }}>How often?</div>
+            <select
+              value={form.frequency}
+              onChange={(e) => setForm({ ...form, frequency: e.target.value })}
+              style={input}
+            >
+              <option value="">Select frequency…</option>
+              <option value="one-time">One-time clean</option>
+              <option value="weekly">Weekly (1×/week)</option>
+              <option value="2x-week">Twice a week</option>
+              <option value="3x-week">3× a week</option>
+              <option value="5x-week">Weekdays (5×/week)</option>
+              <option value="biweekly">Every 2 weeks</option>
+              <option value="monthly">Monthly</option>
+            </select>
+          </div>
           <div>
             <div style={{ fontSize: "0.9rem", color: "var(--muted)", marginBottom: 6 }}>Pricing</div>
             <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
