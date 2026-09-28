@@ -13,7 +13,6 @@ export default function CompanyLayout({ children }) {
   const companyId = params.companyId;
   const [state, setState] = useState({ company: null, member: null, loading: true });
   const [denied, setDenied] = useState(false);
-  const [diag, setDiag] = useState(null);
 
   useEffect(() => {
     (async () => {
@@ -22,10 +21,15 @@ export default function CompanyLayout({ children }) {
         router.replace("/login");
         return;
       }
+      // Guard against non-UUID route params (e.g. /app/locations) — send back to company list.
+      if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(companyId))) {
+        router.replace("/app");
+        return;
+      }
       const sb = supabase();
       await linkMemberOnSignIn(sb, user);
-      const { data: company, error: cErr } = await sb.from("companies").select("*").eq("id", companyId).single();
-      const { data: member, error: mErr } = await sb
+      const { data: company } = await sb.from("companies").select("*").eq("id", companyId).single();
+      const { data: member } = await sb
         .from("company_members")
         .select("*")
         .eq("company_id", companyId)
@@ -33,15 +37,6 @@ export default function CompanyLayout({ children }) {
         .single();
       if (!company || !member) {
         setDenied(true);
-        setDiag({
-          companyId: String(companyId),
-          userId: user.id,
-          userEmail: user.email,
-          companyFound: !!company,
-          memberFound: !!member,
-          companyError: cErr ? `${cErr.code}: ${cErr.message}` : null,
-          memberError: mErr ? `${mErr.code}: ${mErr.message}` : null,
-        });
         setState({ company: null, member: null, loading: false });
         return;
       }
@@ -57,14 +52,6 @@ export default function CompanyLayout({ children }) {
           <p style={{ color: "var(--muted)" }}>
             Your account isn't on this company's team yet. Ask an owner or admin to add you by email.
           </p>
-          {diag && (
-            <details style={{ marginTop: 16, fontSize: "0.8rem", textAlign: "left" }}>
-              <summary style={{ cursor: "pointer", fontWeight: 700 }}>Tap for technical details</summary>
-              <pre style={{ whiteSpace: "pre-wrap", wordBreak: "break-all", background: "#f6f6f6", padding: 12, borderRadius: 8, marginTop: 8 }}>
-                {JSON.stringify(diag, null, 2)}
-              </pre>
-            </details>
-          )}
           <a href="/app" className="back-link">← Back to companies</a>
         </section>
       </main>

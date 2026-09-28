@@ -78,7 +78,7 @@ export default function CompanyDashboard() {
         <h2 style={{ fontSize: "1.8rem", margin: "4px 0" }}>{company.name}</h2>
         <p style={{ color: "var(--muted)" }}>
           {tierLabel(tier)} tier • You are {member.role}.{" "}
-          {isManager && <Link href={`plans`} style={{ color: "var(--brand-deep)", fontWeight: 700 }}>Change plan →</Link>}
+          {isManager && <Link href={`/app/${company.id}/plans`} style={{ color: "var(--brand-deep)", fontWeight: 700 }}>Change plan →</Link>}
         </p>
       </div>
 
@@ -112,7 +112,7 @@ export default function CompanyDashboard() {
       <div className="portal-grid" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))" }}>
         {visibleCards.map((t) => {
           const allowed = canUse(tier, t.key);
-          const href = allowed ? `${t.href}` : `plans`;
+          const href = allowed ? `/app/${company.id}/${t.href}` : `/app/${company.id}/plans`;
           return (
             <Link className="portal-card" style={{ minHeight: 150, padding: 22 }} href={href} key={t.key}>
               <span className="card-kicker">{allowed ? t.label : "🔒 " + t.label}</span>

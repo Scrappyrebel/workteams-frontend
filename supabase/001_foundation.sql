@@ -84,6 +84,13 @@ create policy "companies select if member"
     )
   );
 
+-- Lets the creator read the company immediately after creating it
+-- (they are not a member yet at that point, so the member policy
+-- alone would hide the just-created row from the insert's select).
+create policy "companies select if creator"
+  on companies for select
+  using (created_by = auth.uid());
+
 create policy "companies insert as creator"
   on companies for insert
   with check (created_by = auth.uid());
@@ -100,27 +107,28 @@ create policy "companies update if owner/admin"
   );
 
 -- ---------- Section 4: company_members policies ----------
+-- NOTE: policies on company_members must NEVER query company_members
+-- directly (infinite recursion). They use the security-definer helpers
+-- below, which check membership while bypassing RLS.
+
+create or replace function public.is_company_member(cid uuid)
+returns boolean language sql security definer set search_path = public
+as $$ select exists (select 1 from company_members where company_id = cid and user_id = auth.uid()); $$;
+
+create or replace function public.is_company_owner_admin(cid uuid)
+returns boolean language sql security definer set search_path = public
+as $$ select exists (select 1 from company_members where company_id = cid and user_id = auth.uid() and role in ('owner', 'admin')); $$;
+
+grant execute on function public.is_company_member(uuid) to anon, authenticated;
+grant execute on function public.is_company_owner_admin(uuid) to anon, authenticated;
 
 create policy "members select if teammate"
   on company_members for select
-  using (
-    exists (
-      select 1 from company_members m2
-      where m2.company_id = company_members.company_id
-        and m2.user_id = auth.uid()
-    )
-  );
+  using (public.is_company_member(company_members.company_id));
 
 create policy "members insert if owner/admin"
   on company_members for insert
-  with check (
-    exists (
-      select 1 from company_members m2
-      where m2.company_id = company_members.company_id
-        and m2.user_id = auth.uid()
-        and m2.role in ('owner', 'admin')
-    )
-  );
+  with check (public.is_company_owner_admin(company_members.company_id));
 
 -- Lets the company creator insert their own owner row right after
 -- creating the company (they aren't a member yet at that point).
@@ -149,25 +157,11 @@ create policy "members link own invite"
 
 create policy "members update if owner/admin"
   on company_members for update
-  using (
-    exists (
-      select 1 from company_members m2
-      where m2.company_id = company_members.company_id
-        and m2.user_id = auth.uid()
-        and m2.role in ('owner', 'admin')
-    )
-  );
+  using (public.is_company_owner_admin(company_members.company_id));
 
 create policy "members delete if owner/admin"
   on company_members for delete
-  using (
-    exists (
-      select 1 from company_members m2
-      where m2.company_id = company_members.company_id
-        and m2.user_id = auth.uid()
-        and m2.role in ('owner', 'admin')
-    )
-  );
+  using (public.is_company_owner_admin(company_members.company_id));
 
 -- ---------- Section 5: locations policies ----------
 
