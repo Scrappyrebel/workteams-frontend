@@ -12,9 +12,11 @@ export default function TeamPage() {
   const isManager = member && (member.role === "owner" || member.role === "admin");
 
   async function load() {
+    // Employees never see pay rates: select the column only for managers.
+    const cols = isManager ? "*" : "id, user_id, email, display_name, role, created_at";
     const { data } = await supabase()
       .from("company_members")
-      .select("*")
+      .select(cols)
       .eq("company_id", company.id)
       .order("display_name");
     setMembers(data || []);
@@ -23,7 +25,7 @@ export default function TeamPage() {
   useEffect(() => {
     if (!loading && company) load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loading, company]);
+  }, [loading, company, isManager]);
 
   async function addMember(e) {
     e.preventDefault();
@@ -66,6 +68,17 @@ export default function TeamPage() {
     else load();
   }
 
+  async function changeRate(m, rate) {
+    const parsed = rate === "" ? null : parseFloat(rate);
+    if (rate !== "" && (isNaN(parsed) || parsed < 0)) {
+      alert("Enter a valid hourly rate.");
+      return;
+    }
+    const { error } = await supabase().from("company_members").update({ hourly_rate: parsed }).eq("id", m.id);
+    if (error) alert("Could not update rate: " + error.message);
+    else load();
+  }
+
   if (loading || !company) return <p>Loading…</p>;
 
   return (
@@ -100,6 +113,26 @@ export default function TeamPage() {
                 <strong>{m.display_name}</strong>
                 {isManager && <span style={{ color: "var(--muted)", fontSize: "0.88rem" }}> • {m.email}</span>}
                 <div style={{ fontSize: "0.85rem", color: "var(--brand-deep)", fontWeight: 700 }}>{m.role}</div>
+                {isManager && (
+                  <label style={{ fontSize: "0.85rem", color: "var(--muted)", display: "flex", alignItems: "center", gap: 6, marginTop: 6 }}>
+                    $/hr
+                    <input
+                      type="number"
+                      min="0"
+                      step="any"
+                      defaultValue={m.hourly_rate ?? ""}
+                      placeholder="—"
+                      onBlur={(e) => {
+                        if ((e.target.value || "") !== String(m.hourly_rate ?? "")) changeRate(m, e.target.value);
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") e.target.blur();
+                      }}
+                      style={{ ...input, width: 110, padding: "7px 10px" }}
+                    />
+                    <span style={{ fontSize: "0.78rem" }}>for labor-cost estimates</span>
+                  </label>
+                )}
               </div>
               {isManager && m.user_id !== member.user_id && (
                 <div style={{ display: "flex", gap: 6 }}>

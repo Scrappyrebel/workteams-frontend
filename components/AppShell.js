@@ -16,6 +16,11 @@ const NAV = [
   { key: "team", label: "Team", href: (c) => `/app/${c}/team`, minRole: null },
   { key: "inspections", label: "Inspections", href: (c) => `/app/${c}/inspections`, minRole: "manager" },
   { key: "messaging", label: "Messages", href: (c) => `/app/${c}/messages`, minRole: null },
+  { key: "bidding", label: "Bids", href: (c) => `/app/${c}/bids`, minRole: "manager" },
+  { key: "workorders", label: "Work Orders", href: (c) => `/app/${c}/work-orders`, minRole: null },
+  { key: "supplies", label: "Supplies", href: (c) => `/app/${c}/supplies`, minRole: "manager" },
+  { key: "portal", label: "Client Portal", href: (c) => `/app/${c}/client-portal`, minRole: "manager" },
+  { key: "profitability", label: "Profitability", href: (c) => `/app/${c}/profitability`, minRole: "manager" },
   { key: "plans", label: "Plans", href: (c) => `/app/${c}/plans`, minRole: null },
   { key: "connections", label: "Connections", href: (c) => `/app/${c}/connections`, minRole: null },
 ];
