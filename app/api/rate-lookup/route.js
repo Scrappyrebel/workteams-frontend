@@ -2,9 +2,9 @@ import { createClient } from "@supabase/supabase-js";
 
 // POST /api/rate-lookup
 // Body: { companyId, area }
-// Searches the web (Brave Search API) for commercial cleaning rates in `area`
+// Searches the web (You.com Search API) for commercial cleaning rates in `area`
 // and returns published snippets as reference. Owner/admin only.
-// The Brave API key stays server-side; the browser never sees it.
+// The API key stays server-side; the browser never sees it.
 export async function POST(req) {
   let body;
   try {
@@ -50,10 +50,11 @@ export async function POST(req) {
     return Response.json({ ok: false, error: "forbidden" }, { status: 403 });
   }
 
-  const key = process.env.BRAVE_SEARCH_API_KEY;
+  const key = process.env.YOUCOM_API_KEY || process.env.BRAVE_SEARCH_API_KEY;
   if (!key) {
     return Response.json({ ok: false, error: "not_configured" });
   }
+  const useYouCom = !!process.env.YOUCOM_API_KEY;
 
   const queries = [
     `commercial cleaning rates per square foot ${area}`,
@@ -63,6 +64,24 @@ export async function POST(req) {
   try {
     const perQuery = await Promise.all(
       queries.map(async (q) => {
+        if (useYouCom) {
+          const res = await fetch("https://ydc-index.io/v1/search", {
+            method: "POST",
+            headers: {
+              "X-API-Key": key,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ query: q, count: 5 }),
+          });
+          if (!res.ok) throw new Error(`you.com search failed: ${res.status}`);
+          const json = await res.json();
+          return (json?.results?.web || []).map((r) => ({
+            title: r.title || "",
+            url: r.url || "",
+            snippet: r.description || r.snippet || "",
+            query: q,
+          }));
+        }
         const url =
           "https://api.search.brave.com/res/v1/web/search?q=" +
           encodeURIComponent(q) +

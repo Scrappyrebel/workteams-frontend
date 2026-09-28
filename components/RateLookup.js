@@ -124,7 +124,7 @@ export default function RateLookup({ companyId, defaultArea }) {
       {error === "not_configured" && (
         <p style={{ margin: "10px 0 0", fontSize: "0.9rem" }}>
           ⚠️ Rate lookup isn&apos;t set up yet. Add your free Brave Search API key in
-          Vercel env vars as <code>BRAVE_SEARCH_API_KEY</code> to enable it.
+          Vercel env vars as <code>YOUCOM_API_KEY</code> to enable it.
         </p>
       )}
       {error && error !== "not_configured" && (
