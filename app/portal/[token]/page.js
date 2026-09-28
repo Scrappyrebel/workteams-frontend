@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { useParams } from "next/navigation";
 import { supabase } from "../../../lib/supabase";
 
 // Public client portal — no login. Data comes only from the
@@ -9,7 +10,8 @@ import { supabase } from "../../../lib/supabase";
 // whitelisted fields: location info, upcoming visits, recent
 // inspection scores, and open work orders. No financial data,
 // no employee details.
-export default function PortalPage({ params }) {
+export default function PortalPage() {
+  const params = useParams();
   const token = params.token;
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
