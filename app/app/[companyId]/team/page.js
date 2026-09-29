@@ -53,7 +53,7 @@ export default function TeamPage() {
       return;
     }
     if (!confirm(`Remove ${m.display_name} from the team?`)) return;
-    const { error } = await supabase().from("company_members").delete().eq("id", m.id);
+    const { error } = await supabase().from("company_members").delete().eq("id", m.id).eq("company_id", company.id);
     if (error) alert("Could not remove: " + error.message);
     else load();
   }
@@ -63,7 +63,7 @@ export default function TeamPage() {
       alert("A company needs at least one owner.");
       return;
     }
-    const { error } = await supabase().from("company_members").update({ role }).eq("id", m.id);
+    const { error } = await supabase().from("company_members").update({ role }).eq("id", m.id).eq("company_id", company.id);
     if (error) alert("Could not change role: " + error.message);
     else load();
   }
@@ -74,7 +74,7 @@ export default function TeamPage() {
       alert("Enter a valid hourly rate.");
       return;
     }
-    const { error } = await supabase().from("company_members").update({ hourly_rate: parsed }).eq("id", m.id);
+    const { error } = await supabase().from("company_members").update({ hourly_rate: parsed }).eq("id", m.id).eq("company_id", company.id);
     if (error) alert("Could not update rate: " + error.message);
     else load();
   }
