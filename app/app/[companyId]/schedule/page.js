@@ -56,7 +56,7 @@ export default function SchedulePage() {
 
   async function deleteShift(id) {
     if (!confirm("Delete this shift?")) return;
-    const { error } = await supabase().from("shifts").delete().eq("id", id);
+    const { error } = await supabase().from("shifts").delete().eq("id", id).eq("company_id", company.id);
     if (error) alert("Could not delete: " + error.message);
     else load();
   }
