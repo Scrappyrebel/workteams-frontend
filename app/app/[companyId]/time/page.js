@@ -4,30 +4,7 @@ import { useEffect, useState } from "react";
 import { supabase } from "../../../../lib/supabase";
 import { useCompany } from "../../../../lib/company-context";
 import { canUse } from "../../../../lib/tiers";
-
-function getPosition() {
-  return new Promise((resolve) => {
-    if (!navigator.geolocation) return resolve(null);
-    navigator.geolocation.getCurrentPosition(
-      (pos) => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
-      () => resolve(null),
-      { enableHighAccuracy: true, timeout: 10000 }
-    );
-  });
-}
-
-// Distance in meters between two GPS points.
-function haversineMeters(lat1, lon1, lat2, lon2) {
-  const R = 6371000;
-  const toRad = (d) => (d * Math.PI) / 180;
-  const dLat = toRad(lat2 - lat1);
-  const dLon = toRad(lon2 - lon1);
-  const a =
-    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
-    Math.sin(dLon / 2) * Math.sin(dLon / 2);
-  return 2 * R * Math.asin(Math.sqrt(a));
-}
+import { getBestBrowserPosition, haversineMeters } from "../../../../lib/browser-geolocation";
 
 export default function TimeClockPage() {
   const { company, member, loading } = useCompany();
@@ -45,7 +22,7 @@ export default function TimeClockPage() {
     const sb = supabase();
     const { data: openRows } = await sb
       .from("time_entries")
-      .select("*, locations(name)")
+      .select("*, locations(name, lat, lng, geofence_radius_m)")
       .eq("company_id", company.id)
       .eq("member_id", member.id)
       .is("clock_out", null)
@@ -82,11 +59,20 @@ export default function TimeClockPage() {
     const fence = geoEnforced && loc && loc.lat != null && loc.lng != null
       ? { lat: parseFloat(loc.lat), lng: parseFloat(loc.lng), radius: parseInt(loc.geofence_radius_m, 10) || 100, name: loc.name }
       : null;
-    const pos = await getPosition();
-    if (fence) {
-      if (!pos) {
+    let pos = null;
+    try {
+      pos = await getBestBrowserPosition();
+    } catch (gpsError) {
+      if (fence) {
         setBusy(false);
-        alert(`Could not get your location. You must be at ${fence.name} to clock in — allow location access and try again.`);
+        alert(gpsError?.message || `Could not get a reliable location. You must be at ${fence.name} to clock in.`);
+        return;
+      }
+    }
+    if (fence) {
+      if (!pos || pos.accuracy == null || pos.accuracy > 100) {
+        setBusy(false);
+        alert(`A reliable GPS reading (100m accuracy or better) is required to clock in at ${fence.name}.`);
         return;
       }
       const dist = haversineMeters(pos.lat, pos.lng, fence.lat, fence.lng);
@@ -109,8 +95,35 @@ export default function TimeClockPage() {
   }
 
   async function clockOut() {
+    if (!open) return;
     setBusy(true);
-    const pos = await getPosition();
+    const loc = open.locations;
+    const fence = geoEnforced && loc && loc.lat != null && loc.lng != null
+      ? { lat: parseFloat(loc.lat), lng: parseFloat(loc.lng), radius: parseInt(loc.geofence_radius_m, 10) || 100, name: loc.name }
+      : null;
+    let pos = null;
+    try {
+      pos = await getBestBrowserPosition();
+    } catch (gpsError) {
+      if (fence) {
+        setBusy(false);
+        alert(gpsError?.message || `Could not get a reliable location. You must be at ${fence.name} to clock out.`);
+        return;
+      }
+    }
+    if (fence) {
+      if (!pos || pos.accuracy == null || pos.accuracy > 100) {
+        setBusy(false);
+        alert(`A reliable GPS reading (100m accuracy or better) is required to clock out at ${fence.name}.`);
+        return;
+      }
+      const dist = haversineMeters(pos.lat, pos.lng, fence.lat, fence.lng);
+      if (dist > fence.radius) {
+        setBusy(false);
+        alert(`You must be at ${fence.name} to clock out. You're about ${Math.round(dist)}m away (limit: ${fence.radius}m).`);
+        return;
+      }
+    }
     const { error } = await supabase()
       .from("time_entries")
       .update({
@@ -118,7 +131,9 @@ export default function TimeClockPage() {
         clock_out_lat: pos?.lat ?? null,
         clock_out_lng: pos?.lng ?? null,
       })
-      .eq("id", open.id);
+      .eq("id", open.id)
+      .eq("company_id", company.id)
+      .eq("member_id", member.id);
     setBusy(false);
     if (error) alert("Clock-out failed: " + error.message);
     else load();
@@ -153,7 +168,7 @@ export default function TimeClockPage() {
               const fenced = geoEnforced && sel && sel.lat != null && sel.lng != null;
               return fenced ? (
                 <p style={{ color: "var(--brand-deep)", fontSize: "0.88rem", fontWeight: 700, margin: "0 0 10px" }}>
-                  📍 Geofence active — you must be within {parseInt(sel.geofence_radius_m, 10) || 100}m of {sel.name} to clock in.
+                  📍 Geofence active — clock-in and clock-out require a GPS reading with 100m accuracy or better and must be within {parseInt(sel.geofence_radius_m, 10) || 100}m of {sel.name}.
                 </p>
               ) : null;
             })()}
