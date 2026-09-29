@@ -56,7 +56,7 @@ export default function ClientPortalPage() {
 
   async function revoke(id) {
     if (!confirm("Revoke this client link? It will stop working immediately.")) return;
-    const { error } = await supabase().from("portal_tokens").delete().eq("id", id);
+    const { error } = await supabase().from("portal_tokens").delete().eq("id", id).eq("company_id", company.id);
     if (error) alert("Could not revoke: " + error.message);
     else load();
   }
