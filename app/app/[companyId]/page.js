@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import { supabase } from "../../../lib/supabase";
 import { useCompany } from "../../../lib/company-context";
 import { canUse, tierLabel } from "../../../lib/tiers";
-import { localToday } from "../../../lib/dates";
+import { chicagoToday, formatTime12h } from "../../../lib/dates";
 
 const TOOL_CARDS = [
   { key: "scheduling", label: "Schedule", desc: "Shifts by day, who works where.", href: "schedule", roles: "all" },
@@ -35,7 +35,7 @@ export default function CompanyDashboard() {
     if (loading || !company) return;
     (async () => {
       const sb = supabase();
-      const today = localToday();
+      const today = chicagoToday();
       const { data: shifts } = await sb
         .from("shifts")
         .select("id, shift_date, start_time, member_id, company_members(display_name), locations(name)")
@@ -55,9 +55,9 @@ export default function CompanyDashboard() {
         const name = s.company_members?.display_name || "Unassigned";
         const loc = s.locations?.name || "No location";
         if (!clockedIn.has(s.member_id) && minsAgo > 15) {
-          found.push({ kind: "no-clockin", text: `${name} — no clock-in for the ${s.start_time.slice(0, 5)} shift at ${loc}` });
+          found.push({ kind: "no-clockin", text: `${name} — no clock-in for the ${formatTime12h(s.start_time)} shift at ${loc}` });
         } else if (!clockedIn.has(s.member_id) && minsAgo <= 15 && minsAgo > -30) {
-          found.push({ kind: "soon", text: `${name} — shift starting soon (${s.start_time.slice(0, 5)}) at ${loc}` });
+          found.push({ kind: "soon", text: `${name} — shift starting soon (${formatTime12h(s.start_time)}) at ${loc}` });
         }
       }
       setAlerts(found);

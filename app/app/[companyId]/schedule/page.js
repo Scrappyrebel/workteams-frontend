@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { supabase } from "../../../../lib/supabase";
 import { useCompany } from "../../../../lib/company-context";
-import { localToday } from "../../../../lib/dates";
+import { chicagoToday, formatTime12h } from "../../../../lib/dates";
 
 export default function SchedulePage() {
   const { company, member, loading } = useCompany();
@@ -16,7 +16,7 @@ export default function SchedulePage() {
 
   async function load() {
     const sb = supabase();
-    const today = localToday();
+    const today = chicagoToday();
     const { data } = await sb
       .from("shifts")
       .select("*, locations(name), company_members(display_name)")
@@ -96,7 +96,7 @@ export default function SchedulePage() {
         {shifts.length === 0 && <p style={{ color: "var(--muted)" }}>No upcoming shifts yet.</p>}
         {shifts.map((s) => (
           <div key={s.id} className="portal-card" style={{ minHeight: 0, padding: "16px 20px" }}>
-            <span className="card-kicker">{s.shift_date} • {s.start_time.slice(0, 5)}–{s.end_time.slice(0, 5)}</span>
+            <span className="card-kicker">{s.shift_date} • {formatTime12h(s.start_time)}–{formatTime12h(s.end_time)}</span>
             <h3 style={{ margin: "6px 0" }}>{s.locations?.name || "No location"}</h3>
             <p style={{ color: "var(--muted)", marginBottom: 6 }}>{s.company_members?.display_name || "Unassigned"}</p>
             {s.notes && <p style={{ fontSize: "0.9rem" }}>{s.notes}</p>}

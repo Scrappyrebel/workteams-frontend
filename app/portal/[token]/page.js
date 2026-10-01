@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { supabase } from "../../../lib/supabase";
+import { formatTime12h } from "../../../lib/dates";
 
 // Public client portal — no login. Data comes only from the
 // get_portal_data() security-definer function, which returns
@@ -72,7 +73,7 @@ export default function PortalPage() {
                   <div key={i} className="portal-card" style={{ minHeight: 0, padding: "12px 16px" }}>
                     <strong>{s.shift_date}</strong>
                     <div style={{ fontSize: "0.9rem", color: "var(--muted)" }}>
-                      {String(s.start_time).slice(0, 5)} – {String(s.end_time).slice(0, 5)}
+                      {formatTime12h(s.start_time)} – {formatTime12h(s.end_time)}
                     </div>
                   </div>
                 ))}
