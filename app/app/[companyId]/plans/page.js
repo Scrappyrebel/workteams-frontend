@@ -16,11 +16,6 @@ export default function PlansPage() {
     getTierPrices().then(setPrices);
   }, []);
 
-export default function PlansPage() {
-  const { company, member, loading } = useCompany();
-  const [switching, setSwitching] = useState(false);
-  const [current, setCurrent] = useState(null);
-
   const isOwner = member && member.role === "owner";
   const tier = current || company?.tier || "starter";
 
