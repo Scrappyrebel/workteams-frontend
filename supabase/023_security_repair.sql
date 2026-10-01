@@ -101,6 +101,12 @@ begin
   end if;
 
   -- DELETE
+  -- Company deletion cascades member rows; when the parent company row is
+  -- already gone in this transaction, this is a company teardown, not a
+  -- member removal — allow it.
+  if not exists (select 1 from public.companies where id = OLD.company_id) then
+    return OLD;
+  end if;
   if OLD.role = 'owner' then
     select count(*) into v_owner_count
     from public.company_members
