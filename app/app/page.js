@@ -54,7 +54,9 @@ export default function CompaniesPage() {
     const { data: company, error } = await sb
       .from("companies")
       .insert({ name: name.trim(), tier: "starter", created_by: user.id })
-      .select()
+      // Explicit safe columns: Stripe IDs are hidden from browser-role
+      // reads by column-level grants, so SELECT * would be denied.
+      .select("id,name,tier,subscription_status,is_complimentary,created_at")
       .single();
     if (error) {
       alert("Could not create company: " + error.message);

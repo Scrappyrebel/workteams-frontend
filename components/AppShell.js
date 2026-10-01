@@ -3,10 +3,9 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { supabase } from "../lib/supabase";
 import { signOut } from "../lib/session";
 import { canUse, tierLabel } from "../lib/tiers";
-import { PRODUCT_OWNER_EMAIL } from "../lib/product";
+import { isProductOwner } from "../lib/product";
 
 const NAV = [
   { key: "dashboard", label: "Dashboard", href: (c) => `/app/${c}`, minRole: null },
@@ -36,10 +35,10 @@ function roleRank(role) {
 export default function AppShell({ company, member, children }) {
   const pathname = usePathname();
   const router = useRouter();
-  const [email, setEmail] = useState("");
+  const [isOwner, setIsOwner] = useState(false);
 
   useEffect(() => {
-    supabase().auth.getUser().then(({ data }) => setEmail(data?.user?.email || ""));
+    isProductOwner().then(setIsOwner);
   }, []);
 
   const companyId = company?.id;
@@ -49,7 +48,7 @@ export default function AppShell({ company, member, children }) {
 
   const links = NAV.filter((item) => {
     if (item.minRole === "manager" && !isManager) return false;
-    if (item.productOwnerOnly && email !== PRODUCT_OWNER_EMAIL) return false;
+    if (item.productOwnerOnly && !isOwner) return false;
     return true;
   }).map((item) => {
     const allowed = canUse(tier, item.key);

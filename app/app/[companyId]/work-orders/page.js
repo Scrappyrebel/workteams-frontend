@@ -55,14 +55,14 @@ export default function WorkOrdersPage() {
     const ids = [...new Set(rows.map((r) => r.assigned_to).filter(Boolean))];
     let names = {};
     if (ids.length > 0) {
-      const { data: ms } = await sb.from("company_members").select("id, display_name").in("id", ids);
+      const { data: ms } = await sb.from("team_directory").select("id, display_name").in("id", ids);
       for (const m of ms || []) names[m.id] = m.display_name;
     }
     setOrders(rows.map((r) => ({ ...r, assignee_name: names[r.assigned_to] || "Unassigned" })));
     if (isManager) {
       const { data: locs } = await sb.from("locations").select("id, name").eq("company_id", company.id).order("name");
       setLocations(locs || []);
-      const { data: ms } = await sb.from("company_members").select("id, display_name").eq("company_id", company.id).order("display_name");
+      const { data: ms } = await sb.from("team_directory").select("id, display_name").eq("company_id", company.id).order("display_name");
       setMembers(ms || []);
     }
   }

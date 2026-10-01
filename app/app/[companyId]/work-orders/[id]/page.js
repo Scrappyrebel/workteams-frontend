@@ -51,7 +51,7 @@ export default function WorkOrderDetailPage() {
     }
     setOrder(data);
     if (isManager) {
-      const { data: ms } = await sb.from("company_members").select("id, display_name").eq("company_id", company.id).order("display_name");
+      const { data: ms } = await sb.from("team_directory").select("id, display_name").eq("company_id", company.id).order("display_name");
       setMembers(ms || []);
     }
   }

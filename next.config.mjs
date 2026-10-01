@@ -6,9 +6,10 @@
 // - connect-src allows Supabase, Stripe, and the geocoding lookup used by
 //   the Locations page. img-src allows Supabase storage (signed photo URLs)
 //   and data: thumbnails.
+// - No 'unsafe-eval': the app does not need runtime code compilation.
 const csp = [
   "default-src 'self'",
-  "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://js.stripe.com",
+  "script-src 'self' 'unsafe-inline' https://js.stripe.com",
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: https://*.supabase.co",
   "connect-src 'self' https://*.supabase.co https://api.stripe.com https://js.stripe.com https://nominatim.openstreetmap.org",

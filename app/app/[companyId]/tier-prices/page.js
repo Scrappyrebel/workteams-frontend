@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { getUser } from "../../../../lib/session";
-import { PRODUCT_OWNER_EMAIL } from "../../../../lib/product";
+import { isProductOwner } from "../../../../lib/product";
 import TierPricesEditor from "../../../../components/TierPricesEditor";
 
 // In-app "Tier Prices" tab. Product owner only — everyone else is sent back
@@ -17,7 +17,7 @@ export default function TierPricesPage() {
   useEffect(() => {
     (async () => {
       const u = await getUser();
-      setAllowed(!!u && u.email === PRODUCT_OWNER_EMAIL);
+      setAllowed(!!u && (await isProductOwner()));
     })();
   }, []);
 

@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { getUser } from "../../../lib/session";
-import { PRODUCT_OWNER_EMAIL } from "../../../lib/product";
+import { isProductOwner } from "../../../lib/product";
 import TierPricesEditor from "../../../components/TierPricesEditor";
 
 // Product-owner-only page for editing tier prices.
@@ -15,7 +15,7 @@ export default function TierPricesAdminPage() {
   useEffect(() => {
     (async () => {
       const u = await getUser();
-      if (!u || u.email !== PRODUCT_OWNER_EMAIL) {
+      if (!u || !(await isProductOwner())) {
         router.replace("/login");
         return;
       }

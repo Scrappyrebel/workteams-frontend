@@ -20,7 +20,7 @@ export default function PlansPage() {
     if (!company?.id) return;
     supabase()
       .from("companies")
-      .select("tier,subscription_status,stripe_subscription_id")
+      .select("tier,subscription_status")
       .eq("id", company.id)
       .single()
       .then(({ data }) => setBilling(data));
@@ -28,7 +28,9 @@ export default function PlansPage() {
 
   const isOwner = member && member.role === "owner";
   const tier = billing?.tier || company?.tier || "starter";
-  const hasSubscription = !!billing?.stripe_subscription_id;
+  // A live billing relationship exists when Stripe reports one; the raw
+  // Stripe subscription ID is never sent to the browser.
+  const hasSubscription = !!billing?.subscription_status && billing.subscription_status !== "none";
   const status = billing?.subscription_status || "none";
 
   async function api(path, body) {

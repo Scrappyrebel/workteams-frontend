@@ -27,11 +27,19 @@ export default function PayrollPage() {
 
   async function load() {
     const sb = supabase();
-    const { data: members } = await sb
-      .from("company_members")
-      .select("id, display_name, email")
-      .eq("company_id", company.id)
-      .order("display_name");
+    // Managers need emails for the payroll report; everyone else only ever
+    // sees their own row, so the directory (no emails) is enough.
+    const { data: members } = isManager
+      ? await sb
+          .from("company_members")
+          .select("id, display_name, email")
+          .eq("company_id", company.id)
+          .order("display_name")
+      : await sb
+          .from("team_directory")
+          .select("id, display_name")
+          .eq("company_id", company.id)
+          .order("display_name");
     // Employees may only read their own time entries (enforced by RLS too);
     // filter the query as well so no one else's rows reach the browser.
     let entryQ = sb
@@ -53,7 +61,13 @@ export default function PayrollPage() {
       t.shifts += 1;
     }
     let list = Object.values(totals);
-    if (!isManager) list = list.filter((r) => r.member.id === member.id);
+    if (!isManager) {
+      // Non-managers see only their own row; attach their own email (from
+      // their own member record) so the CSV export still works.
+      list = list
+        .filter((r) => r.member.id === member.id)
+        .map((r) => ({ ...r, member: { ...r.member, email: member.email } }));
+    }
     setRows(list);
   }
 

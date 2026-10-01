@@ -12,11 +12,20 @@ export default function TeamPage() {
   const isManager = member && (member.role === "owner" || member.role === "admin");
 
   async function load() {
-    const { data } = await supabase()
-      .from("company_members")
-      .select("id, user_id, email, display_name, role, created_at")
-      .eq("company_id", company.id)
-      .order("display_name");
+    // Managers see the full roster (email/user_id needed for invites and
+    // role changes). Everyone else sees the directory: id, display name,
+    // role — no emails, no user ids.
+    const { data } = isManager
+      ? await supabase()
+          .from("company_members")
+          .select("id, user_id, email, display_name, role, created_at")
+          .eq("company_id", company.id)
+          .order("display_name")
+      : await supabase()
+          .from("team_directory")
+          .select("id, display_name, role")
+          .eq("company_id", company.id)
+          .order("display_name");
     let rows = data || [];
     if (isManager) {
       // Pay rates live in member_pay, readable only by owners/admins.

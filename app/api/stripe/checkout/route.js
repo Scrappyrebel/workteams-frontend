@@ -2,8 +2,8 @@ import { NextResponse } from "next/server";
 import Stripe from "stripe";
 import { createClient } from "@supabase/supabase-js";
 import { checkRateLimit, clientIp } from "../../../../lib/rate-limit";
+import { getAppUrl } from "../../../../lib/app-url";
 
-const APP_URL = "https://app.lillybsjanitorial.com";
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -115,6 +115,9 @@ export async function POST(req) {
       return NextResponse.json({ url: reusable.url });
     }
 
+    // Redirects are built only from the validated WORKTEAMS_APP_URL origin
+    // plus fixed in-app paths — the client can never influence the domain.
+    const APP_URL = getAppUrl();
     const session = await stripe.checkout.sessions.create(
       {
         mode: "subscription",

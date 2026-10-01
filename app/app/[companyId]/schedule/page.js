@@ -19,16 +19,31 @@ export default function SchedulePage() {
     const today = chicagoToday();
     const { data } = await sb
       .from("shifts")
-      .select("*, locations(name), company_members(display_name)")
+      .select("*, locations(name)")
       .eq("company_id", company.id)
       .gte("shift_date", today)
       .order("shift_date", { ascending: true })
       .order("start_time", { ascending: true });
-    setShifts(data || []);
+    const shiftRows = data || [];
+    // Assignee names come from the team directory (id + display name only),
+    // which every member may read — never from the full member table.
+    const memberIds = [...new Set(shiftRows.map((s) => s.member_id).filter(Boolean))];
+    let nameById = {};
+    if (memberIds.length > 0) {
+      const { data: dir } = await sb.from("team_directory").select("id, display_name").in("id", memberIds);
+      for (const d of dir || []) nameById[d.id] = d.display_name;
+    }
+    setShifts(shiftRows.map((s) => ({ ...s, assignee_name: s.member_id ? nameById[s.member_id] || null : null })));
     const { data: locs } = await sb.from("locations").select("id, name").eq("company_id", company.id).order("name");
     setLocations(locs || []);
-    const { data: mems } = await sb.from("company_members").select("id, display_name, email").eq("company_id", company.id).order("display_name");
-    setMembers(mems || []);
+    if (isManager) {
+      // Emails stay manager-only: the assign dropdown needs them, the
+      // roster view does not.
+      const { data: mems } = await sb.from("company_members").select("id, display_name, email").eq("company_id", company.id).order("display_name");
+      setMembers(mems || []);
+    } else {
+      setMembers([]);
+    }
   }
 
   useEffect(() => {
@@ -98,7 +113,7 @@ export default function SchedulePage() {
           <div key={s.id} className="portal-card" style={{ minHeight: 0, padding: "16px 20px" }}>
             <span className="card-kicker">{s.shift_date} • {formatTime12h(s.start_time)}–{formatTime12h(s.end_time)}</span>
             <h3 style={{ margin: "6px 0" }}>{s.locations?.name || "No location"}</h3>
-            <p style={{ color: "var(--muted)", marginBottom: 6 }}>{s.company_members?.display_name || "Unassigned"}</p>
+            <p style={{ color: "var(--muted)", marginBottom: 6 }}>{s.assignee_name || "Unassigned"}</p>
             {s.notes && <p style={{ fontSize: "0.9rem" }}>{s.notes}</p>}
             {isManager && (
               <button onClick={() => deleteShift(s.id)} style={dangerButton}>Delete</button>

@@ -27,7 +27,7 @@ export default function MessagesPage() {
     const ids = [...new Set(rows.map((r) => r.sender_id).filter(Boolean))];
     let names = {};
     if (ids.length > 0) {
-      const { data: members } = await sb.from("company_members").select("id, display_name").in("id", ids);
+      const { data: members } = await sb.from("team_directory").select("id, display_name").in("id", ids);
       for (const m of members || []) names[m.id] = m.display_name;
     }
     setMessages(rows.map((r) => ({ ...r, sender_name: names[r.sender_id] || "Unknown" })));

@@ -2,8 +2,10 @@ import { NextResponse } from "next/server";
 import Stripe from "stripe";
 import { createClient } from "@supabase/supabase-js";
 import { checkRateLimit, clientIp } from "../../../../lib/rate-limit";
+import { getAppUrl } from "../../../../lib/app-url";
 
-const APP_URL = "https://app.lillybsjanitorial.com";
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
 function authedClient(token) {
   return createClient(
@@ -40,7 +42,10 @@ export async function POST(req) {
       return NextResponse.json({ error: "Only the owner can manage billing" }, { status: 403 });
     }
 
-    const { data: company } = await sb
+    // Stripe IDs are hidden from browser-role reads (column-level grants),
+    // so this read uses the service role. The caller was already verified
+    // as an owner of this company above via their own member row.
+    const { data: company } = await createClient(SUPABASE_URL, SERVICE_KEY)
       .from("companies")
       .select("stripe_customer_id")
       .eq("id", companyId)
@@ -49,6 +54,7 @@ export async function POST(req) {
       return NextResponse.json({ error: "No billing account yet" }, { status: 400 });
     }
 
+    const APP_URL = getAppUrl();
     const session = await stripe.billingPortal.sessions.create({
       customer: company.stripe_customer_id,
       return_url: `${APP_URL}/app/${companyId}/plans`,

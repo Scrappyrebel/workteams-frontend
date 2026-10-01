@@ -38,7 +38,7 @@ export default function InspectionDetailPage() {
     setInspection(insp);
     let inspectorName = "Unknown inspector";
     if (insp.inspector_id) {
-      const { data: m } = await sb.from("company_members").select("display_name").eq("id", insp.inspector_id).single();
+      const { data: m } = await sb.from("team_directory").select("display_name").eq("id", insp.inspector_id).single();
       if (m) inspectorName = m.display_name;
     }
     setInspection({ ...insp, inspector_name: inspectorName });
