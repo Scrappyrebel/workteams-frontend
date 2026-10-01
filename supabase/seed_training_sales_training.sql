@@ -224,7 +224,8 @@ select (select cid from c), (select sid from st where step_number = 4), 1, 'guid
 CHECK YOURSELF — a strong answer looks like this:
 ''SCOPE OF WORK — 2x per week (Tue/Thu) after 5 PM. ALL AREAS: Empty all trash cans, replace liners. Dust desks, sills, and ledges. Spot-clean interior glass. Vacuum all carpeted areas; dust-mop and damp-mop hard floors. RESTROOM: Clean and disinfect toilets, sinks, and counter. Clean mirror. Refill soap, paper towels, toilet paper. Mop floor with disinfectant. Empty trash. BREAK ROOM: Wipe counters and sink, clean microwave, mop floor, empty trash. NOT INCLUDED: carpet shampooing, exterior windows, wall washing, consumable restocking (quoted separately).''
 
-Did yours name the days? List restroom fixtures work specifically? Include NOT INCLUDED? If yes to all three, you wrote a pro-level scope.'
+Did yours name the days? List restroom fixtures work specifically? Include NOT INCLUDED? If yes to all three, you wrote a pro-level scope.',
+null
 union all select (select cid from c), (select sid from st where step_number = 4), 2, 'guided_practice', 'Practice 2: price the same job three ways', 'EXERCISE. Use the same 2,500 sq ft insurance office (2x/week). Price it using all three pricing modes, then cross-check. Do the math before reading the answers.
 
 PER SQFT: A standard office rate is $0.10 to $0.15 per sq ft. Pick $0.12. Math: 2,500 x 0.12 = $300/visit.
