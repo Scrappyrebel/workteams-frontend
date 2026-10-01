@@ -151,7 +151,7 @@ grant select, insert, update on public.training_step_progress to authenticated;
 grant select, insert, update on public.training_exam_attempts to authenticated;
 grant select, insert on public.training_evidence to authenticated;
 grant select, insert, update on public.training_approvals to authenticated;
-grant select on public.training_certifications to authenticated;
+grant select, insert on public.training_certifications to authenticated;
 grant all on public.training_courses to service_role;
 grant all on public.training_steps to service_role;
 grant all on public.training_lessons to service_role;
@@ -208,6 +208,7 @@ create policy "members own enrollments"
       select 1 from public.company_members m
       where m.id = training_enrollments.member_id and m.user_id = auth.uid()
     )
+    or public.is_company_owner_admin(training_enrollments.company_id)
   );
 
 create policy "progress via enrollment"
@@ -225,7 +226,7 @@ create policy "progress via enrollment"
       select 1 from public.training_enrollments e
       join public.company_members m on m.id = e.member_id
       where e.id = training_step_progress.enrollment_id
-        and m.user_id = auth.uid()
+        and (m.user_id = auth.uid() or public.is_company_owner_admin(e.company_id))
     )
   );
 
@@ -293,6 +294,11 @@ create policy "approvals managed by managers"
 create policy "certifications readable in company"
   on public.training_certifications for select
   using (public.is_company_member(training_certifications.company_id));
+
+-- Managers issue certifications when they approve a trainee.
+create policy "managers can issue certifications"
+  on public.training_certifications for insert
+  with check (public.is_company_owner_admin(company_id));
 
 -- Storage: trainees upload evidence, managers read.
 create policy "training evidence upload"
