@@ -12,10 +12,6 @@ export default function CompanyLayout({ children }) {
   const params = useParams();
   const router = useRouter();
   const pathname = usePathname();
-
-export default function CompanyLayout({ children }) {
-  const params = useParams();
-  const router = useRouter();
   const companyId = params.companyId;
   const [state, setState] = useState({ company: null, member: null, loading: true });
   const [denied, setDenied] = useState(false);
