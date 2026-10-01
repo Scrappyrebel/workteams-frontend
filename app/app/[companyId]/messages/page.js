@@ -13,7 +13,7 @@ export default function MessagesPage() {
   const [sending, setSending] = useState(false);
   const bottomRef = useRef(null);
 
-  const allowed = canUse(company?.tier, "messaging");
+  const allowed = canUse(company?.effectiveTier || company?.tier, "messaging");
 
   async function load(scroll) {
     const sb = supabase();

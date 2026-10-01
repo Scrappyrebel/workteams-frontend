@@ -43,7 +43,7 @@ export default function AppShell({ company, member, children }) {
   }, []);
 
   const companyId = company?.id;
-  const tier = company?.tier || "starter";
+  const tier = company?.effectiveTier || company?.tier || "starter";
   const role = member?.role || "employee";
   const isManager = roleRank(role) >= 1;
 

@@ -6,6 +6,7 @@ import { useParams, useRouter } from "next/navigation";
 import { supabase } from "../../../../../lib/supabase";
 import { useCompany } from "../../../../../lib/company-context";
 import { canUse } from "../../../../../lib/tiers";
+import { storagePathFromUrl, validatePhotoFile, withSignedUrls } from "../../../../../lib/inspection-photos";
 
 const SCORE_LABELS = { 1: "1 — Poor", 2: "2 — Fair", 3: "3 — Good", 4: "4 — Very good", 5: "5 — Excellent" };
 
@@ -20,7 +21,7 @@ export default function InspectionDetailPage() {
 
   const inspectionId = params.id;
   const isManager = member && (member.role === "owner" || member.role === "admin");
-  const allowed = canUse(company?.tier, "inspections");
+  const allowed = canUse(company?.effectiveTier || company?.tier, "inspections");
 
   async function load() {
     const sb = supabase();
@@ -42,7 +43,7 @@ export default function InspectionDetailPage() {
     }
     setInspection({ ...insp, inspector_name: inspectorName });
     const { data: ph } = await sb.from("inspection_photos").select("*").eq("inspection_id", inspectionId).order("created_at");
-    setPhotos(ph || []);
+    setPhotos(await withSignedUrls(sb, ph || []));
   }
 
   useEffect(() => {
@@ -56,14 +57,18 @@ export default function InspectionDetailPage() {
     setUploading(true);
     const sb = supabase();
     for (const file of files) {
+      const prob = validatePhotoFile(file);
+      if (prob) {
+        alert(prob);
+        continue;
+      }
       const path = `${company.id}/${inspectionId}/${Date.now()}_${file.name.replace(/[^a-zA-Z0-9._-]/g, "_")}`;
       const { error: upErr } = await sb.storage.from("inspection-photos").upload(path, file);
       if (upErr) {
         alert("Photo upload failed: " + upErr.message);
         continue;
       }
-      const { data: urlData } = sb.storage.from("inspection-photos").getPublicUrl(path);
-      await sb.from("inspection_photos").insert({ inspection_id: inspectionId, photo_url: urlData.publicUrl });
+      await sb.from("inspection_photos").insert({ inspection_id: inspectionId, photo_url: path });
     }
     setUploading(false);
     setFiles([]);
@@ -73,11 +78,8 @@ export default function InspectionDetailPage() {
   async function removePhoto(id, url) {
     if (!confirm("Delete this photo?")) return;
     const sb = supabase();
-    // Derive storage path from the public URL.
-    const marker = "/inspection-photos/";
-    const idx = url.indexOf(marker);
-    if (idx >= 0) {
-      const path = url.slice(idx + marker.length);
+    const path = storagePathFromUrl(url);
+    if (path) {
       await sb.storage.from("inspection-photos").remove([path]);
     }
     await sb.from("inspection_photos").delete().eq("id", id);
@@ -133,9 +135,9 @@ export default function InspectionDetailPage() {
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))", gap: 10, marginBottom: 18 }}>
         {photos.map((p) => (
           <div key={p.id} style={{ position: "relative" }}>
-            <a href={p.photo_url} target="_blank" rel="noreferrer">
+            <a href={p.signed_url || undefined} target="_blank" rel="noreferrer">
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={p.photo_url} alt={p.caption || "Inspection photo"} style={{ width: "100%", borderRadius: 12, display: "block" }} />
+              <img src={p.signed_url || undefined} alt={p.caption || "Inspection photo"} style={{ width: "100%", borderRadius: 12, display: "block" }} />
             </a>
             {isManager && (
               <button

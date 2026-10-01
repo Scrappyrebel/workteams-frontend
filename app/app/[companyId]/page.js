@@ -36,11 +36,15 @@ export default function CompanyDashboard() {
     (async () => {
       const sb = supabase();
       const today = chicagoToday();
-      const { data: shifts } = await sb
+      // Employees only see alerts about their own shifts; managers see all.
+      const mineOnly = !(member && (member.role === "owner" || member.role === "admin"));
+      let shiftQ = sb
         .from("shifts")
         .select("id, shift_date, start_time, member_id, company_members(display_name), locations(name)")
         .eq("company_id", company.id)
         .eq("shift_date", today);
+      if (mineOnly) shiftQ = shiftQ.eq("member_id", member.id);
+      const { data: shifts } = await shiftQ;
       const { data: entries } = await sb
         .from("time_entries")
         .select("member_id, clock_in")

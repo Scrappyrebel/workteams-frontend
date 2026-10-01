@@ -32,13 +32,17 @@ export default function PayrollPage() {
       .select("id, display_name, email")
       .eq("company_id", company.id)
       .order("display_name");
-    const { data: entries } = await sb
+    // Employees may only read their own time entries (enforced by RLS too);
+    // filter the query as well so no one else's rows reach the browser.
+    let entryQ = sb
       .from("time_entries")
       .select("member_id, clock_in, clock_out")
       .eq("company_id", company.id)
       .gte("clock_in", range.start + "T00:00:00")
       .lte("clock_in", range.end + "T23:59:59")
       .not("clock_out", "is", null);
+    if (!isManager) entryQ = entryQ.eq("member_id", member.id);
+    const { data: entries } = await entryQ;
 
     const totals = {};
     for (const m of members || []) totals[m.id] = { member: m, hours: 0, shifts: 0 };

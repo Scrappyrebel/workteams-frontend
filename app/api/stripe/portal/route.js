@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import Stripe from "stripe";
 import { createClient } from "@supabase/supabase-js";
+import { checkRateLimit, clientIp } from "../../../../lib/rate-limit";
 
 const APP_URL = "https://app.lillybsjanitorial.com";
 
@@ -15,6 +16,10 @@ function authedClient(token) {
 // POST { companyId } -> { url }  (owner only) — manage/cancel/change plan
 export async function POST(req) {
   try {
+    const rl = checkRateLimit(`stripe-portal:${clientIp(req)}`, { limit: 10, windowMs: 60_000 });
+    if (!rl.ok) {
+      return NextResponse.json({ error: "Too many requests. Try again shortly." }, { status: 429 });
+    }
     const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
     const { companyId } = await req.json();
     if (!companyId) return NextResponse.json({ error: "Bad request" }, { status: 400 });

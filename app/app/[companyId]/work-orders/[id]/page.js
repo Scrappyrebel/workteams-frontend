@@ -30,7 +30,7 @@ export default function WorkOrderDetailPage() {
   const [members, setMembers] = useState([]);
 
   const isManager = member && (member.role === "owner" || member.role === "admin");
-  const allowed = canUse(company?.tier, "workorders");
+  const allowed = canUse(company?.effectiveTier || company?.tier, "workorders");
 
   async function load() {
     const sb = supabase();

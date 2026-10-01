@@ -59,7 +59,7 @@ export default function BidsPage() {
   const [raSaving, setRaSaving] = useState(false);
 
   const isManager = member && (member.role === "owner" || member.role === "admin");
-  const allowed = canUse(company?.tier, "bidding");
+  const allowed = canUse(company?.effectiveTier || company?.tier, "bidding");
 
   async function load() {
     const sb = supabase();

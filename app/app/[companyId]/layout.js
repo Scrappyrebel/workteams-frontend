@@ -7,6 +7,7 @@ import { supabase } from "../../../lib/supabase";
 import { getUser, linkMemberOnSignIn } from "../../../lib/session";
 import { CompanyContext } from "../../../lib/company-context";
 import { saveLastPath, clearLastPath } from "../../../lib/last-path";
+import { entitledTier } from "../../../lib/tiers";
 
 export default function CompanyLayout({ children }) {
   const params = useParams();
@@ -43,6 +44,10 @@ export default function CompanyLayout({ children }) {
         setState({ company: null, member: null, loading: false });
         return;
       }
+      // Feature gating uses the paid entitlement (tier + live subscription
+      // status), not the raw tier label. company.tier keeps the raw value
+      // for the Plans/billing screens.
+      company.effectiveTier = entitledTier(company);
       setState({ company, member, loading: false });
     })();
   }, [companyId, router]);

@@ -292,7 +292,11 @@ function SiteFooter() {
           <span>WorkTeams</span>
         </span>
         <p>Built by a cleaner, for cleaners. © 2026 WorkTeams.</p>
-        <Link href="/login">Sign in</Link>
+        <span style={{ display: "flex", gap: 14 }}>
+          <Link href="/privacy">Privacy</Link>
+          <Link href="/terms">Terms</Link>
+          <Link href="/login">Sign in</Link>
+        </span>
       </div>
     </footer>
   );

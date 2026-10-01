@@ -6,6 +6,7 @@ import { supabase } from "../../../../lib/supabase";
 import { useCompany } from "../../../../lib/company-context";
 import { canUse } from "../../../../lib/tiers";
 import { chicagoToday } from "../../../../lib/dates";
+import { validatePhotoFile } from "../../../../lib/inspection-photos";
 
 const emptyForm = { location_id: "", inspection_date: chicagoToday(), score: "5", notes: "" };
 const SCORE_LABELS = { 1: "1 — Poor", 2: "2 — Fair", 3: "3 — Good", 4: "4 — Very good", 5: "5 — Excellent" };
@@ -19,7 +20,7 @@ export default function InspectionsPage() {
   const [saving, setSaving] = useState(false);
 
   const isManager = member && (member.role === "owner" || member.role === "admin");
-  const allowed = canUse(company?.tier, "inspections");
+  const allowed = canUse(company?.effectiveTier || company?.tier, "inspections");
 
   async function load() {
     const sb = supabase();
@@ -73,16 +74,21 @@ export default function InspectionsPage() {
     }
     // Upload photos, if any.
     for (const file of photos) {
+      const prob = validatePhotoFile(file);
+      if (prob) {
+        alert(prob);
+        continue;
+      }
       const path = `${company.id}/${insp.id}/${Date.now()}_${file.name.replace(/[^a-zA-Z0-9._-]/g, "_")}`;
       const { error: upErr } = await sb.storage.from("inspection-photos").upload(path, file);
       if (upErr) {
         alert("Photo upload failed: " + upErr.message);
         continue;
       }
-      const { data: urlData } = sb.storage.from("inspection-photos").getPublicUrl(path);
+      // Store the storage path; display uses short-lived signed URLs.
       await sb.from("inspection_photos").insert({
         inspection_id: insp.id,
-        photo_url: urlData.publicUrl,
+        photo_url: path,
       });
     }
     setSaving(false);

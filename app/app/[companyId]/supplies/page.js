@@ -24,7 +24,7 @@ export default function SuppliesPage() {
   const [editing, setEditing] = useState(null);
 
   const isManager = member && (member.role === "owner" || member.role === "admin");
-  const allowed = canUse(company?.tier, "supplies");
+  const allowed = canUse(company?.effectiveTier || company?.tier, "supplies");
 
   async function load() {
     const { data } = await supabase()

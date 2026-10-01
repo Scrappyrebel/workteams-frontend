@@ -143,17 +143,11 @@ create policy "members insert own owner row"
     )
   );
 
--- Lets a user link their own auth account to a pending invite row
--- (user_id null) whose email matches their sign-in email.
-create policy "members link own invite"
-  on company_members for update
-  using (
-    company_members.user_id is null
-    and company_members.email = (auth.jwt() ->> 'email')
-  )
-  with check (
-    company_members.user_id = auth.uid()
-  );
+-- REMOVED 2026-10-01 (security repair #1): the "members link own invite"
+-- policy only checked the NEW user_id, so a pending invitee could rewrite
+-- role/company/email/pay on their own row. Invite claiming now happens
+-- exclusively through the claim_invite() RPC (009_claim_invite.sql), which
+-- changes user_id and nothing else. See 023_security_repair.sql Block A.
 
 create policy "members update if owner/admin"
   on company_members for update

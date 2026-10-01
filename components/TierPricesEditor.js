@@ -6,7 +6,9 @@ import { TIERS } from "../lib/tiers";
 import { getTierPrices } from "../lib/product";
 
 // Shared tier-price editor form. Used by /admin/tiers and the in-app
-// "Tier Prices" tab. Only the product owner can save (enforced by RLS).
+// "Tier Prices" tab. Saves go through /api/admin/tier-prices, which checks
+// the product-owner email server-side and writes with the service role —
+// clients have no direct write access to product_tiers.
 export default function TierPricesEditor() {
   const [prices, setPrices] = useState(null);
   const [saving, setSaving] = useState(false);
@@ -19,14 +21,21 @@ export default function TierPricesEditor() {
   async function save(e) {
     e.preventDefault();
     setSaving(true);
-    const sb = supabase();
     let failed = null;
-    for (const key of Object.keys(TIERS)) {
-      const { error } = await sb
-        .from("product_tiers")
-        .update({ price: Number(prices[key]), updated_at: new Date().toISOString() })
-        .eq("tier", key);
-      if (error) failed = error.message;
+    try {
+      const { data: { session } } = await supabase().auth.getSession();
+      const res = await fetch("/api/admin/tier-prices", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session?.access_token || ""}`,
+        },
+        body: JSON.stringify({ prices }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) failed = json.error || "Could not save";
+    } catch (err) {
+      failed = err.message;
     }
     setSaving(false);
     if (failed) alert("Could not save: " + failed);

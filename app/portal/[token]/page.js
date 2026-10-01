@@ -3,7 +3,6 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
-import { supabase } from "../../../lib/supabase";
 import { formatTime12h } from "../../../lib/dates";
 
 // Public client portal — no login. Data comes only from the
@@ -19,13 +18,20 @@ export default function PortalPage() {
 
   useEffect(() => {
     (async () => {
-      const { data: result, error } = await supabase().rpc("get_portal_data", { tok: token });
-      setLoading(false);
-      if (error) {
+      try {
+        const res = await fetch("/api/portal/lookup", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ token }),
+        });
+        const result = await res.json();
+        setData(result && typeof result.ok === "boolean"
+          ? result
+          : { ok: false, error: "Could not load this page. Please try again later." });
+      } catch {
         setData({ ok: false, error: "Could not load this page. Please try again later." });
-      } else {
-        setData(result);
       }
+      setLoading(false);
     })();
   }, [token]);
 

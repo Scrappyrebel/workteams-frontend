@@ -12,14 +12,23 @@ export default function TeamPage() {
   const isManager = member && (member.role === "owner" || member.role === "admin");
 
   async function load() {
-    // Employees never see pay rates: select the column only for managers.
-    const cols = isManager ? "*" : "id, user_id, email, display_name, role, created_at";
     const { data } = await supabase()
       .from("company_members")
-      .select(cols)
+      .select("id, user_id, email, display_name, role, created_at")
       .eq("company_id", company.id)
       .order("display_name");
-    setMembers(data || []);
+    let rows = data || [];
+    if (isManager) {
+      // Pay rates live in member_pay, readable only by owners/admins.
+      const { data: pay } = await supabase()
+        .from("member_pay")
+        .select("member_id, hourly_rate")
+        .eq("company_id", company.id);
+      const payByMember = {};
+      for (const p of pay || []) payByMember[p.member_id] = p.hourly_rate;
+      rows = rows.map((m) => ({ ...m, hourly_rate: payByMember[m.id] ?? null }));
+    }
+    setMembers(rows);
   }
 
   useEffect(() => {
@@ -74,7 +83,13 @@ export default function TeamPage() {
       alert("Enter a valid hourly rate.");
       return;
     }
-    const { error } = await supabase().from("company_members").update({ hourly_rate: parsed }).eq("id", m.id);
+    // Pay rates are stored in member_pay (owner/admin-only table).
+    const { error } = await supabase()
+      .from("member_pay")
+      .upsert(
+        { member_id: m.id, company_id: company.id, hourly_rate: parsed },
+        { onConflict: "member_id" }
+      );
     if (error) alert("Could not update rate: " + error.message);
     else load();
   }
@@ -95,7 +110,7 @@ export default function TeamPage() {
             <select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })} style={input}>
               <option value="employee">Employee</option>
               <option value="admin">Admin</option>
-              <option value="owner">Owner</option>
+              {member.role === "owner" && <option value="owner">Owner</option>}
             </select>
             <button type="submit" style={button}>Add member</button>
           </form>
@@ -139,7 +154,7 @@ export default function TeamPage() {
                   <select value={m.role} onChange={(e) => changeRole(m, e.target.value)} style={{ ...input, width: "auto" }}>
                     <option value="employee">Employee</option>
                     <option value="admin">Admin</option>
-                    <option value="owner">Owner</option>
+                    {member.role === "owner" && <option value="owner">Owner</option>}
                   </select>
                   <button onClick={() => removeMember(m)} style={dangerButton}>Remove</button>
                 </div>

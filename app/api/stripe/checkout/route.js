@@ -1,20 +1,31 @@
 import { NextResponse } from "next/server";
 import Stripe from "stripe";
 import { createClient } from "@supabase/supabase-js";
+import { checkRateLimit, clientIp } from "../../../../lib/rate-limit";
 
 const APP_URL = "https://app.lillybsjanitorial.com";
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+function admin() {
+  return createClient(SUPABASE_URL, SERVICE_KEY);
+}
 
 function authedClient(token) {
-  return createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
-    { global: { headers: { Authorization: `Bearer ${token}` } } }
-  );
+  return createClient(SUPABASE_URL, ANON_KEY, {
+    global: { headers: { Authorization: `Bearer ${token}` } },
+  });
 }
 
 // POST { companyId, tier } -> { url }  (owner only)
 export async function POST(req) {
   try {
+    const rl = checkRateLimit(`stripe-checkout:${clientIp(req)}`, { limit: 10, windowMs: 60_000 });
+    if (!rl.ok) {
+      return NextResponse.json({ error: "Too many requests. Try again shortly." }, { status: 429 });
+    }
+
     const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
     const { companyId, tier } = await req.json();
     if (!companyId || !["starter", "plus", "pro"].includes(tier)) {
@@ -37,7 +48,35 @@ export async function POST(req) {
       return NextResponse.json({ error: "Only the owner can subscribe" }, { status: 403 });
     }
 
-    const { data: priceRow } = await sb
+    // Billing writes go through the service role (a DB trigger blocks
+    // client writes to billing columns).
+    const db = admin();
+
+    const { data: company, error: companyErr } = await db
+      .from("companies")
+      .select("id,name,stripe_customer_id,stripe_subscription_id,subscription_status")
+      .eq("id", companyId)
+      .single();
+    if (companyErr || !company) return NextResponse.json({ error: "Company not found" }, { status: 404 });
+
+    // Duplicate-subscription guard: an active/trialing subscription means
+    // the customer should use the billing portal, not start a second one.
+    if (company.stripe_subscription_id) {
+      try {
+        const existing = await stripe.subscriptions.retrieve(company.stripe_subscription_id);
+        if (existing.status === "active" || existing.status === "trialing") {
+          return NextResponse.json(
+            { error: "This company already has an active subscription. Use “Manage billing” to change plans.", portal: true },
+            { status: 409 }
+          );
+        }
+      } catch (e) {
+        // If Stripe can't find it, treat as stale and continue.
+        console.error("checkout: existing subscription lookup failed", e.message);
+      }
+    }
+
+    const { data: priceRow } = await db
       .from("product_tiers")
       .select("stripe_price_id")
       .eq("tier", tier)
@@ -45,13 +84,6 @@ export async function POST(req) {
     if (!priceRow?.stripe_price_id) {
       return NextResponse.json({ error: "Price not configured yet" }, { status: 400 });
     }
-
-    const { data: company } = await sb
-      .from("companies")
-      .select("id,name,stripe_customer_id")
-      .eq("id", companyId)
-      .single();
-    if (!company) return NextResponse.json({ error: "Company not found" }, { status: 404 });
 
     let customerId = company.stripe_customer_id;
     if (!customerId) {
@@ -61,17 +93,40 @@ export async function POST(req) {
         metadata: { company_id: companyId },
       });
       customerId = customer.id;
-      await sb.from("companies").update({ stripe_customer_id: customerId }).eq("id", companyId);
+      const { error: custErr } = await db
+        .from("companies")
+        .update({ stripe_customer_id: customerId })
+        .eq("id", companyId);
+      if (custErr) {
+        console.error("checkout: could not save customer id", custErr.message);
+        return NextResponse.json({ error: "Could not start checkout" }, { status: 500 });
+      }
     }
 
-    const session = await stripe.checkout.sessions.create({
-      mode: "subscription",
-      customer: customerId,
-      line_items: [{ price: priceRow.stripe_price_id, quantity: 1 }],
-      subscription_data: { metadata: { company_id: companyId, tier } },
-      success_url: `${APP_URL}/app/${companyId}/plans/success?session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${APP_URL}/app/${companyId}/plans`,
-    });
+    // Idempotency: rapid double-taps reuse the same open checkout session
+    // instead of creating duplicates. If the old session was completed or
+    // expired, a fresh session is created (a fixed per-day idempotency key
+    // would have handed back a dead link).
+    const openSessions = await stripe.checkout.sessions.list({ customer: customerId, limit: 10 });
+    const reusable = openSessions.data.find(
+      (s) => s.status === "open" && s.metadata?.company_id === companyId && s.metadata?.tier === tier
+    );
+    if (reusable?.url) {
+      return NextResponse.json({ url: reusable.url });
+    }
+
+    const session = await stripe.checkout.sessions.create(
+      {
+        mode: "subscription",
+        customer: customerId,
+        line_items: [{ price: priceRow.stripe_price_id, quantity: 1 }],
+        subscription_data: { metadata: { company_id: companyId, tier } },
+        metadata: { company_id: companyId, tier },
+        success_url: `${APP_URL}/app/${companyId}/plans/success?session_id={CHECKOUT_SESSION_ID}`,
+        cancel_url: `${APP_URL}/app/${companyId}/plans`,
+      },
+      { idempotencyKey: `wt-checkout-${companyId}-${tier}-${Date.now()}` }
+    );
 
     return NextResponse.json({ url: session.url });
   } catch (e) {

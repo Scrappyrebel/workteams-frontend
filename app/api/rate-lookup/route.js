@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
+import { checkRateLimit, clientIp } from "../../../lib/rate-limit";
 
 // POST /api/rate-lookup
 // Body: { companyId, area }
@@ -6,6 +7,10 @@ import { createClient } from "@supabase/supabase-js";
 // and returns published snippets as reference. Owner/admin only.
 // The API key stays server-side; the browser never sees it.
 export async function POST(req) {
+  const rl = checkRateLimit(`rate-lookup:${clientIp(req)}`, { limit: 20, windowMs: 60_000 });
+  if (!rl.ok) {
+    return Response.json({ ok: false, error: "rate_limited" }, { status: 429 });
+  }
   let body;
   try {
     body = await req.json();

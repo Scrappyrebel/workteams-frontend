@@ -13,7 +13,7 @@ export default function ClientPortalPage() {
   const [working, setWorking] = useState(false);
 
   const isManager = member && (member.role === "owner" || member.role === "admin");
-  const allowed = canUse(company?.tier, "portal");
+  const allowed = canUse(company?.effectiveTier || company?.tier, "portal");
 
   async function load() {
     const sb = supabase();
@@ -32,26 +32,54 @@ export default function ClientPortalPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loading, company, allowed]);
 
+  // 256-bit token from the platform CSPRNG. No Math.random() fallback:
+  // if secure randomness is unavailable the link is not generated.
   function makeToken() {
-    // 32-char random token. Uniqueness is enforced by the DB.
-    if (typeof crypto !== "undefined" && crypto.randomUUID) {
-      return crypto.randomUUID().replace(/-/g, "");
+    if (typeof crypto === "undefined" || !crypto.getRandomValues) {
+      throw new Error("Secure random generation is not available in this browser.");
     }
-    return Array.from({ length: 32 }, () => "abcdefghijklmnopqrstuvwxyz0123456789"[Math.floor(Math.random() * 36)]).join("");
+    const bytes = crypto.getRandomValues(new Uint8Array(32));
+    return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
   }
 
   async function generate(locationId, locationName) {
     setWorking(true);
-    const token = makeToken();
-    const { error } = await supabase().from("portal_tokens").insert({
-      company_id: company.id,
-      location_id: locationId,
-      token,
-      client_name: locationName,
-    });
+    try {
+      const token = makeToken();
+      // Links expire after 90 days; revoke or regenerate any time.
+      const expiresAt = new Date(Date.now() + 90 * 24 * 3600 * 1000).toISOString();
+      const { error } = await supabase().from("portal_tokens").insert({
+        company_id: company.id,
+        location_id: locationId,
+        token,
+        client_name: locationName,
+        expires_at: expiresAt,
+      });
+      if (error) throw error;
+      load();
+    } catch (err) {
+      alert("Could not generate link: " + err.message);
+    }
     setWorking(false);
-    if (error) alert("Could not generate link: " + error.message);
-    else load();
+  }
+
+  // Rotate: revoke the old token and mint a fresh one (new expiry).
+  async function regenerate(t) {
+    if (!confirm("Generate a new link? The old link will stop working immediately.")) return;
+    setWorking(true);
+    try {
+      const token = makeToken();
+      const expiresAt = new Date(Date.now() + 90 * 24 * 3600 * 1000).toISOString();
+      const { error } = await supabase()
+        .from("portal_tokens")
+        .update({ token, expires_at: expiresAt })
+        .eq("id", t.id);
+      if (error) throw error;
+      load();
+    } catch (err) {
+      alert("Could not regenerate link: " + err.message);
+    }
+    setWorking(false);
   }
 
   async function revoke(id) {
@@ -114,8 +142,14 @@ export default function ClientPortalPage() {
                   <p style={{ fontSize: "0.85rem", color: "var(--muted)", wordBreak: "break-all" }}>
                     {typeof window !== "undefined" ? `${window.location.origin}/portal/${t.token}` : ""}
                   </p>
+                  {t.expires_at && (
+                    <p style={{ fontSize: "0.8rem", color: "var(--muted)" }}>
+                      Expires {new Date(t.expires_at).toLocaleDateString()}
+                    </p>
+                  )}
                   <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
                     <button onClick={() => copyLink(t.token)} style={button}>Copy link</button>
+                    <button onClick={() => regenerate(t)} disabled={working} style={button}>New link</button>
                     <button onClick={() => revoke(t.id)} style={dangerButton}>Revoke</button>
                   </div>
                 </div>

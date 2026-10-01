@@ -17,7 +17,7 @@ export default function WalkthroughsPage() {
   const [saving, setSaving] = useState(false);
 
   const isManager = member && (member.role === "owner" || member.role === "admin");
-  const allowed = canUse(company?.tier, "walkthroughs");
+  const allowed = canUse(company?.effectiveTier || company?.tier, "walkthroughs");
 
   async function load() {
     const sb = supabase();

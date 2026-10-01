@@ -24,8 +24,8 @@ export default function LocationsPage() {
   const [rateAreas, setRateAreas] = useState([]);
 
   const isManager = member && (member.role === "owner" || member.role === "admin");
-  const geoAllowed = canUse(company?.tier, "geofencing");
-  const ratesAllowed = canUse(company?.tier, "bidding");
+  const geoAllowed = canUse(company?.effectiveTier || company?.tier, "geofencing");
+  const ratesAllowed = canUse(company?.effectiveTier || company?.tier, "bidding");
   const [geoBusy, setGeoBusy] = useState(false);
 
   async function load() {
@@ -35,7 +35,18 @@ export default function LocationsPage() {
       .select("*")
       .eq("company_id", company.id)
       .order("name");
-    setLocations(data || []);
+    // Sensitive access details live in location_private (managers only).
+    const { data: priv } = await sb
+      .from("location_private")
+      .select("location_id, client_phone, notes")
+      .eq("company_id", company.id);
+    const privByLoc = {};
+    for (const p of priv || []) privByLoc[p.location_id] = p;
+    setLocations((data || []).map((l) => ({
+      ...l,
+      client_phone: privByLoc[l.id]?.client_phone || "",
+      notes: privByLoc[l.id]?.notes || "",
+    })));
     if (ratesAllowed && isManager) {
       const { data: ra } = await sb.from("rate_areas").select("id, name").eq("company_id", company.id).order("name");
       setRateAreas(ra || []);
@@ -57,18 +68,32 @@ export default function LocationsPage() {
       name: form.name.trim(),
       address: form.address.trim() || null,
       client_name: form.client_name.trim() || null,
-      client_phone: form.client_phone.trim() || null,
-      notes: form.notes.trim() || null,
       lat: Number.isFinite(lat) ? lat : null,
       lng: Number.isFinite(lng) ? lng : null,
       geofence_radius_m: parseInt(form.geofence_radius_m, 10) || 100,
       rate_area_id: form.rate_area_id || null,
     };
+    // Gate codes, alarm notes, client phone numbers stay out of the main
+    // locations table — only managers can read location_private.
+    const privatePayload = {
+      client_phone: form.client_phone.trim() || null,
+      notes: form.notes.trim() || null,
+    };
     let error;
+    let locId = editing;
     if (editing) {
       ({ error } = await sb.from("locations").update(payload).eq("id", editing));
     } else {
-      ({ error } = await sb.from("locations").insert(payload));
+      const { data, error: insErr } = await sb.from("locations").insert(payload).select("id").single();
+      error = insErr;
+      if (data) locId = data.id;
+    }
+    if (!error && locId) {
+      const { error: privErr } = await sb.from("location_private").upsert(
+        { location_id: locId, company_id: company.id, ...privatePayload },
+        { onConflict: "location_id" }
+      );
+      error = privErr;
     }
     if (error) alert("Could not save: " + error.message);
     else {

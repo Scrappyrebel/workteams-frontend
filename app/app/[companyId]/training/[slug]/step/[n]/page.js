@@ -6,6 +6,7 @@ import { useParams, useRouter } from "next/navigation";
 import { supabase } from "../../../../../../../lib/supabase";
 import { useCompany } from "../../../../../../../lib/company-context";
 import { getCourse, getEnrollment, completeStep, unlockNext } from "../../../../../../../lib/training";
+import { sanitizeSvg } from "../../../../../../../lib/sanitize-svg";
 
 function shuffle(arr) {
   const a = [...arr];
@@ -110,7 +111,7 @@ function LessonStep({ course, step, enrollment, back }) {
           {l.media_svg && (
             <div
               style={{ margin: "12px 0", border: "1px solid var(--line)", borderRadius: 12, padding: 12, overflowX: "auto" }}
-              dangerouslySetInnerHTML={{ __html: l.media_svg }}
+              dangerouslySetInnerHTML={{ __html: sanitizeSvg(l.media_svg) }}
             />
           )}
           <div style={{ whiteSpace: "pre-wrap", lineHeight: 1.65 }}>{l.body}</div>
@@ -340,7 +341,10 @@ function EvidenceStep({ course, step, enrollment, back }) {
     try {
       let url = null;
       if (file) {
-        const path = `${enrollment.id}/${Date.now()}_${file.name}`;
+        // Tenant-scoped path: {company_id}/{enrollment_id}/{file}.
+        // Storage policies only allow the trainee (own enrollment) or a
+        // manager of the same company to read/write these paths.
+        const path = `${enrollment.company_id}/${enrollment.id}/${Date.now()}_${file.name.replace(/[^a-zA-Z0-9._-]/g, "_")}`;
         const { error: upErr } = await supabase().storage
           .from("training-evidence")
           .upload(path, file);

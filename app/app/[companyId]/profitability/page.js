@@ -26,7 +26,7 @@ export default function ProfitabilityPage() {
   const [saving, setSaving] = useState(false);
 
   const isManager = member && (member.role === "owner" || member.role === "admin");
-  const allowed = canUse(company?.tier, "profitability");
+  const allowed = canUse(company?.effectiveTier || company?.tier, "profitability");
 
   async function compute() {
     setComputing(true);
@@ -99,9 +99,10 @@ export default function ProfitabilityPage() {
       .not("clock_out", "is", null);
     if (since) timeQ = timeQ.gte("clock_in", since + "T00:00:00");
     const { data: entries } = await timeQ;
-    const { data: ms } = await sb.from("company_members").select("id, hourly_rate").eq("company_id", company.id);
+    // Pay rates live in member_pay (owner/admin-only table).
+    const { data: pay } = await sb.from("member_pay").select("member_id, hourly_rate").eq("company_id", company.id);
     const rates = {};
-    for (const m of ms || []) rates[m.id] = Number(m.hourly_rate) || 0;
+    for (const p of pay || []) rates[p.member_id] = Number(p.hourly_rate) || 0;
     let laborTotals = {};
     for (const e of entries || []) {
       if (!e.location_id) continue;

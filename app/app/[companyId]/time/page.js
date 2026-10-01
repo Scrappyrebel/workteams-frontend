@@ -39,7 +39,7 @@ export default function TimeClockPage() {
   const [busy, setBusy] = useState(false);
 
   const isManager = member && (member.role === "owner" || member.role === "admin");
-  const geoEnforced = canUse(company?.tier, "geofencing");
+  const geoEnforced = canUse(company?.effectiveTier || company?.tier, "geofencing");
 
   async function load() {
     const sb = supabase();
@@ -72,56 +72,70 @@ export default function TimeClockPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loading, company, member, filter]);
 
+  async function api(path, body) {
+    const { data: { session } } = await supabase().auth.getSession();
+    const res = await fetch(path, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${session?.access_token || ""}`,
+      },
+      body: JSON.stringify(body),
+    });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(json.error || "Request failed");
+    return json;
+  }
+
   async function clockIn() {
     if (!locationId) {
       alert("Pick the location you're working at first.");
       return;
     }
     setBusy(true);
-    const loc = locations.find((l) => l.id === locationId);
-    const fence = geoEnforced && loc && loc.lat != null && loc.lng != null
-      ? { lat: parseFloat(loc.lat), lng: parseFloat(loc.lng), radius: parseInt(loc.geofence_radius_m, 10) || 100, name: loc.name }
-      : null;
-    const pos = await getPosition();
-    if (fence) {
-      if (!pos) {
-        setBusy(false);
-        alert(`Could not get your location. You must be at ${fence.name} to clock in — allow location access and try again.`);
-        return;
+    try {
+      // Fast client-side pre-check for a friendly message; the server
+      // re-checks the geofence authoritatively before writing anything.
+      const loc = locations.find((l) => l.id === locationId);
+      const fence = geoEnforced && loc && loc.lat != null && loc.lng != null
+        ? { lat: parseFloat(loc.lat), lng: parseFloat(loc.lng), radius: parseInt(loc.geofence_radius_m, 10) || 100, name: loc.name }
+        : null;
+      const pos = await getPosition();
+      if (fence) {
+        if (!pos) throw new Error(`Could not get your location. You must be at ${fence.name} to clock in — allow location access and try again.`);
+        const dist = haversineMeters(pos.lat, pos.lng, fence.lat, fence.lng);
+        if (dist > fence.radius) {
+          throw new Error(`You must be at ${fence.name} to clock in. You're about ${Math.round(dist)}m away (limit: ${fence.radius}m).`);
+        }
       }
-      const dist = haversineMeters(pos.lat, pos.lng, fence.lat, fence.lng);
-      if (dist > fence.radius) {
-        setBusy(false);
-        alert(`You must be at ${fence.name} to clock in. You're about ${Math.round(dist)}m away (limit: ${fence.radius}m).`);
-        return;
-      }
+      await api("/api/time/clock-in", {
+        companyId: company.id,
+        locationId,
+        lat: pos?.lat ?? null,
+        lng: pos?.lng ?? null,
+      });
+      await load();
+    } catch (e) {
+      alert("Clock-in failed: " + e.message);
     }
-    const { error } = await supabase().from("time_entries").insert({
-      company_id: company.id,
-      member_id: member.id,
-      location_id: locationId,
-      clock_in_lat: pos?.lat ?? null,
-      clock_in_lng: pos?.lng ?? null,
-    });
     setBusy(false);
-    if (error) alert("Clock-in failed: " + error.message);
-    else load();
   }
 
   async function clockOut() {
     setBusy(true);
-    const pos = await getPosition();
-    const { error } = await supabase()
-      .from("time_entries")
-      .update({
-        clock_out: new Date().toISOString(),
-        clock_out_lat: pos?.lat ?? null,
-        clock_out_lng: pos?.lng ?? null,
-      })
-      .eq("id", open.id);
+    try {
+      const pos = await getPosition();
+      await api("/api/time/clock-out", {
+        companyId: company.id,
+        entryId: open.id,
+        lat: pos?.lat ?? null,
+        lng: pos?.lng ?? null,
+      });
+      await load();
+    } catch (e) {
+      alert("Clock-out failed: " + e.message);
+    }
     setBusy(false);
-    if (error) alert("Clock-out failed: " + error.message);
-    else load();
   }
 
   if (loading || !company) return <p>Loading…</p>;
