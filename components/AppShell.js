@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import { supabase } from "../lib/supabase";
 import { signOut } from "../lib/session";
 import { canUse, tierLabel } from "../lib/tiers";
+import { PRODUCT_OWNER_EMAIL } from "../lib/product";
 
 const NAV = [
   { key: "dashboard", label: "Dashboard", href: (c) => `/app/${c}`, minRole: null },
@@ -23,6 +24,7 @@ const NAV = [
   { key: "portal", label: "Client Portal", href: (c) => `/app/${c}/client-portal`, minRole: "manager" },
   { key: "profitability", label: "Profitability", href: (c) => `/app/${c}/profitability`, minRole: "manager" },
   { key: "plans", label: "Plans", href: (c) => `/app/${c}/plans`, minRole: null },
+  { key: "tierprices", label: "Tier Prices", href: (c) => `/app/${c}/tier-prices`, minRole: null, productOwnerOnly: true },
   { key: "training", label: "Training", href: (c) => `/app/${c}/training`, minRole: null },
   { key: "connections", label: "Connections", href: (c) => `/app/${c}/connections`, minRole: null },
 ];
@@ -47,6 +49,7 @@ export default function AppShell({ company, member, children }) {
 
   const links = NAV.filter((item) => {
     if (item.minRole === "manager" && !isManager) return false;
+    if (item.productOwnerOnly && email !== PRODUCT_OWNER_EMAIL) return false;
     return true;
   }).map((item) => {
     const allowed = canUse(tier, item.key);
