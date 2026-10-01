@@ -106,7 +106,7 @@ export default function AppShell({ company, member, children }) {
               </span>
             </>
           )}
-          <span style={{ marginLeft: "auto", fontSize: "0.82rem", color: "var(--muted)" }}>{email}</span>
+          <span style={{ marginLeft: "auto", fontSize: "0.82rem", color: "var(--muted)" }}>{member?.display_name || ""}</span>
           <button
             onClick={async () => {
               await signOut();
