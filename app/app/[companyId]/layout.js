@@ -1,11 +1,17 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, usePathname } from "next/navigation";
 import AppShell from "../../../components/AppShell";
 import { supabase } from "../../../lib/supabase";
 import { getUser, linkMemberOnSignIn } from "../../../lib/session";
 import { CompanyContext } from "../../../lib/company-context";
+import { saveLastPath, clearLastPath } from "../../../lib/last-path";
+
+export default function CompanyLayout({ children }) {
+  const params = useParams();
+  const router = useRouter();
+  const pathname = usePathname();
 
 export default function CompanyLayout({ children }) {
   const params = useParams();
@@ -36,6 +42,7 @@ export default function CompanyLayout({ children }) {
         .eq("user_id", user.id)
         .single();
       if (!company || !member) {
+        clearLastPath();
         setDenied(true);
         setState({ company: null, member: null, loading: false });
         return;
@@ -43,6 +50,11 @@ export default function CompanyLayout({ children }) {
       setState({ company, member, loading: false });
     })();
   }, [companyId, router]);
+
+  // Remember where the user was so the app icon reopens here.
+  useEffect(() => {
+    saveLastPath(pathname);
+  }, [pathname]);
 
   if (denied) {
     return (

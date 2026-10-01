@@ -1,0 +1,43 @@
+// Service worker for WorkTeams: makes the app properly installable
+// (real "Install app" prompt, standalone window, home-screen icon that
+// behaves like an app). Static assets are cached; API/auth always hit
+// the network and are never cached.
+const CACHE = "workteams-v1";
+const STATIC_RE = /\.(js|css|png|jpg|jpeg|gif|svg|ico|woff2?)$/i;
+
+self.addEventListener("install", (event) => {
+  self.skipWaiting();
+});
+
+self.addEventListener("activate", (event) => {
+  event.waitUntil(
+    caches
+      .keys()
+      .then((keys) =>
+        Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k)))
+      )
+      .then(() => self.clients.claim())
+  );
+});
+
+self.addEventListener("fetch", (event) => {
+  const { request } = event;
+  if (request.method !== "GET") return;
+  const url = new URL(request.url);
+  // Never cache Supabase API/auth or other cross-origin calls.
+  if (url.origin !== self.location.origin) return;
+  if (!STATIC_RE.test(url.pathname)) return;
+  event.respondWith(
+    caches.open(CACHE).then(async (cache) => {
+      const hit = await cache.match(request);
+      if (hit) return hit;
+      try {
+        const res = await fetch(request);
+        if (res && res.ok) cache.put(request, res.clone());
+        return res;
+      } catch (err) {
+        return hit || Response.error();
+      }
+    })
+  );
+});

@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { supabase } from "../../lib/supabase";
 import { getUser, linkMemberOnSignIn } from "../../lib/session";
+import { getLastPath } from "../../lib/last-path";
 
 export default function CompaniesPage() {
   const router = useRouter();
@@ -23,6 +24,13 @@ export default function CompaniesPage() {
         return;
       }
       setUser(u);
+      // If the app was launched from the home-screen icon, jump back to
+      // where the user left off instead of starting over.
+      const last = getLastPath();
+      if (last) {
+        router.replace(last);
+        return;
+      }
       const sb = supabase();
       const claimed = await linkMemberOnSignIn(sb, u);
       if (claimed > 0) setJustJoined(claimed);
