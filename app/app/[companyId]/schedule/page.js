@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { supabase } from "../../../../lib/supabase";
 import { useCompany } from "../../../../lib/company-context";
+import { localToday } from "../../../../lib/dates";
 
 export default function SchedulePage() {
   const { company, member, loading } = useCompany();
@@ -15,7 +16,7 @@ export default function SchedulePage() {
 
   async function load() {
     const sb = supabase();
-    const today = new Date().toISOString().slice(0, 10);
+    const today = localToday();
     const { data } = await sb
       .from("shifts")
       .select("*, locations(name), company_members(display_name)")

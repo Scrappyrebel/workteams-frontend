@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { supabase } from "../../../lib/supabase";
 import { useCompany } from "../../../lib/company-context";
 import { canUse, tierLabel } from "../../../lib/tiers";
+import { localToday } from "../../../lib/dates";
 
 const TOOL_CARDS = [
   { key: "scheduling", label: "Schedule", desc: "Shifts by day, who works where.", href: "schedule", roles: "all" },
@@ -34,7 +35,7 @@ export default function CompanyDashboard() {
     if (loading || !company) return;
     (async () => {
       const sb = supabase();
-      const today = new Date().toISOString().slice(0, 10);
+      const today = localToday();
       const { data: shifts } = await sb
         .from("shifts")
         .select("id, shift_date, start_time, member_id, company_members(display_name), locations(name)")

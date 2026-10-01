@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { supabase } from "../../../../lib/supabase";
 import { useCompany } from "../../../../lib/company-context";
 import { canUse } from "../../../../lib/tiers";
+import { localToday, localDaysAgo } from "../../../../lib/dates";
 
 const RANGES = [
   { key: "30", label: "Last 30 days", days: 30 },
@@ -12,7 +13,7 @@ const RANGES = [
   { key: "all", label: "All time", days: null },
 ];
 
-const emptyEntry = { location_id: "", amount: "", description: "", entry_date: new Date().toISOString().slice(0, 10) };
+const emptyEntry = { location_id: "", amount: "", description: "", entry_date: localToday() };
 
 export default function ProfitabilityPage() {
   const { company, member, loading } = useCompany();
@@ -31,7 +32,7 @@ export default function ProfitabilityPage() {
     setComputing(true);
     const sb = supabase();
     const sel = RANGES.find((r) => r.key === range);
-    const since = sel.days ? new Date(Date.now() - sel.days * 86400000).toISOString().slice(0, 10) : null;
+    const since = sel.days ? localDaysAgo(sel.days) : null;
 
     const { data: locs } = await sb.from("locations").select("id, name").eq("company_id", company.id).order("name");
     const locList = locs || [];

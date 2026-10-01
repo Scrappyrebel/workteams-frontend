@@ -3,9 +3,14 @@
 import { useEffect, useState } from "react";
 import { supabase } from "../../../../lib/supabase";
 import { useCompany } from "../../../../lib/company-context";
+import { localToday, localDaysAgo } from "../../../../lib/dates";
 
 function isoDate(d) {
-  return d.toISOString().slice(0, 10);
+  // Local-timezone YYYY-MM-DD (d is already a local Date or offset).
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
 }
 
 export default function PayrollPage() {

@@ -5,8 +5,9 @@ import { useEffect, useState } from "react";
 import { supabase } from "../../../../lib/supabase";
 import { useCompany } from "../../../../lib/company-context";
 import { canUse } from "../../../../lib/tiers";
+import { localToday } from "../../../../lib/dates";
 
-const emptyForm = { location_id: "", inspection_date: new Date().toISOString().slice(0, 10), score: "5", notes: "" };
+const emptyForm = { location_id: "", inspection_date: localToday(), score: "5", notes: "" };
 const SCORE_LABELS = { 1: "1 — Poor", 2: "2 — Fair", 3: "3 — Good", 4: "4 — Very good", 5: "5 — Excellent" };
 
 export default function InspectionsPage() {
