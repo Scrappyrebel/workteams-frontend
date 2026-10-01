@@ -1,8 +1,17 @@
+"use client";
+
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { TIERS } from "../lib/tiers";
+import { getTierPrices } from "../lib/product";
 
 export default function LandingContent() {
   const tierKeys = ["starter", "plus", "pro"];
+  const [prices, setPrices] = useState(null);
+
+  useEffect(() => {
+    getTierPrices().then(setPrices);
+  }, []);
   return (
     <main className="site-shell">
       <section className="hero panel">
@@ -55,7 +64,7 @@ export default function LandingContent() {
             return (
               <div className="portal-card" key={key}>
                 <span className="card-kicker">{tier.name}</span>
-                <h2>${tier.examplePrice}<span style={{ fontSize: "1rem", fontWeight: 400, color: "var(--muted)" }}>/mo</span></h2>
+                <h2>${prices ? prices[key] : tier.examplePrice}<span style={{ fontSize: "1rem", fontWeight: 400, color: "var(--muted)" }}>/mo</span></h2>
                 <p style={{ fontStyle: "italic", fontSize: "0.85rem", color: "var(--muted)" }}>Example pricing</p>
                 <p>{tier.tagline}</p>
                 <ul style={{ paddingLeft: 20, margin: "10px 0 20px", color: "var(--ink)" }}>

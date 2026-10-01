@@ -1,9 +1,20 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { supabase } from "../../../../lib/supabase";
 import { useCompany } from "../../../../lib/company-context";
 import { TIERS } from "../../../../lib/tiers";
+import { getTierPrices } from "../../../../lib/product";
+
+export default function PlansPage() {
+  const { company, member, loading } = useCompany();
+  const [switching, setSwitching] = useState(false);
+  const [current, setCurrent] = useState(null);
+  const [prices, setPrices] = useState(null);
+
+  useEffect(() => {
+    getTierPrices().then(setPrices);
+  }, []);
 
 export default function PlansPage() {
   const { company, member, loading } = useCompany();
@@ -45,7 +56,7 @@ export default function PlansPage() {
             >
               <span className="card-kicker">{t.name}{isCurrent && " • CURRENT"}</span>
               <h2 style={{ margin: "8px 0" }}>
-                ${t.examplePrice}
+                ${prices ? prices[key] : t.examplePrice}
                 <span style={{ fontSize: "1rem", fontWeight: 400, color: "var(--muted)" }}>/mo</span>
               </h2>
               <p style={{ fontStyle: "italic", fontSize: "0.85rem", color: "var(--muted)" }}>Example pricing</p>
