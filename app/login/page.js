@@ -160,6 +160,11 @@ export default function LoginPage() {
               {loading ? "Signing in…" : "Sign in"}
             </button>
             <p style={{ marginTop: 14, fontSize: "0.95rem" }}>
+              <Link href="/forgot-password" style={{ color: "var(--brand)", fontWeight: 700 }}>
+                Forgot password?
+              </Link>
+            </p>
+            <p style={{ marginTop: 14, fontSize: "0.95rem" }}>
               New here?{" "}
               <button
                 type="button"
