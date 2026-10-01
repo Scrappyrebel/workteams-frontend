@@ -51,3 +51,17 @@ Where real production systems would create risk, use realistic non-production or
 Each product may adapt examples and simulations to its own workflows, but it must preserve this instructional model and minimum depth.
 
 Product-specific course material belongs with that product. The organization-wide standard remains centrally governed by Business HQ Control Hub.
+
+
+## Assessment integrity
+
+Assessments must promote actual learning rather than answer copying.
+
+- Rotate question/scenario order between learners.
+- Rotate answer-choice order independently.
+- Retakes must generate a different ordering or equivalent variant.
+- Keep answer keys out of the learner browser before grading.
+- Record an exam-variant identifier when the platform supports it.
+- Written finals should use question banks with multiple equivalent questions per learning objective.
+- Two employees sitting next to each other should not be guaranteed the exact same test sequence.
+- Randomization must not change the required knowledge, passing standard, or difficulty unfairly.
