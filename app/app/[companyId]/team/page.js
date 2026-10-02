@@ -145,6 +145,13 @@ export default function TeamPage() {
               <div style={{ flex: 1 }}>
                 <strong>{m.display_name}</strong>
                 {isManager && <span style={{ color: "var(--muted)", fontSize: "0.88rem" }}> • {m.email}</span>}
+                {isManager && (
+                  m.user_id ? (
+                    <span style={activeBadge}>Active</span>
+                  ) : (
+                    <span style={pendingBadge}>Invite pending</span>
+                  )
+                )}
                 <div style={{ fontSize: "0.85rem", color: "var(--brand-deep)", fontWeight: 700 }}>{roleLabel(m.role)}</div>
                 {isManager && (
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginTop: 8, maxWidth: 420 }}>
@@ -223,4 +230,28 @@ const dangerButton = {
   padding: "7px 14px",
   fontWeight: 700,
   cursor: "pointer",
+};
+
+const activeBadge = {
+  display: "inline-block",
+  marginLeft: 8,
+  padding: "2px 10px",
+  borderRadius: 999,
+  fontSize: "0.75rem",
+  fontWeight: 700,
+  background: "#e6f4ea",
+  color: "#1a7f37",
+  verticalAlign: "middle",
+};
+
+const pendingBadge = {
+  display: "inline-block",
+  marginLeft: 8,
+  padding: "2px 10px",
+  borderRadius: 999,
+  fontSize: "0.75rem",
+  fontWeight: 700,
+  background: "#fef3c7",
+  color: "#92400e",
+  verticalAlign: "middle",
 };
