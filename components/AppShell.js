@@ -44,27 +44,6 @@ export default function AppShell({ company, member, children }) {
   const [isOwner, setIsOwner] = useState(false);
   const [pushStatus, setPushStatus] = useState("unknown");
   const [unacked, setUnacked] = useState(0);
-  // Tab-bar scroll cue: shows a "more" arrow at the right edge while there
-  // are hidden tabs to the right. Tapping it scrolls the bar over.
-  const navRef = useRef(null);
-  const [showMore, setShowMore] = useState(false);
-
-  useEffect(() => {
-    const el = navRef.current;
-    if (!el) return;
-    const update = () => {
-      setShowMore(el.scrollWidth - el.scrollLeft - el.clientWidth > 8);
-    };
-    update();
-    el.addEventListener("scroll", update, { passive: true });
-    window.addEventListener("resize", update);
-    const t = setTimeout(update, 300);
-    return () => {
-      el.removeEventListener("scroll", update);
-      window.removeEventListener("resize", update);
-      clearTimeout(t);
-    };
-  }, [companyId]);
 
   useEffect(() => {
     isProductOwner().then(setIsOwner);
@@ -105,6 +84,29 @@ export default function AppShell({ company, member, children }) {
   const companyId = company?.id;
   const tier = company?.effectiveTier || company?.tier || "starter";
   const role = member?.role || "employee";
+
+  // Tab-bar scroll cue: shows a "more" arrow at the right edge while there
+  // are hidden tabs to the right. Tapping it scrolls the bar over.
+  // (Declared after companyId — the effect's dependency array reads it.)
+  const navRef = useRef(null);
+  const [showMore, setShowMore] = useState(false);
+
+  useEffect(() => {
+    const el = navRef.current;
+    if (!el) return;
+    const update = () => {
+      setShowMore(el.scrollWidth - el.scrollLeft - el.clientWidth > 8);
+    };
+    update();
+    el.addEventListener("scroll", update, { passive: true });
+    window.addEventListener("resize", update);
+    const t = setTimeout(update, 300);
+    return () => {
+      el.removeEventListener("scroll", update);
+      window.removeEventListener("resize", update);
+      clearTimeout(t);
+    };
+  }, [companyId]);
 
   const links = NAV.filter((item) => {
     if (item.minRole && !roleAtLeast(role, item.minRole)) return false;
