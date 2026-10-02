@@ -9,6 +9,10 @@ export default function TeamPage() {
   const { company, member, loading } = useCompany();
   const [members, setMembers] = useState([]);
   const [form, setForm] = useState({ email: "", display_name: "", role: "employee" });
+  const [editingId, setEditingId] = useState(null);
+  const [editForm, setEditForm] = useState({ display_name: "", email: "" });
+  // Two-tap confirm when changing the email of a member who already signed in.
+  const [confirmEmailId, setConfirmEmailId] = useState(null);
 
   const isManager = member && (member.role === "owner" || member.role === "admin");
 
@@ -58,6 +62,47 @@ export default function TeamPage() {
     if (error) alert("Could not add member: " + error.message);
     else {
       setForm({ email: "", display_name: "", role: "employee" });
+      load();
+    }
+  }
+
+  function startEdit(m) {
+    setEditingId(m.id);
+    setEditForm({ display_name: m.display_name || "", email: m.email || "" });
+    setConfirmEmailId(null);
+  }
+
+  function cancelEdit() {
+    setEditingId(null);
+    setConfirmEmailId(null);
+  }
+
+  async function saveEdit(m) {
+    const name = editForm.display_name.trim();
+    const email = editForm.email.trim().toLowerCase();
+    if (!name) {
+      alert("Name can't be blank.");
+      return;
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      alert("Enter a valid email address.");
+      return;
+    }
+    const emailChanged = email !== (m.email || "").toLowerCase();
+    // Changing the email of someone who already signed in can break the
+    // auto-claim match — require a deliberate second tap.
+    if (emailChanged && m.user_id && confirmEmailId !== m.id) {
+      setConfirmEmailId(m.id);
+      return;
+    }
+    const { error } = await supabase()
+      .from("company_members")
+      .update({ display_name: name, email })
+      .eq("id", m.id);
+    if (error) alert("Could not save: " + error.message);
+    else {
+      setEditingId(null);
+      setConfirmEmailId(null);
       load();
     }
   }
@@ -141,16 +186,48 @@ export default function TeamPage() {
       <div style={{ display: "grid", gap: 8 }}>
         {members.map((m) => (
           <div key={m.id} className="portal-card" style={{ minHeight: 0, padding: "14px 18px" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
               <div style={{ flex: 1 }}>
-                <strong>{m.display_name}</strong>
-                {isManager && <span style={{ color: "var(--muted)", fontSize: "0.88rem" }}> • {m.email}</span>}
-                {isManager && (
-                  m.user_id ? (
-                    <span style={activeBadge}>Active</span>
-                  ) : (
-                    <span style={pendingBadge}>Invite pending</span>
-                  )
+                {editingId === m.id ? (
+                  <div style={{ display: "grid", gap: 8, marginBottom: 4 }}>
+                    <input
+                      value={editForm.display_name}
+                      onChange={(e) => setEditForm({ ...editForm, display_name: e.target.value })}
+                      placeholder="Name"
+                      style={input}
+                    />
+                    <input
+                      type="email"
+                      value={editForm.email}
+                      onChange={(e) => setEditForm({ ...editForm, email: e.target.value })}
+                      placeholder="Email"
+                      style={input}
+                    />
+                    {confirmEmailId === m.id && (
+                      <p style={warnStyle}>
+                        ⚠️ {m.display_name} already signed in with the old email — changing it may unlink
+                        their account. Tap Save again to confirm.
+                      </p>
+                    )}
+                    <div style={{ display: "flex", gap: 8 }}>
+                      <button onClick={() => saveEdit(m)} style={confirmEmailId === m.id ? confirmButton : smallButton}>
+                        {confirmEmailId === m.id ? "Tap again to confirm" : "Save"}
+                      </button>
+                      <button onClick={cancelEdit} style={secondaryButton}>Cancel</button>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <strong>{m.display_name}</strong>
+                    {isManager && <span style={{ color: "var(--muted)", fontSize: "0.88rem" }}> • {m.email}</span>}
+                    {isManager && (
+                      m.user_id ? (
+                        <span style={activeBadge}>Active</span>
+                      ) : (
+                        <span style={pendingBadge}>Invite pending</span>
+                      )
+                    )}
+                  </>
                 )}
                 <div style={{ fontSize: "0.85rem", color: "var(--brand-deep)", fontWeight: 700 }}>{roleLabel(m.role)}</div>
                 {isManager && (
@@ -185,15 +262,22 @@ export default function TeamPage() {
                   </div>
                 )}
               </div>
-              {isManager && m.user_id !== member.user_id && (
-                <div style={{ display: "flex", gap: 6 }}>
-                  <select value={m.role === "admin" ? "manager" : m.role} onChange={(e) => changeRole(m, e.target.value)} style={{ ...input, width: "auto" }}>
-                    <option value="employee">Employee</option>
-                    <option value="supervisor">Supervisor</option>
-                    <option value="manager">Manager</option>
-                    {member.role === "owner" && <option value="owner">Owner</option>}
-                  </select>
-                  <button onClick={() => removeMember(m)} style={dangerButton}>Remove</button>
+              {isManager && (
+                <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+                  {editingId !== m.id && (
+                    <button onClick={() => startEdit(m)} style={editButton}>Edit</button>
+                  )}
+                  {m.user_id !== member.user_id && (
+                    <>
+                      <select value={m.role === "admin" ? "manager" : m.role} onChange={(e) => changeRole(m, e.target.value)} style={{ ...input, width: "auto" }}>
+                        <option value="employee">Employee</option>
+                        <option value="supervisor">Supervisor</option>
+                        <option value="manager">Manager</option>
+                        {member.role === "owner" && <option value="owner">Owner</option>}
+                      </select>
+                      <button onClick={() => removeMember(m)} style={dangerButton}>Remove</button>
+                    </>
+                  )}
                 </div>
               )}
             </div>
@@ -210,6 +294,7 @@ const input = {
   border: "1px solid var(--line)",
   fontSize: "1rem",
   width: "100%",
+  boxSizing: "border-box",
 };
 
 const button = {
@@ -222,6 +307,36 @@ const button = {
   cursor: "pointer",
 };
 
+const smallButton = {
+  padding: "9px 18px",
+  borderRadius: 999,
+  border: "none",
+  background: "var(--brand)",
+  color: "#fff",
+  fontWeight: 800,
+  cursor: "pointer",
+};
+
+const secondaryButton = {
+  padding: "9px 18px",
+  borderRadius: 999,
+  border: "1px solid var(--line)",
+  background: "#fff",
+  color: "inherit",
+  fontWeight: 700,
+  cursor: "pointer",
+};
+
+const editButton = {
+  border: "1px solid var(--line)",
+  background: "#fff",
+  color: "inherit",
+  borderRadius: 999,
+  padding: "7px 14px",
+  fontWeight: 700,
+  cursor: "pointer",
+};
+
 const dangerButton = {
   border: "1px solid #f0c9c4",
   background: "#fff",
@@ -230,6 +345,25 @@ const dangerButton = {
   padding: "7px 14px",
   fontWeight: 700,
   cursor: "pointer",
+};
+
+const confirmButton = {
+  padding: "9px 18px",
+  borderRadius: 999,
+  border: "none",
+  background: "#b3261e",
+  color: "#fff",
+  fontWeight: 800,
+  cursor: "pointer",
+};
+
+const warnStyle = {
+  fontSize: "0.85rem",
+  color: "#92400e",
+  background: "#fef3c7",
+  borderRadius: 10,
+  padding: "8px 12px",
+  margin: 0,
 };
 
 const activeBadge = {
