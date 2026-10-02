@@ -105,13 +105,18 @@ export default function PlansPage() {
         {Object.keys(TIERS).map((key) => {
           const t = TIERS[key];
           const isCurrent = tier === key;
+          // "Current" means actually paying for it. An unpaid company sits on
+          // the default Starter tier without a subscription — show that
+          // honestly instead of "CURRENT".
+          const isPaidCurrent = hasSubscription && isCurrent;
+          const isDefaultTier = !hasSubscription && isCurrent;
           return (
             <div
               className="portal-card"
               key={key}
-              style={isCurrent ? { border: "2px solid var(--brand)", minHeight: 0 } : { minHeight: 0 }}
+              style={isPaidCurrent ? { border: "2px solid var(--brand)", minHeight: 0 } : { minHeight: 0 }}
             >
-              <span className="card-kicker">{t.name}{isCurrent && " • CURRENT"}</span>
+              <span className="card-kicker">{t.name}{isPaidCurrent ? " • CURRENT" : isDefaultTier ? " • DEFAULT ACCESS" : ""}</span>
               <h2 style={{ margin: "8px 0" }}>
                 ${prices ? prices[key] : t.examplePrice}
                 <span style={{ fontSize: "1rem", fontWeight: 400, color: "var(--muted)" }}>/mo</span>
