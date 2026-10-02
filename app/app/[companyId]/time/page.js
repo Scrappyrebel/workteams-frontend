@@ -39,6 +39,10 @@ export default function TimeClockPage() {
   const [filter, setFilter] = useState("everyone");
   const [onClock, setOnClock] = useState([]);
   const [busy, setBusy] = useState(false);
+  // Hats the member can clock in as (e.g. Cleaner vs Manager). Shown only
+  // when they have more than one pay rate set.
+  const [hats, setHats] = useState([]);
+  const [clockInHat, setClockInHat] = useState("");
 
   const isManager = isManagerRole(member?.role);
   // Supervisors and up see the team's entries and who's on the clock.
@@ -52,6 +56,21 @@ export default function TimeClockPage() {
 
   async function load() {
     const sb = supabase();
+    // Which hats can this member clock in as? (titles only, never pay rates)
+    try {
+      const { data: { session } } = await sb.auth.getSession();
+      const hr = await fetch(`/api/time/hats?companyId=${company.id}`, {
+        headers: { Authorization: `Bearer ${session?.access_token || ""}` },
+      });
+      const hj = await hr.json().catch(() => ({}));
+      const got = Array.isArray(hj.hats) ? hj.hats : [];
+      setHats(got);
+      if (got.length > 0 && !got.some((h) => h.key === clockInHat)) {
+        setClockInHat(got[0].key);
+      }
+    } catch (e) {
+      /* hats unavailable — clock in normally */
+    }
     const { data: openRows } = await sb
       .from("time_entries")
       .select("*, locations(name)")
@@ -135,6 +154,7 @@ export default function TimeClockPage() {
         locationId,
         lat: pos?.lat ?? null,
         lng: pos?.lng ?? null,
+        clockInRole: hats.length > 1 ? clockInHat : null,
       });
       await load();
     } catch (e) {
@@ -173,6 +193,7 @@ export default function TimeClockPage() {
             <p style={{ fontWeight: 800, fontSize: "1.1rem" }}>
               🟢 You're clocked in{open.locations ? ` at ${open.locations.name}` : ""} since{" "}
               {new Date(open.clock_in).toLocaleTimeString([], { hour: "numeric", minute: "2-digit", hour12: true })}
+              {open.clock_in_role ? ` (${open.clock_in_role === "manager" ? "Manager" : "Cleaner"})` : ""}
             </p>
             <button onClick={clockOut} disabled={busy} style={{ ...bigButton, background: "#28704a" }}>
               {busy ? "Working…" : "Clock out"}
@@ -194,6 +215,29 @@ export default function TimeClockPage() {
               ) : null;
             })()}
             <br />
+            {hats.length > 1 && (
+              <div style={{ marginBottom: 14 }}>
+                <div style={{ fontSize: "0.9rem", fontWeight: 800, marginBottom: 8 }}>Clock in as:</div>
+                <div style={{ display: "flex", gap: 8, justifyContent: "center", flexWrap: "wrap" }}>
+                  {hats.map((h) => (
+                    <button
+                      key={h.key}
+                      type="button"
+                      onClick={() => setClockInHat(h.key)}
+                      style={{
+                        ...bigButton,
+                        width: "auto",
+                        padding: "10px 22px",
+                        background: clockInHat === h.key ? "var(--brand-deep)" : "#e8e2d5",
+                        color: clockInHat === h.key ? "#fff" : "var(--brand-deep)",
+                      }}
+                    >
+                      {h.title}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
             <button onClick={clockIn} disabled={busy} style={bigButton}>
               {busy ? "Working…" : "Clock in"}
             </button>
@@ -249,6 +293,7 @@ export default function TimeClockPage() {
               <span className="card-kicker">
                 {new Date(e.clock_in).toLocaleDateString()} • {e.locations?.name || "No location"}
                 {e.company_members ? ` • ${e.company_members.display_name}` : ""}
+                {e.clock_in_role ? ` • ${e.clock_in_role === "manager" ? "Manager" : "Cleaner"}` : ""}
               </span>
               <p style={{ margin: "6px 0 0" }}>
                 {new Date(e.clock_in).toLocaleTimeString([], { hour: "numeric", minute: "2-digit", hour12: true })} →{" "}

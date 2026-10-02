@@ -32,11 +32,11 @@ export default function TeamPage() {
       // Pay rates live in member_pay, readable only by owners/admins.
       const { data: pay } = await supabase()
         .from("member_pay")
-        .select("member_id, hourly_rate")
+        .select("member_id, cleaner_hourly_rate, manager_hourly_rate, cleaner_title, manager_title")
         .eq("company_id", company.id);
       const payByMember = {};
-      for (const p of pay || []) payByMember[p.member_id] = p.hourly_rate;
-      rows = rows.map((m) => ({ ...m, hourly_rate: payByMember[m.id] ?? null }));
+      for (const p of pay || []) payByMember[p.member_id] = p;
+      rows = rows.map((m) => ({ ...m, pay: payByMember[m.id] || {} }));
     }
     setMembers(rows);
   }
@@ -88,20 +88,26 @@ export default function TeamPage() {
     else load();
   }
 
-  async function changeRate(m, rate) {
-    const parsed = rate === "" ? null : parseFloat(rate);
-    if (rate !== "" && (isNaN(parsed) || parsed < 0)) {
-      alert("Enter a valid hourly rate.");
-      return;
+  // Dual pay rates: cleaner $/hr + title, manager $/hr + title.
+  // Setting both rates is what unlocks the "clock in as" picker for that person.
+  async function changePayField(m, field, value) {
+    let parsed = value;
+    if (field.endsWith("_hourly_rate")) {
+      parsed = value === "" ? null : parseFloat(value);
+      if (value !== "" && (isNaN(parsed) || parsed < 0)) {
+        alert("Enter a valid hourly rate.");
+        return;
+      }
+    } else {
+      parsed = value.trim() === "" ? null : value.trim();
     }
-    // Pay rates are stored in member_pay (owner/admin-only table).
     const { error } = await supabase()
       .from("member_pay")
       .upsert(
-        { member_id: m.id, company_id: company.id, hourly_rate: parsed },
+        { member_id: m.id, company_id: company.id, [field]: parsed },
         { onConflict: "member_id" }
       );
-    if (error) alert("Could not update rate: " + error.message);
+    if (error) alert("Could not update pay: " + error.message);
     else load();
   }
 
@@ -141,24 +147,35 @@ export default function TeamPage() {
                 {isManager && <span style={{ color: "var(--muted)", fontSize: "0.88rem" }}> • {m.email}</span>}
                 <div style={{ fontSize: "0.85rem", color: "var(--brand-deep)", fontWeight: 700 }}>{roleLabel(m.role)}</div>
                 {isManager && (
-                  <label style={{ fontSize: "0.85rem", color: "var(--muted)", display: "flex", alignItems: "center", gap: 6, marginTop: 6 }}>
-                    $/hr
-                    <input
-                      type="number"
-                      min="0"
-                      step="any"
-                      defaultValue={m.hourly_rate ?? ""}
-                      placeholder="—"
-                      onBlur={(e) => {
-                        if ((e.target.value || "") !== String(m.hourly_rate ?? "")) changeRate(m, e.target.value);
-                      }}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") e.target.blur();
-                      }}
-                      style={{ ...input, width: 110, padding: "7px 10px" }}
-                    />
-                    <span style={{ fontSize: "0.78rem" }}>for labor-cost estimates</span>
-                  </label>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginTop: 8, maxWidth: 420 }}>
+                    {[
+                      { label: "Cleaner title", field: "cleaner_title", ph: "Cleaner", type: "text" },
+                      { label: "Cleaner $/hr", field: "cleaner_hourly_rate", ph: "—", type: "number" },
+                      { label: "Manager title", field: "manager_title", ph: "Manager", type: "text" },
+                      { label: "Manager $/hr", field: "manager_hourly_rate", ph: "—", type: "number" },
+                    ].map((f) => (
+                      <label key={f.field} style={{ fontSize: "0.78rem", color: "var(--muted)" }}>
+                        {f.label}
+                        <input
+                          type={f.type}
+                          min={f.type === "number" ? "0" : undefined}
+                          step={f.type === "number" ? "any" : undefined}
+                          defaultValue={m.pay?.[f.field] ?? ""}
+                          placeholder={f.ph}
+                          onBlur={(e) => {
+                            if ((e.target.value || "") !== String(m.pay?.[f.field] ?? "")) changePayField(m, f.field, e.target.value);
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") e.target.blur();
+                          }}
+                          style={{ ...input, width: "100%", padding: "7px 10px", boxSizing: "border-box" }}
+                        />
+                      </label>
+                    ))}
+                    <p style={{ gridColumn: "1 / -1", fontSize: "0.78rem", color: "var(--muted)", margin: "2px 0 0" }}>
+                      Set both rates and they'll pick Cleaner or Manager at clock-in.
+                    </p>
+                  </div>
                 )}
               </div>
               {isManager && m.user_id !== member.user_id && (

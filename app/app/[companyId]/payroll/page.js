@@ -44,7 +44,7 @@ export default function PayrollPage() {
     // filter the query as well so no one else's rows reach the browser.
     let entryQ = sb
       .from("time_entries")
-      .select("member_id, clock_in, clock_out")
+      .select("member_id, clock_in, clock_out, clock_in_role, pay_rate_applied")
       .eq("company_id", company.id)
       .gte("clock_in", range.start + "T00:00:00")
       .lte("clock_in", range.end + "T23:59:59")
@@ -52,13 +52,30 @@ export default function PayrollPage() {
     if (!isManager) entryQ = entryQ.eq("member_id", member.id);
     const { data: entries } = await entryQ;
 
+    // Managers get pay rates to build per-hat estimates (member_pay is manager-only).
+    let payByMember = {};
+    if (isManager) {
+      const { data: pay } = await sb
+        .from("member_pay")
+        .select("member_id, cleaner_hourly_rate, manager_hourly_rate, hourly_rate")
+        .eq("company_id", company.id);
+      for (const p of pay || []) payByMember[p.member_id] = p;
+    }
+
     const totals = {};
-    for (const m of members || []) totals[m.id] = { member: m, hours: 0, shifts: 0 };
+    for (const m of members || []) totals[m.id] = { member: m, hours: 0, shifts: 0, cleanerHours: 0, managerHours: 0, estPay: 0 };
     for (const e of entries || []) {
       const t = totals[e.member_id];
       if (!t) continue;
-      t.hours += (new Date(e.clock_out) - new Date(e.clock_in)) / 3600000;
+      const hrs = (new Date(e.clock_out) - new Date(e.clock_in)) / 3600000;
+      t.hours += hrs;
       t.shifts += 1;
+      if (isManager) {
+        const hat = e.clock_in_role === "manager" ? "manager" : "cleaner";
+        const rate = e.pay_rate_applied ?? payByMember[e.member_id]?.[hat === "manager" ? "manager_hourly_rate" : "cleaner_hourly_rate"] ?? payByMember[e.member_id]?.hourly_rate ?? 0;
+        if (hat === "manager") t.managerHours += hrs; else t.cleanerHours += hrs;
+        t.estPay += hrs * rate;
+      }
     }
     let list = Object.values(totals);
     if (!isManager) {
@@ -77,9 +94,15 @@ export default function PayrollPage() {
   }, [loading, company, member, range]);
 
   function exportCsv() {
-    const lines = ["name,email,total_hours,shifts"];
+    const lines = isManager
+      ? ["name,email,total_hours,cleaner_hours,manager_hours,est_pay,shifts"]
+      : ["name,email,total_hours,shifts"];
     for (const r of rows) {
-      lines.push([`"${r.member.display_name}"`, r.member.email, r.hours.toFixed(2), r.shifts].join(","));
+      const base = [`"${r.member.display_name}"`, r.member.email, r.hours.toFixed(2)];
+      const tail = isManager
+        ? [r.cleanerHours.toFixed(2), r.managerHours.toFixed(2), r.estPay.toFixed(2), r.shifts]
+        : [r.shifts];
+      lines.push(base.concat(tail).join(","));
     }
     const blob = new Blob([lines.join("\n")], { type: "text/csv" });
     const url = URL.createObjectURL(blob);
@@ -128,12 +151,23 @@ export default function PayrollPage() {
               <span style={{ fontWeight: 800, fontSize: "1.15rem" }}>{r.hours.toFixed(2)} h</span>
               <span style={{ color: "var(--muted)", fontSize: "0.9rem" }}>{r.shifts} shift{r.shifts === 1 ? "" : "s"}</span>
             </div>
+            {isManager && (r.cleanerHours > 0 || r.managerHours > 0) && (
+              <div style={{ fontSize: "0.85rem", color: "var(--muted)", marginTop: 6 }}>
+                {r.cleanerHours > 0 && <span>🧹 {r.cleanerHours.toFixed(2)} h cleaner</span>}
+                {r.cleanerHours > 0 && r.managerHours > 0 && <span> • </span>}
+                {r.managerHours > 0 && <span>📋 {r.managerHours.toFixed(2)} h manager</span>}
+                <span style={{ fontWeight: 800, color: "var(--brand-deep)" }}> • est. ${r.estPay.toFixed(2)}</span>
+              </div>
+            )}
           </div>
         ))}
       </div>
 
       {isManager && rows.length > 0 && (
-        <p style={{ fontWeight: 800, marginTop: 14 }}>Team total: {totalHours.toFixed(2)} hours</p>
+        <p style={{ fontWeight: 800, marginTop: 14 }}>
+          Team total: {totalHours.toFixed(2)} hours
+          {rows.some((r) => r.estPay > 0) && <> • est. ${rows.reduce((s, r) => s + r.estPay, 0).toFixed(2)}</>}
+        </p>
       )}
 
       <p style={{ color: "var(--muted)", fontSize: "0.9rem", marginTop: 18 }}>

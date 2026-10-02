@@ -46,9 +46,12 @@ export async function POST(req) {
     const user = await authedUser(req);
     if (!user) return NextResponse.json({ error: "Sign in required" }, { status: 401 });
 
-    const { companyId, locationId, lat, lng } = await req.json();
+    const { companyId, locationId, lat, lng, clockInRole } = await req.json();
     if (!companyId || !locationId) {
       return NextResponse.json({ error: "companyId and locationId are required" }, { status: 400 });
+    }
+    if (clockInRole && !["cleaner", "manager"].includes(clockInRole)) {
+      return NextResponse.json({ error: "Invalid role selection." }, { status: 400 });
     }
 
     const sb = admin();
@@ -109,6 +112,22 @@ export async function POST(req) {
       }
     }
 
+    // Snapshot the hat they clocked in as + the pay rate, so payroll stays
+    // correct even if rates change later. Falls back to their single rate.
+    let payRateApplied = null;
+    if (clockInRole) {
+      const { data: pay } = await sb
+        .from("member_pay")
+        .select("cleaner_hourly_rate, manager_hourly_rate, hourly_rate")
+        .eq("member_id", member.id)
+        .maybeSingle();
+      const rate = clockInRole === "manager" ? pay?.manager_hourly_rate : pay?.cleaner_hourly_rate;
+      if (rate == null) {
+        return NextResponse.json({ error: "That role has no pay rate set. Ask your manager." }, { status: 400 });
+      }
+      payRateApplied = rate;
+    }
+
     const { data: entry, error } = await sb
       .from("time_entries")
       .insert({
@@ -118,6 +137,8 @@ export async function POST(req) {
         clock_in: new Date().toISOString(), // server time, not client time
         clock_in_lat: Number.isFinite(Number(lat)) ? Number(lat) : null,
         clock_in_lng: Number.isFinite(Number(lng)) ? Number(lng) : null,
+        clock_in_role: clockInRole || null,
+        pay_rate_applied: payRateApplied,
       })
       .select()
       .single();
