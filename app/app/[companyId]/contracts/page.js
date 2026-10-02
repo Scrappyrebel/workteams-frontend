@@ -205,9 +205,18 @@ export default function ContractsPage() {
               {" • "}{c.start_date}{c.end_date ? ` → ${c.end_date}` : ""}
             </span>
             {c.status === "signed" && (
-              <p style={{ margin: "6px 0 0", fontSize: "0.9rem", color: "var(--muted)" }}>
-                Signed by {c.signed_name} on {new Date(c.signed_at).toLocaleDateString()}
-              </p>
+              <div style={{ margin: "6px 0 0" }}>
+                <p style={{ margin: 0, fontSize: "0.9rem", color: "var(--muted)" }}>
+                  Signed by {c.signed_name} on {new Date(c.signed_at).toLocaleDateString()}
+                </p>
+                {c.signature_image && (
+                  <img
+                    src={c.signature_image}
+                    alt="Client signature"
+                    style={{ marginTop: 6, maxWidth: 280, border: "1px solid var(--line)", borderRadius: 8, background: "#fff" }}
+                  />
+                )}
+              </div>
             )}
             <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
               {c.sign_token && c.status !== "signed" && (

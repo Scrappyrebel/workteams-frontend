@@ -5,16 +5,25 @@ import { checkRateLimit, clientIp } from "../../../../lib/rate-limit";
 const sb = () =>
   createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
 
-// Public: client e-signs with a typed name. Records name, timestamp, and IP
-// as the audit trail. Token-gated; no login required.
+// Public: client e-signs with a typed name and optional drawn signature.
+// Records name, timestamp, IP, and signature image as the audit trail.
+// Token-gated; no login required.
 export async function POST(req) {
   try {
     const rl = checkRateLimit(`contract-sign:${clientIp(req)}`, { limit: 10, windowMs: 60_000 });
     if (!rl.ok) return NextResponse.json({ error: "Too many requests. Try again shortly." }, { status: 429 });
 
-    const { token, name } = await req.json();
+    const { token, name, signatureImage } = await req.json();
     if (!token || !name || !name.trim()) {
       return NextResponse.json({ error: "Token and printed name are required." }, { status: 400 });
+    }
+    if (signatureImage != null) {
+      if (typeof signatureImage !== "string" || !signatureImage.startsWith("data:image/png;base64,")) {
+        return NextResponse.json({ error: "Invalid signature image." }, { status: 400 });
+      }
+      if (signatureImage.length > 300_000) {
+        return NextResponse.json({ error: "Signature image is too large." }, { status: 400 });
+      }
     }
     const client = sb();
     const { data: c } = await client
@@ -34,6 +43,7 @@ export async function POST(req) {
         signed_at: new Date().toISOString(),
         signed_name: name.trim(),
         signed_ip: clientIp(req),
+        signature_image: signatureImage || null,
       })
       .eq("id", c.id);
     if (error) return NextResponse.json({ error: "Signing failed. Try again." }, { status: 500 });
