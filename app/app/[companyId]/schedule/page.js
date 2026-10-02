@@ -11,6 +11,7 @@ export default function SchedulePage() {
   const [locations, setLocations] = useState([]);
   const [members, setMembers] = useState([]);
   const [form, setForm] = useState({ location_id: "", member_id: "", shift_date: "", start_time: "", end_time: "", notes: "" });
+  const [confirmDeleteId, setConfirmDeleteId] = useState(null);
 
   const isManager = member && (member.role === "owner" || member.role === "admin");
 
@@ -71,7 +72,13 @@ export default function SchedulePage() {
   }
 
   async function deleteShift(id) {
-    if (!confirm("Delete this shift?")) return;
+    // Two-tap inline confirm — no native confirm() dialog, which is
+    // unreliable in some mobile browsers and automation.
+    if (confirmDeleteId !== id) {
+      setConfirmDeleteId(id);
+      return;
+    }
+    setConfirmDeleteId(null);
     const { error } = await supabase().from("shifts").delete().eq("id", id);
     if (error) alert("Could not delete: " + error.message);
     else load();
@@ -116,7 +123,12 @@ export default function SchedulePage() {
             <p style={{ color: "var(--muted)", marginBottom: 6 }}>{s.assignee_name || "Unassigned"}</p>
             {s.notes && <p style={{ fontSize: "0.9rem" }}>{s.notes}</p>}
             {isManager && (
-              <button onClick={() => deleteShift(s.id)} style={dangerButton}>Delete</button>
+              <button
+                onClick={() => deleteShift(s.id)}
+                style={confirmDeleteId === s.id ? confirmButton : dangerButton}
+              >
+                {confirmDeleteId === s.id ? "Tap again to confirm delete" : "Delete"}
+              </button>
             )}
           </div>
         ))}
@@ -151,5 +163,16 @@ const dangerButton = {
   borderRadius: 999,
   padding: "7px 14px",
   fontWeight: 700,
+  cursor: "pointer",
+};
+
+const confirmButton = {
+  marginTop: 8,
+  border: "none",
+  background: "#b3261e",
+  color: "#fff",
+  borderRadius: 999,
+  padding: "7px 14px",
+  fontWeight: 800,
   cursor: "pointer",
 };
