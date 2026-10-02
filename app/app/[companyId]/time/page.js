@@ -35,11 +35,17 @@ export default function TimeClockPage() {
   const [entries, setEntries] = useState([]);
   const [locations, setLocations] = useState([]);
   const [locationId, setLocationId] = useState("");
-  const [filter, setFilter] = useState("mine");
+  const [filter, setFilter] = useState("everyone");
+  const [onClock, setOnClock] = useState([]);
   const [busy, setBusy] = useState(false);
 
   const isManager = member && (member.role === "owner" || member.role === "admin");
   const geoEnforced = canUse(company?.effectiveTier || company?.tier, "geofencing");
+
+  // Employees can only ever see their own entries.
+  useEffect(() => {
+    if (!loading && member && !isManager) setFilter("mine");
+  }, [loading, member, isManager]);
 
   async function load() {
     const sb = supabase();
@@ -65,6 +71,19 @@ export default function TimeClockPage() {
 
     const { data: locs } = await sb.from("locations").select("id, name, lat, lng, geofence_radius_m").eq("company_id", company.id).order("name");
     setLocations(locs || []);
+
+    // Managers see who's on the clock right now.
+    if (isManager) {
+      const { data: openTeam } = await sb
+        .from("time_entries")
+        .select("*, locations(name), company_members(display_name)")
+        .eq("company_id", company.id)
+        .is("clock_out", null)
+        .order("clock_in", { ascending: false });
+      setOnClock(openTeam || []);
+    } else {
+      setOnClock([]);
+    }
   }
 
   useEffect(() => {
@@ -181,6 +200,30 @@ export default function TimeClockPage() {
           </div>
         )}
       </section>
+
+      {isManager && (
+        <section className="panel" style={{ padding: 20, margin: "18px 0" }}>
+          <h3 style={{ margin: "0 0 10px" }}>Who's working now</h3>
+          {onClock.length === 0 ? (
+            <p style={{ color: "var(--muted)", margin: 0 }}>Nobody is clocked in right now.</p>
+          ) : (
+            <div style={{ display: "grid", gap: 8 }}>
+              {onClock.map((e) => (
+                <div key={e.id} style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <span style={{ color: "#1e8e4d", fontSize: "1.2rem" }}>🟢</span>
+                  <div>
+                    <strong>{e.company_members?.display_name || "Unknown"}</strong>
+                    <span style={{ color: "var(--muted)" }}>
+                      {" "}• {e.locations?.name || "No location"} • since{" "}
+                      {new Date(e.clock_in).toLocaleTimeString([], { hour: "numeric", minute: "2-digit", hour12: true })}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+      )}
 
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
         <h3 style={{ margin: 0 }}>Recent entries</h3>
