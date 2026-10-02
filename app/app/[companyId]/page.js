@@ -21,6 +21,7 @@ const TOOL_CARDS = [
   { key: "supplies", label: "Supplies", desc: "Requests and inventory.", href: "supplies", roles: "manager" },
   { key: "portal", label: "Client Portal", desc: "Let clients see their service.", href: "client-portal", roles: "manager" },
   { key: "profitability", label: "Profitability", desc: "Job costs and margins.", href: "profitability", roles: "manager" },
+  { key: "contracts", label: "Contracts", desc: "Client agreements and e-signatures.", href: "contracts", roles: "manager" },
 ];
 
 export default function CompanyDashboard() {

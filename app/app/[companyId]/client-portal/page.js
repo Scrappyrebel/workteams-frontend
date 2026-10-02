@@ -15,6 +15,8 @@ export default function ClientPortalPage() {
   const isManager = member && (member.role === "owner" || member.role === "admin");
   const allowed = canUse(company?.effectiveTier || company?.tier, "portal");
 
+  const [messages, setMessages] = useState([]);
+
   async function load() {
     const sb = supabase();
     const { data: locs } = await sb.from("locations").select("id, name").eq("company_id", company.id).order("name");
@@ -25,6 +27,13 @@ export default function ClientPortalPage() {
       .eq("company_id", company.id)
       .order("created_at", { ascending: false });
     setTokens(toks || []);
+    const { data: msgs } = await sb
+      .from("portal_messages")
+      .select("*, locations(name)")
+      .eq("company_id", company.id)
+      .order("created_at", { ascending: false })
+      .limit(50);
+    setMessages(msgs || []);
   }
 
   useEffect(() => {
@@ -46,9 +55,28 @@ export default function ClientPortalPage() {
     setWorking(true);
     try {
       const token = makeToken();
-      // Links expire after 90 days; revoke or regenerate any time.
-      const expiresAt = new Date(Date.now() + 90 * 24 * 3600 * 1000).toISOString();
-      const { error } = await supabase().from("portal_tokens").insert({
+      // Link lives for the contract when one exists: tied to the signed
+      // contract's end date (or long-lived for open-ended contracts).
+      // Otherwise the previous 90-day default applies.
+      const sb = supabase();
+      const { data: contract } = await sb
+        .from("contracts")
+        .select("end_date")
+        .eq("company_id", company.id)
+        .eq("location_id", locationId)
+        .eq("status", "signed")
+        .order("signed_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      let expiresAt;
+      if (contract?.end_date) {
+        expiresAt = new Date(contract.end_date + "T23:59:59").toISOString();
+      } else if (contract) {
+        expiresAt = new Date(Date.now() + 5 * 365 * 24 * 3600 * 1000).toISOString();
+      } else {
+        expiresAt = new Date(Date.now() + 90 * 24 * 3600 * 1000).toISOString();
+      }
+      const { error } = await sb.from("portal_tokens").insert({
         company_id: company.id,
         location_id: locationId,
         token,
@@ -99,6 +127,11 @@ export default function ClientPortalPage() {
     }
   }
 
+  async function markRead(id) {
+    const { error } = await supabase().from("portal_messages").update({ read_at: new Date().toISOString() }).eq("id", id);
+    if (!error) load();
+  }
+
   if (loading || !company) return <p>Loading…</p>;
   if (!allowed || !isManager) {
     return (
@@ -121,6 +154,28 @@ export default function ClientPortalPage() {
   return (
     <div>
       <p className="eyebrow">CLIENT PORTAL</p>
+      <h2 style={{ fontSize: "1.8rem" }}>Client messages</h2>
+      <div style={{ display: "grid", gap: 10, margin: "18px 0 28px" }}>
+        {messages.length === 0 && <p style={{ color: "var(--muted)" }}>No client messages yet.</p>}
+        {messages.map((m) => (
+          <div key={m.id} className="portal-card" style={{ minHeight: 0, padding: "14px 18px", opacity: m.read_at ? 0.75 : 1 }}>
+            <span className="card-kicker">
+              {!m.read_at && <strong style={{ color: "var(--brand-deep)" }}>NEW • </strong>}
+              {m.sender_name || "Client"}{m.locations?.name ? ` • ${m.locations.name}` : ""}
+              {" • "}{new Date(m.created_at).toLocaleString()}
+              {m.emailed_at ? " • emailed ✅" : ""}
+            </span>
+            {m.subject && <p style={{ fontWeight: 700, margin: "6px 0 0" }}>{m.subject}</p>}
+            <p style={{ margin: "6px 0 0", whiteSpace: "pre-wrap" }}>{m.body}</p>
+            {!m.read_at && (
+              <button onClick={() => markRead(m.id)} style={{ ...button, marginTop: 8, fontSize: "0.85rem", padding: "7px 14px" }}>
+                Mark as read
+              </button>
+            )}
+          </div>
+        ))}
+      </div>
+
       <h2 style={{ fontSize: "1.8rem" }}>Client portal links</h2>
       <p style={{ color: "var(--muted)" }}>
         Share a read-only link per location. Clients see upcoming visits, recent inspection

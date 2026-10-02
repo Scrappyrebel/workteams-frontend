@@ -2,19 +2,26 @@
 -- WorkTeams 025: adversarial tests for the 024 audit repair.
 --
 -- Run order: 023_security_repair.sql, then 024_audit_repair.sql,
--- then this file — in a SCRATCH database (it creates throwaway
--- companies and rolls everything back at the end; nothing persists).
+-- then this file. It creates throwaway companies and rolls
+-- everything back at the end; nothing persists.
 --
--- How it works: rows are created as the table owner (RLS bypassed),
--- then each test switches to `authenticated` with a forged JWT
--- subject via set_config('request.jwt.claim.sub', ...) — exactly what
--- auth.uid() reads — so every check runs under real RLS + grants.
--- Each test prints PASS / FAIL via RAISE NOTICE.
+-- How it works: fixture rows are loaded with a service_role JWT
+-- claim (the 024 guards bypass only service_role, not the table
+-- owner), then each test switches to `authenticated` with a forged
+-- JWT subject via set_config('request.jwt.claim.sub', ...) — exactly
+-- what auth.uid() reads — so every check runs under real RLS +
+-- grants + triggers. Each test prints PASS / FAIL via RAISE NOTICE.
 -- ============================================================
 
 begin;
 
--- ---------- setup (as table owner) ----------
+-- ---------- fixture setup (service_role JWT claim) ----------
+-- The 024 guards (companies_billing_guard, company_members_guard, ...)
+-- bypass only when auth.jwt()->>'role' = 'service_role'. The SQL editor
+-- runs as the table owner with no JWT, so fixtures are loaded through
+-- the service_role bypass. Every attack below runs as 'authenticated'.
+select set_config('request.jwt.claims', '{"role":"service_role"}', true);
+
 insert into public.companies (id, name, tier, created_by, subscription_status, is_complimentary)
 values
   ('11111111-1111-1111-1111-111111111111', 'AuditCo A', 'pro', 'a0a0a0a0-a0a0-a0a0-a0a0-a0a0a0a0a0a0', 'none', false),
@@ -23,6 +30,7 @@ values
 insert into public.company_members (id, company_id, user_id, email, display_name, role)
 values
   ('a1a1a1a1-a1a1-a1a1-a1a1-a1a1a1a1a1a1', '11111111-1111-1111-1111-111111111111', 'a0a0a0a0-a0a0-a0a0-a0a0-a0a0a0a0a0a0', 'ownerA@example.com', 'Owner A', 'owner'),
+  ('a4a4a4a4-a4a4-a4a4-a4a4-a4a4a4a4a4a4', '11111111-1111-1111-1111-111111111111', 'a7a7a7a7-a7a7-a7a7-a7a7-a7a7a7a7a7a7', 'ownerA2@example.com', 'Owner A2', 'owner'),
   ('a2a2a2a2-a2a2-a2a2-a2a2-a2a2a2a2a2a2', '11111111-1111-1111-1111-111111111111', 'a5a5a5a5-a5a5-a5a5-a5a5-a5a5a5a5a5a5', 'empA@example.com', 'Emp A', 'employee'),
   ('a3a3a3a3-a3a3-a3a3-a3a3-a3a3a3a3a3a3', '11111111-1111-1111-1111-111111111111', 'a6a6a6a6-a6a6-a6a6-a6a6-a6a6a6a6a6a6', 'adminA@example.com', 'Admin A', 'admin'),
   ('b1b1b1b1-b1b1-b1b1-b1b1-b1b1b1b1b1b1', '22222222-2222-2222-2222-222222222222', 'b0b0b0b0-b0b0-b0b0-b0b0-b0b0b0b0b0b0', 'ownerB@example.com', 'Owner B', 'owner');
@@ -33,15 +41,18 @@ values ('1a1a1a1a-1a1a-1a1a-1a1a-1a1a1a1a1a1a', '11111111-1111-1111-1111-1111111
 insert into public.training_courses (id, title, slug, description, category, department)
 values ('c1c1c1c1-c1c1-c1c1-c1c1-c1c1c1c1c1c1', 'Audit Course', 'audit-course', 'd', 'cleaning', 'operations');
 
-insert into public.training_steps (id, course_id, step_number, step_key, title)
+insert into public.training_steps (id, course_id, step_number, step_key, title, description)
 values
-  ('d1d1d1d1-d1d1-d1d1-d1d1-d1d1d1d1d1d1', 'c1c1c1c1-c1c1-c1c1-c1c1-c1c1c1c1c1c1', 1, 'reading', 'Reading'),
-  ('d2d2d2d2-d2d2-d2d2-d2d2-d2d2d2d2d2d2', 'c1c1c1c1-c1c1-c1c1-c1c1-c1c1c1c1c1c1', 2, 'written_exam', 'Written exam');
+  ('d1d1d1d1-d1d1-d1d1-d1d1-d1d1d1d1d1d1', 'c1c1c1c1-c1c1-c1c1-c1c1-c1c1c1c1c1c1', 1, 'reading', 'Reading', 'd'),
+  ('d2d2d2d2-d2d2-d2d2-d2d2-d2d2d2d2d2d2', 'c1c1c1c1-c1c1-c1c1-c1c1-c1c1c1c1c1c1', 2, 'written_exam', 'Written exam', 'd');
 
 insert into public.training_enrollments (id, company_id, member_id, course_id, status)
 values
   ('e1e1e1e1-e1e1-e1e1-e1e1-e1e1e1e1e1e1', '11111111-1111-1111-1111-111111111111', 'a2a2a2a2-a2a2-a2a2-a2a2-a2a2a2a2a2a2', 'c1c1c1c1-c1c1-c1c1-c1c1-c1c1c1c1c1c1', 'in_progress'),
   ('e2e2e2e2-e2e2-e2e2-e2e2-e2e2e2e2e2e2', '22222222-2222-2222-2222-222222222222', 'b1b1b1b1-b1b1-b1b1-b1b1-b1b1b1b1b1b1', 'c1c1c1c1-c1c1-c1c1-c1c1-c1c1c1c1c1c1', 'pending_approval');
+
+-- Attacks run as ordinary authenticated users from here on.
+select set_config('request.jwt.claims', '{"role":"authenticated"}', true);
 
 set local role authenticated;
 
@@ -56,10 +67,14 @@ begin
   into r;
   if r.tier = 'starter' and r.stripe_customer_id is null and r.stripe_subscription_id is null
      and r.subscription_status = 'none' and r.is_complimentary = false then
-    raise notice 'T1 PASS: forged billing fields forced to starter/none';
+    raise notice 'T1 PASS: forged billing fields forced to starter/none by the trigger';
   else
     raise notice 'T1 FAIL: got %', row_to_json(r);
   end if;
+exception when others then
+  -- Block I column grants deny writing billing columns at all; either way
+  -- an ordinary client can never choose billing state at creation.
+  raise notice 'T1 PASS: forged billing insert denied (%)', sqlerrm;
 end $$;
 
 -- ================= T2: created_by is immutable =================
@@ -94,10 +109,23 @@ begin
 exception when others then
   raise notice 'T3b PASS: outsider bootstrap denied (%)', sqlerrm;
 end $$;
--- 3c: removed founder cannot delete-then-re-bootstrap
-reset role;
-delete from public.company_members where id = 'a1a1a1a1-a1a1-a1a1-a1a1-a1a1a1a1a1a1';
-set local role authenticated;
+-- 3c: removed founder cannot delete-then-re-bootstrap.
+-- The co-owner removes the founder: this goes through the guard, which
+-- logs the removal in bootstrap_consumed (two owners exist so the
+-- last-owner protection does not trip).
+select set_config('request.jwt.claim.sub', 'a7a7a7a7-a7a7-a7a7-a7a7-a7a7a7a7a7a7', true);
+do $$
+declare n int;
+begin
+  delete from public.company_members where id = 'a1a1a1a1-a1a1-a1a1-a1a1-a1a1a1a1a1a1';
+  get diagnostics n = row_count;
+  if n = 1 then
+    raise notice 'T3c-setup PASS: co-owner removed founder';
+  else
+    raise notice 'T3c FAIL: co-owner delete removed % rows (expected 1)', n;
+  end if;
+end $$;
+-- The removed founder tries to re-bootstrap as owner.
 select set_config('request.jwt.claim.sub', 'a0a0a0a0-a0a0-a0a0-a0a0-a0a0a0a0a0a0', true);
 do $$
 begin
@@ -107,10 +135,12 @@ begin
 exception when others then
   raise notice 'T3c PASS: delete-then-re-bootstrap denied (%)', sqlerrm;
 end $$;
--- restore owner A for the remaining tests
+-- Restore owner A for the remaining tests (privileged fixture step).
+select set_config('request.jwt.claims', '{"role":"service_role"}', true);
 reset role;
 insert into public.company_members (id, company_id, user_id, email, display_name, role)
 values ('a1a1a1a1-a1a1-a1a1-a1a1-a1a1a1a1a1a1', '11111111-1111-1111-1111-111111111111', 'a0a0a0a0-a0a0-a0a0-a0a0-a0a0a0a0a0a0', 'ownerA@example.com', 'Owner A', 'owner');
+select set_config('request.jwt.claims', '{"role":"authenticated"}', true);
 set local role authenticated;
 
 -- ================= T4: admin/employee cannot delete an owner =================
@@ -124,9 +154,17 @@ exception when others then
 end $$;
 select set_config('request.jwt.claim.sub', 'a5a5a5a5-a5a5-a5a5-a5a5-a5a5a5a5a5a5', true);
 do $$
+declare n int;
 begin
   delete from public.company_members where id = 'a1a1a1a1-a1a1-a1a1-a1a1-a1a1a1a1a1a1';
-  raise notice 'T4b FAIL: employee deleted an owner';
+  get diagnostics n = row_count;
+  if n = 0 then
+    -- RLS hides the row from non-owners/admins, so the delete silently
+    -- removes nothing: the denial is real, it just raises no error.
+    raise notice 'T4b PASS: employee owner-delete denied (0 rows visible)';
+  else
+    raise notice 'T4b FAIL: employee deleted an owner';
+  end if;
 exception when others then
   raise notice 'T4b PASS: employee owner-delete denied (%)', sqlerrm;
 end $$;
@@ -173,9 +211,12 @@ begin
   if n = 0 then raise notice 'T6b PASS: forged-pro company reads 0 bids';
   else raise notice 'T6b FAIL: forged-pro company read % bids', n; end if;
 end $$;
--- Flip the complimentary grant (service-role equivalent) -> access opens.
+-- Flip the complimentary grant (privileged fixture step: the billing guard
+-- only lets service_role change billing fields).
+select set_config('request.jwt.claims', '{"role":"service_role"}', true);
 reset role;
 update public.companies set is_complimentary = true where id = '11111111-1111-1111-1111-111111111111';
+select set_config('request.jwt.claims', '{"role":"authenticated"}', true);
 set local role authenticated;
 select set_config('request.jwt.claim.sub', 'a0a0a0a0-a0a0-a0a0-a0a0-a0a0a0a0a0a0', true);
 do $$
@@ -190,15 +231,15 @@ end $$;
 
 -- ================= T7: training bypasses =================
 select set_config('request.jwt.claim.sub', 'a5a5a5a5-a5a5-a5a5-a5a5-a5a5a5a5a5a5', true);
--- 7a: direct INSERT of a completed step is forced back to locked
+-- 7a: direct INSERT of a completed step is denied outright (Block D raises;
+-- it does not silently force the status).
 do $$
-declare st text;
 begin
   insert into public.training_step_progress (enrollment_id, step_id, status, score)
-  values ('e1e1e1e1-e1e1-e1e1-e1e1-e1e1e1e1e1e1', 'd1d1d1d1-d1d1-d1d1-d1d1-d1d1d1d1d1d1', 'completed', 100)
-  returning status into st;
-  if st = 'completed' then raise notice 'T7a FAIL: completed step seeded directly';
-  else raise notice 'T7a PASS: direct completed insert forced to %', st; end if;
+  values ('e1e1e1e1-e1e1-e1e1-e1e1-e1e1e1e1e1e1', 'd1d1d1d1-d1d1-d1d1-d1d1-d1d1d1d1d1d1', 'completed', 100);
+  raise notice 'T7a FAIL: completed step seeded directly';
+exception when others then
+  raise notice 'T7a PASS: direct completed insert denied (%)', sqlerrm;
 end $$;
 -- 7b: locked -> completed jump denied
 do $$

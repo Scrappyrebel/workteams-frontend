@@ -179,6 +179,28 @@ export default function BidDetailPage() {
     else load();
   }
 
+  function makeToken() {
+    const bytes = crypto.getRandomValues(new Uint8Array(32));
+    return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+  }
+
+  async function copyApprovalLink() {
+    let token = bid.approve_token;
+    if (!token) {
+      token = makeToken();
+      const { error } = await supabase().from("bids").update({ approve_token: token, status: "sent" }).eq("id", bidId);
+      if (error) { alert("Could not create link: " + error.message); return; }
+      await load();
+    }
+    const link = `${window.location.origin}/bid/${token}`;
+    try {
+      await navigator.clipboard.writeText(link);
+      alert("Approval link copied — text or email it to the client. When they accept, a contract is created automatically.");
+    } catch {
+      prompt("Copy the approval link:", link);
+    }
+  }
+
   async function deleteBid() {
     if (!confirm("Delete this bid and all its line items?")) return;
     const { error } = await supabase().from("bids").delete().eq("id", bidId);
@@ -453,6 +475,11 @@ export default function BidDetailPage() {
             <p style={{ color: "var(--muted)" }}>This bid is {STATUS_LABELS[bid.status].toLowerCase()} — no further actions.</p>
           )}
         </div>
+        {(bid.status === "draft" || bid.status === "sent") && (
+          <button onClick={copyApprovalLink} style={{ ...button, marginTop: 12 }}>
+            {bid.approve_token ? "Copy client approval link" : "Send to client for approval"}
+          </button>
+        )}
         <button onClick={deleteBid} style={{ ...dangerButton, marginTop: 16 }}>
           Delete bid
         </button>
