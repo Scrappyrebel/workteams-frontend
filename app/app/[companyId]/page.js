@@ -7,6 +7,7 @@ import { useCompany } from "../../../lib/company-context";
 import { canUse, tierLabel } from "../../../lib/tiers";
 import { roleRank } from "../../../lib/roles";
 import { chicagoToday, formatTime12h } from "../../../lib/dates";
+import EmergencyButton from "../../../components/EmergencyButton";
 
 const TOOL_CARDS = [
   { key: "scheduling", label: "Schedule", desc: "Shifts by day, who works where.", href: "schedule", roles: "all" },
@@ -82,18 +83,20 @@ export default function CompanyDashboard() {
 
   return (
     <div>
-      <div className="dashboard-header">
-        <p className="eyebrow">DASHBOARD</p>
-        <h2 style={{ fontSize: "1.8rem", margin: "4px 0" }}>{company.name}</h2>
-        <p style={{ color: "var(--muted)" }}>
-          {tierLabel(tier)} tier • You are {member.role}.{" "}
-          {isManager && <Link href={`/app/${company.id}/plans`} style={{ color: "var(--brand-deep)", fontWeight: 700 }}>Change plan →</Link>}
-        </p>
+      <div className="dashboard-header" style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+        <div style={{ flex: 1, minWidth: 200 }}>
+          <p className="eyebrow">DASHBOARD</p>
+          <h2 style={{ fontSize: "1.8rem", margin: "4px 0" }}>{company.name}</h2>
+          <p style={{ color: "var(--muted)" }}>
+            {tierLabel(tier)} tier • You are {member.role}.{" "}
+            {isManager && <Link href={`/app/${company.id}/plans`} style={{ color: "var(--brand-deep)", fontWeight: 700 }}>Change plan →</Link>}
+          </p>
+        </div>
+        <EmergencyButton compact />
       </div>
 
       <section className="panel" style={{ padding: 22, marginBottom: 22 }}>
-        <p className="eyebrow">TODAY'S ALERTS</p>
-        {alertsLoading ? (
+        <p className="eyebrow">TODAY'S ALERTS</p>        {alertsLoading ? (
           <p>Checking shifts…</p>
         ) : alerts.length === 0 ? (
           <p style={{ color: "var(--success-ink)", fontWeight: 700 }}>✅ All clear — no late or missing clock-ins right now.</p>

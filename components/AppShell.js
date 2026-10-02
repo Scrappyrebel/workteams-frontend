@@ -7,6 +7,8 @@ import { signOut } from "../lib/session";
 import { canUse, tierLabel } from "../lib/tiers";
 import { isProductOwner } from "../lib/product";
 import { roleRank } from "../lib/roles";
+import { ensurePush, enablePush } from "../lib/push-client";
+import { supabase } from "../lib/supabase";
 
 const NAV = [
   { key: "dashboard", label: "Dashboard", href: (c) => `/app/${c}`, minRole: null },
@@ -28,6 +30,7 @@ const NAV = [
   { key: "tierprices", label: "Tier Prices", href: (c) => `/app/${c}/tier-prices`, minRole: null, productOwnerOnly: true },
   { key: "training", label: "Training", href: (c) => `/app/${c}/training`, minRole: null },
   { key: "connections", label: "Connections", href: (c) => `/app/${c}/connections`, minRole: null },
+  { key: "emergency", label: "🚨 Alerts", href: (c) => `/app/${c}/emergency`, minRole: null },
 ];
 
 function roleAtLeast(role, level) {
@@ -38,10 +41,44 @@ export default function AppShell({ company, member, children }) {
   const pathname = usePathname();
   const router = useRouter();
   const [isOwner, setIsOwner] = useState(false);
+  const [pushStatus, setPushStatus] = useState("unknown");
+  const [unacked, setUnacked] = useState(0);
 
   useEffect(() => {
     isProductOwner().then(setIsOwner);
   }, []);
+
+  // Set up push notifications for emergency alerts (once per session).
+  useEffect(() => {
+    if (!company?.id || !member?.id) return;
+    ensurePush({
+      companyId: company.id,
+      getSession: () => supabase().auth.getSession(),
+      onStatus: setPushStatus,
+    });
+  }, [company?.id, member?.id]);
+
+  // Poll for unacknowledged alerts aimed at this viewer (leaders only —
+  // they're the ones who respond).
+  useEffect(() => {
+    if (!company?.id || !member?.role) return;
+    if (roleRank(member.role) < 1) return;
+    let stop = false;
+    async function check() {
+      const audiences = ["leaders"];
+      if (member.role === "owner") audiences.push("owner");
+      const { count } = await supabase()
+        .from("emergency_alerts")
+        .select("id", { count: "exact", head: true })
+        .eq("company_id", company.id)
+        .in("audience", audiences)
+        .is("acknowledged_at", null);
+      if (!stop) setUnacked(count || 0);
+    }
+    check();
+    const t = setInterval(check, 30000);
+    return () => { stop = true; clearInterval(t); };
+  }, [company?.id, member?.role]);
 
   const companyId = company?.id;
   const tier = company?.effectiveTier || company?.tier || "starter";
@@ -108,6 +145,28 @@ export default function AppShell({ company, member, children }) {
             </>
           )}
           <span style={{ marginLeft: "auto", fontSize: "0.82rem", color: "var(--muted)" }}>{member?.display_name || ""}</span>
+          {pushStatus !== "on" && pushStatus !== "unknown" && pushStatus !== "unsupported" && (
+            <button
+              onClick={() => enablePush({
+                companyId,
+                getSession: () => supabase().auth.getSession(),
+                onStatus: setPushStatus,
+              })}
+              title={pushStatus === "blocked" ? "Notifications are blocked — allow them in your browser settings" : "Turn on emergency notifications"}
+              style={{
+                border: "1px solid #b3261e",
+                background: "#fdf0ef",
+                color: "#b3261e",
+                borderRadius: 999,
+                padding: "7px 14px",
+                fontWeight: 800,
+                fontSize: "0.82rem",
+                cursor: pushStatus === "blocked" ? "default" : "pointer",
+              }}
+            >
+              🔔 {pushStatus === "blocked" ? "Alerts blocked" : "Enable alerts"}
+            </button>
+          )}
           <button
             onClick={async () => {
               await signOut();
@@ -160,6 +219,22 @@ export default function AppShell({ company, member, children }) {
           </nav>
         )}
       </header>
+      {unacked > 0 && (
+        <Link
+          href={`/app/${companyId}/emergency`}
+          style={{
+            display: "block",
+            background: "#b3261e",
+            color: "#fff",
+            textAlign: "center",
+            fontWeight: 800,
+            padding: "10px 16px",
+            textDecoration: "none",
+          }}
+        >
+          🚨 {unacked} emergency alert{unacked === 1 ? "" : "s"} need{unacked === 1 ? "s" : ""} a response — tap to view
+        </Link>
+      )}
       <main className="site-shell">{children}</main>
     </div>
   );

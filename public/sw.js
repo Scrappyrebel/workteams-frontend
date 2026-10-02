@@ -41,3 +41,41 @@ self.addEventListener("fetch", (event) => {
     })
   );
 });
+
+// ---- Web push: emergency alerts arrive even with the browser closed ----
+self.addEventListener("push", (event) => {
+  let data = {};
+  try {
+    data = event.data ? event.data.json() : {};
+  } catch (e) {
+    data = { title: "WorkTeams", body: event.data ? event.data.text() : "" };
+  }
+  const title = data.title || "🚨 WorkTeams Emergency";
+  const options = {
+    body: data.body || "Someone needs help right now. Open WorkTeams.",
+    icon: "/icon-192.png",
+    badge: "/icon-192.png",
+    vibrate: [300, 100, 300, 100, 300],
+    tag: data.tag || "workteams-emergency",
+    renotify: true,
+    requireInteraction: true,
+    data: { url: data.url || "/" },
+  };
+  event.waitUntil(self.registration.showNotification(title, options));
+});
+
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const url = (event.notification.data && event.notification.data.url) || "/";
+  event.waitUntil(
+    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((clients) => {
+      for (const c of clients) {
+        if ("focus" in c) {
+          c.navigate(url);
+          return c.focus();
+        }
+      }
+      return self.clients.openWindow(url);
+    })
+  );
+});

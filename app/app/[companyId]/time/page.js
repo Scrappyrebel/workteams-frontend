@@ -5,6 +5,7 @@ import { supabase } from "../../../../lib/supabase";
 import { useCompany } from "../../../../lib/company-context";
 import { canUse } from "../../../../lib/tiers";
 import { isManagerRole, isSupervisorRole } from "../../../../lib/roles";
+import EmergencyButton from "../../../../components/EmergencyButton";
 
 function getPosition() {
   return new Promise((resolve) => {
@@ -246,6 +247,14 @@ export default function TimeClockPage() {
             </p>
           </div>
         )}
+      </section>
+
+      <section className="panel" style={{ padding: 20, margin: "18px 0", textAlign: "center", border: "2px solid #b3261e" }}>
+        <div style={{ fontWeight: 800, marginBottom: 10 }}>Something wrong right now?</div>
+        <EmergencyButton />
+        <p style={{ color: "var(--muted)", fontSize: "0.85rem", marginBottom: 0 }}>
+          Instantly buzzes the owner or your managers.
+        </p>
       </section>
 
       {canViewTeam && (
