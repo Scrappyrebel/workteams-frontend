@@ -11,6 +11,10 @@ export default function PlansPage() {
   const [busy, setBusy] = useState(false);
   const [prices, setPrices] = useState(null);
   const [billing, setBilling] = useState(null);
+  // Two-tap inline confirmation for subscribing. Native window.confirm()
+  // is unreliable in some mobile browsers, so the first tap arms the
+  // button ("Tap again to confirm") and the second tap starts checkout.
+  const [confirmKey, setConfirmKey] = useState(null);
 
   useEffect(() => {
     getTierPrices().then(setPrices);
@@ -49,8 +53,16 @@ export default function PlansPage() {
   }
 
   async function subscribe(key) {
-    if (!isOwner || key === tier) return;
-    if (!confirm(`Subscribe ${company.name} to the ${TIERS[key].name} tier? You'll check out with Stripe.`)) return;
+    // A company with no paid subscription may subscribe to any tier,
+    // including its current one (e.g. a new company on the default
+    // Starter tier buying Starter). With an active subscription, plan
+    // changes go through the billing portal instead.
+    if (!isOwner || (key === tier && hasSubscription)) return;
+    if (confirmKey !== key) {
+      setConfirmKey(key);
+      return;
+    }
+    setConfirmKey(null);
     setBusy(true);
     try {
       const { url } = await api("/api/stripe/checkout", { companyId: company.id, tier: key });
@@ -118,10 +130,12 @@ export default function PlansPage() {
                 ) : (
                   <button
                     onClick={() => subscribe(key)}
-                    disabled={busy || isCurrent}
-                    style={isCurrent ? disabledButton : button}
+                    disabled={busy}
+                    style={button}
                   >
-                    {isCurrent ? "Current tier" : `Subscribe to ${t.name}`}
+                    {confirmKey === key
+                      ? "Tap again to confirm"
+                      : `Subscribe to ${t.name}`}
                   </button>
                 )
               ) : (
@@ -144,11 +158,4 @@ const button = {
   color: "#fff",
   fontWeight: 800,
   cursor: "pointer",
-};
-
-const disabledButton = {
-  ...button,
-  background: "#e8ebf3",
-  color: "var(--muted)",
-  cursor: "default",
 };
