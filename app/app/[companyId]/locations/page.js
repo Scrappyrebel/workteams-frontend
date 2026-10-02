@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { supabase } from "../../../../lib/supabase";
 import { useCompany } from "../../../../lib/company-context";
 import { canUse } from "../../../../lib/tiers";
+import { isManagerRole, isSupervisorRole } from "../../../../lib/roles";
 
 const emptyForm = { name: "", address: "", client_name: "", client_phone: "", notes: "", lat: "", lng: "", geofence_radius_m: 100, rate_area_id: "" };
 
@@ -22,19 +23,29 @@ export default function LocationsPage() {
   const [form, setForm] = useState(emptyForm);
   const [editing, setEditing] = useState(null);
   const [rateAreas, setRateAreas] = useState([]);
+  const [busy, setBusy] = useState(false);
+  const [loaded, setLoaded] = useState(false);
+  const [loadError, setLoadError] = useState("");
+  const [confirmDelete, setConfirmDelete] = useState(null);
 
-  const isManager = member && (member.role === "owner" || member.role === "admin");
+  const canManage = isManagerRole(member?.role);
+  const canView = isSupervisorRole(member?.role);
   const geoAllowed = canUse(company?.effectiveTier || company?.tier, "geofencing");
   const ratesAllowed = canUse(company?.effectiveTier || company?.tier, "bidding");
   const [geoBusy, setGeoBusy] = useState(false);
 
   async function load() {
     const sb = supabase();
-    const { data } = await sb
+    const { data, error: locError } = await sb
       .from("locations")
       .select("*")
       .eq("company_id", company.id)
       .order("name");
+    if (locError) {
+      setLoadError("Could not load locations: " + locError.message);
+      setLoaded(true);
+      return;
+    }
     // Sensitive access details live in location_private (managers only).
     const { data: priv } = await sb
       .from("location_private")
@@ -47,7 +58,9 @@ export default function LocationsPage() {
       client_phone: privByLoc[l.id]?.client_phone || "",
       notes: privByLoc[l.id]?.notes || "",
     })));
-    if (ratesAllowed && isManager) {
+    setLoaded(true);
+    setLoadError("");
+    if (ratesAllowed && canManage) {
       const { data: ra } = await sb.from("rate_areas").select("id, name").eq("company_id", company.id).order("name");
       setRateAreas(ra || []);
     }
@@ -60,6 +73,8 @@ export default function LocationsPage() {
 
   async function save(e) {
     e.preventDefault();
+    if (busy) return; // no double-tap dupes
+    setBusy(true);
     const sb = supabase();
     const lat = form.lat === "" ? null : parseFloat(form.lat);
     const lng = form.lng === "" ? null : parseFloat(form.lng);
@@ -101,6 +116,7 @@ export default function LocationsPage() {
       setEditing(null);
       load();
     }
+    setBusy(false);
   }
 
   function startEdit(l) {
@@ -136,21 +152,27 @@ export default function LocationsPage() {
     setGeoBusy(false);
   }
 
+  // Two-tap delete: native confirm() doesn't fire on some mobile browsers.
   async function remove(id) {
-    if (!confirm("Delete this location? Shifts that used it will keep their history.")) return;
+    if (confirmDelete !== id) {
+      setConfirmDelete(id);
+      return;
+    }
+    setConfirmDelete(null);
     const { error } = await supabase().from("locations").delete().eq("id", id);
     if (error) alert("Could not delete: " + error.message);
     else load();
   }
 
   if (loading || !company) return <p>Loading…</p>;
-  if (!isManager) return <p>Managers and owners manage locations. Ask yours to add a new site.</p>;
+  if (!canView) return <p>Your role can't view locations. Ask your manager.</p>;
 
   return (
     <div>
       <p className="eyebrow">LOCATIONS</p>
-      <h2 style={{ fontSize: "1.8rem" }}>{editing ? "Edit location" : "Add a location"}</h2>
+      <h2 style={{ fontSize: "1.8rem" }}>{canManage ? (editing ? "Edit location" : "Add a location") : "Locations"}</h2>
 
+      {canManage && (
       <section className="panel" style={{ padding: 22, margin: "18px 0" }}>
         <form onSubmit={save} style={{ display: "grid", gap: 10, maxWidth: 520 }}>
           <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Location name *" required style={input} />
@@ -200,7 +222,7 @@ export default function LocationsPage() {
             </p>
           )}
           <div style={{ display: "flex", gap: 8 }}>
-            <button type="submit" style={{ ...button, flex: 1 }}>{editing ? "Save changes" : "Add location"}</button>
+            <button type="submit" disabled={busy} style={{ ...button, flex: 1, opacity: busy ? 0.6 : 1 }}>{busy ? "Saving…" : (editing ? "Save changes" : "Add location")}</button>
             {editing && (
               <button type="button" onClick={() => { setEditing(null); setForm(emptyForm); }} style={ghostButton}>
                 Cancel
@@ -209,9 +231,13 @@ export default function LocationsPage() {
           </div>
         </form>
       </section>
+      )}
+
+      {loadError && <p style={{ color: "#b3261e", fontWeight: 700 }}>{loadError}</p>}
+      {!loaded && !loadError && <p style={{ color: "var(--muted)" }}>Loading locations…</p>}
 
       <div style={{ display: "grid", gap: 10 }}>
-        {locations.length === 0 && <p style={{ color: "var(--muted)" }}>No locations yet — add your first job site above.</p>}
+        {loaded && locations.length === 0 && <p style={{ color: "var(--muted)" }}>{canManage ? "No locations yet — add your first job site above." : "No locations yet."}</p>}
         {locations.map((l) => {
           const hasFence = l.lat != null && l.lng != null;
           const raName = rateAreas.find((r) => r.id === l.rate_area_id)?.name;
@@ -223,10 +249,17 @@ export default function LocationsPage() {
             {raName && <p style={{ margin: "4px 0 0", fontSize: "0.9rem" }}>💲 Rate area: {raName}</p>}
             {l.client_name && <p style={{ margin: "4px 0 0" }}>Client: {l.client_name}{l.client_phone ? ` • ${l.client_phone}` : ""}</p>}
             {l.notes && <p style={{ fontSize: "0.9rem", color: "var(--muted)" }}>{l.notes}</p>}
+            {canManage && (
             <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
               <button onClick={() => startEdit(l)} style={ghostButton}>Edit</button>
-              <button onClick={() => remove(l.id)} style={dangerButton}>Delete</button>
+              <button
+                onClick={() => remove(l.id)}
+                style={confirmDelete === l.id ? dangerButton : ghostButton}
+              >
+                {confirmDelete === l.id ? "Tap again to confirm delete" : "Delete"}
+              </button>
             </div>
+            )}
           </div>
           );
         })}
