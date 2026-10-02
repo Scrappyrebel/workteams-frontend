@@ -15,6 +15,20 @@ export default function PlansPage() {
   // is unreliable in some mobile browsers, so the first tap arms the
   // button ("Tap again to confirm") and the second tap starts checkout.
   const [confirmKey, setConfirmKey] = useState(null);
+  // In-app cancellation state. cancelInfo is null until checked; then
+  // { cancelAtPeriodEnd, currentPeriodEnd }.
+  const [cancelInfo, setCancelInfo] = useState(null);
+  const [cancelArmed, setCancelArmed] = useState(false);
+
+  async function apiGet(path) {
+    const { data: { session } } = await supabase().auth.getSession();
+    const res = await fetch(path, {
+      headers: { Authorization: `Bearer ${session?.access_token || ""}` },
+    });
+    const json = await res.json();
+    if (!res.ok) throw new Error(json.error || "Request failed");
+    return json;
+  }
 
   useEffect(() => {
     getTierPrices().then(setPrices);
@@ -36,6 +50,14 @@ export default function PlansPage() {
   // Stripe subscription ID is never sent to the browser.
   const hasSubscription = !!billing?.subscription_status && billing.subscription_status !== "none";
   const status = billing?.subscription_status || "none";
+
+  // Check whether cancellation is already scheduled (owner + active sub only).
+  useEffect(() => {
+    if (!company?.id || !isOwner || !hasSubscription) return;
+    apiGet(`/api/stripe/cancel?companyId=${company.id}`)
+      .then(setCancelInfo)
+      .catch(() => setCancelInfo(null));
+  }, [company?.id, isOwner, hasSubscription]);
 
   async function api(path, body) {
     const { data: { session } } = await supabase().auth.getSession();
@@ -84,6 +106,30 @@ export default function PlansPage() {
     }
   }
 
+  // In-app cancellation: schedules the Stripe subscription to end at the
+  // end of the current billing period. Same two-tap inline confirmation as
+  // subscribing — native window.confirm() is unreliable on mobile.
+  async function cancelSubscription() {
+    if (!cancelArmed) {
+      setCancelArmed(true);
+      return;
+    }
+    setCancelArmed(false);
+    setBusy(true);
+    try {
+      const { currentPeriodEnd } = await api("/api/stripe/cancel", { companyId: company.id });
+      setCancelInfo({ cancelAtPeriodEnd: true, currentPeriodEnd });
+    } catch (e) {
+      alert("Could not cancel subscription: " + e.message);
+    }
+    setBusy(false);
+  }
+
+  function periodEndDate() {
+    if (!cancelInfo?.currentPeriodEnd) return "";
+    return new Date(cancelInfo.currentPeriodEnd * 1000).toLocaleDateString();
+  }
+
   if (loading || !company) return <p>Loading…</p>;
 
   return (
@@ -99,6 +145,28 @@ export default function PlansPage() {
         <button onClick={manageBilling} disabled={busy} style={{ ...button, width: "auto", padding: "12px 28px", marginTop: 8 }}>
           {busy ? "Opening…" : "Manage billing"}
         </button>
+      )}
+      {isOwner && hasSubscription && status === "active" && (
+        cancelInfo?.cancelAtPeriodEnd ? (
+          <p style={{ color: "var(--muted)", marginTop: 12 }}>
+            Subscription ends {periodEndDate()}. You keep full access until then.
+          </p>
+        ) : (
+          <div style={{ marginTop: 12 }}>
+            <button
+              onClick={cancelSubscription}
+              disabled={busy}
+              style={{ ...button, width: "auto", padding: "12px 28px", background: "transparent", color: "var(--muted)", border: "1px solid var(--muted)" }}
+            >
+              {busy ? "Working…" : cancelArmed ? "Tap again to confirm cancellation" : "Cancel subscription"}
+            </button>
+            {cancelArmed && (
+              <p style={{ color: "var(--muted)", fontSize: "0.88rem", marginTop: 8 }}>
+                Your subscription will end at the end of the billing period. You keep full access until then.
+              </p>
+            )}
+          </div>
+        )
       )}
 
       <div className="portal-grid" style={{ marginTop: 20 }}>
