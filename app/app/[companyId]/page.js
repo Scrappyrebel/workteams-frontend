@@ -5,15 +5,16 @@ import { useEffect, useState } from "react";
 import { supabase } from "../../../lib/supabase";
 import { useCompany } from "../../../lib/company-context";
 import { canUse, tierLabel } from "../../../lib/tiers";
+import { roleRank } from "../../../lib/roles";
 import { chicagoToday, formatTime12h } from "../../../lib/dates";
 
 const TOOL_CARDS = [
   { key: "scheduling", label: "Schedule", desc: "Shifts by day, who works where.", href: "schedule", roles: "all" },
   { key: "timeclock", label: "Time Clock", desc: "Clock in and out with GPS.", href: "time", roles: "all" },
   { key: "payroll", label: "Hours & Payroll", desc: "Payroll-ready hour reports + CSV.", href: "payroll", roles: "all" },
-  { key: "locations", label: "Locations", desc: "Sites, clients, and geofences.", href: "locations", roles: "manager" },
+  { key: "locations", label: "Locations", desc: "Sites, clients, and geofences.", href: "locations", roles: "supervisor" },
   { key: "team", label: "Team", desc: "Members, roles, and invites.", href: "team", roles: "all" },
-  { key: "inspections", label: "Inspections", desc: "Quality checks with photos.", href: "inspections", roles: "manager" },
+  { key: "inspections", label: "Inspections", desc: "Quality checks with photos.", href: "inspections", roles: "supervisor" },
   { key: "messaging", label: "Crew Messaging", desc: "Message your team.", href: "messages", roles: "all" },
   { key: "bidding", label: "Bids & Proposals", desc: "Quote and win new work.", href: "bids", roles: "manager" },
   { key: "walkthroughs", label: "Walkthroughs", desc: "Room-by-room measurements & scope.", href: "walkthroughs", roles: "manager" },
@@ -73,8 +74,9 @@ export default function CompanyDashboard() {
   if (loading || !company) return <p>Loading…</p>;
 
   const visibleCards = TOOL_CARDS.filter((t) => {
-    if (t.roles === "manager" && !isManager) return false;
-    if (!isManager) return ["scheduling", "timeclock", "payroll", "team", "workorders"].includes(t.key);
+    const rank = roleRank(member?.role);
+    if (t.roles === "manager" && rank < 2) return false;
+    if (t.roles === "supervisor" && rank < 1) return false;
     return true;
   });
 

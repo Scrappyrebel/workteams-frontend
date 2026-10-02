@@ -6,15 +6,16 @@ import { useEffect, useState } from "react";
 import { signOut } from "../lib/session";
 import { canUse, tierLabel } from "../lib/tiers";
 import { isProductOwner } from "../lib/product";
+import { roleRank } from "../lib/roles";
 
 const NAV = [
   { key: "dashboard", label: "Dashboard", href: (c) => `/app/${c}`, minRole: null },
   { key: "scheduling", label: "Schedule", href: (c) => `/app/${c}/schedule`, minRole: null },
   { key: "timeclock", label: "Time Clock", href: (c) => `/app/${c}/time`, minRole: null },
   { key: "payroll", label: "My Hours / Payroll", href: (c) => `/app/${c}/payroll`, minRole: null },
-  { key: "locations", label: "Locations", href: (c) => `/app/${c}/locations`, minRole: "manager" },
+  { key: "locations", label: "Locations", href: (c) => `/app/${c}/locations`, minRole: "supervisor" },
   { key: "team", label: "Team", href: (c) => `/app/${c}/team`, minRole: null },
-  { key: "inspections", label: "Inspections", href: (c) => `/app/${c}/inspections`, minRole: "manager" },
+  { key: "inspections", label: "Inspections", href: (c) => `/app/${c}/inspections`, minRole: "supervisor" },
   { key: "messaging", label: "Messages", href: (c) => `/app/${c}/messages`, minRole: null },
   { key: "bidding", label: "Bids", href: (c) => `/app/${c}/bids`, minRole: "manager" },
   { key: "walkthroughs", label: "Walkthroughs", href: (c) => `/app/${c}/walkthroughs`, minRole: "manager" },
@@ -29,8 +30,8 @@ const NAV = [
   { key: "connections", label: "Connections", href: (c) => `/app/${c}/connections`, minRole: null },
 ];
 
-function roleRank(role) {
-  return { owner: 2, admin: 1, employee: 0 }[role] ?? 0;
+function roleAtLeast(role, level) {
+  return roleRank(role) >= roleRank(level);
 }
 
 export default function AppShell({ company, member, children }) {
@@ -45,10 +46,9 @@ export default function AppShell({ company, member, children }) {
   const companyId = company?.id;
   const tier = company?.effectiveTier || company?.tier || "starter";
   const role = member?.role || "employee";
-  const isManager = roleRank(role) >= 1;
 
   const links = NAV.filter((item) => {
-    if (item.minRole === "manager" && !isManager) return false;
+    if (item.minRole && !roleAtLeast(role, item.minRole)) return false;
     if (item.productOwnerOnly && !isOwner) return false;
     return true;
   }).map((item) => {

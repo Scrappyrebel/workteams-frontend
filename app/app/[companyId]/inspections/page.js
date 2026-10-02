@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { supabase } from "../../../../lib/supabase";
 import { useCompany } from "../../../../lib/company-context";
+import { isSupervisorRole } from "../../../../lib/roles";
 import { canUse } from "../../../../lib/tiers";
 import { chicagoToday } from "../../../../lib/dates";
 import { validatePhotoFile } from "../../../../lib/inspection-photos";
@@ -20,6 +21,8 @@ export default function InspectionsPage() {
   const [saving, setSaving] = useState(false);
 
   const isManager = member && (member.role === "owner" || member.role === "admin");
+  // Supervisors run quality checks too.
+  const canInspect = isSupervisorRole(member?.role);
   const allowed = canUse(company?.effectiveTier || company?.tier, "inspections");
 
   async function load() {
@@ -118,7 +121,7 @@ export default function InspectionsPage() {
       <p className="eyebrow">INSPECTIONS</p>
       <h2 style={{ fontSize: "1.8rem" }}>Quality inspections</h2>
 
-      {isManager && (
+      {canInspect && (
         <section className="panel" style={{ padding: 22, margin: "18px 0" }}>
           <h3 style={{ marginTop: 0 }}>New inspection</h3>
           <form onSubmit={save} style={{ display: "grid", gap: 10, maxWidth: 520 }}>

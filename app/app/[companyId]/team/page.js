@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { supabase } from "../../../../lib/supabase";
 import { useCompany } from "../../../../lib/company-context";
+import { UI_TO_DB_ROLE, roleLabel } from "../../../../lib/roles";
 
 export default function TeamPage() {
   const { company, member, loading } = useCompany();
@@ -52,7 +53,7 @@ export default function TeamPage() {
       user_id: null,
       email: form.email.trim().toLowerCase(),
       display_name: form.display_name.trim(),
-      role: form.role,
+      role: UI_TO_DB_ROLE[form.role] || "employee",
     });
     if (error) alert("Could not add member: " + error.message);
     else {
@@ -76,7 +77,8 @@ export default function TeamPage() {
     else load();
   }
 
-  async function changeRole(m, role) {
+  async function changeRole(m, uiRole) {
+    const role = UI_TO_DB_ROLE[uiRole] || "employee";
     if (m.role === "owner" && role !== "owner" && members.filter((x) => x.role === "owner").length === 1) {
       alert("A company needs at least one owner.");
       return;
@@ -118,7 +120,8 @@ export default function TeamPage() {
             <input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="Email" required style={input} />
             <select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })} style={input}>
               <option value="employee">Employee</option>
-              <option value="admin">Admin</option>
+              <option value="supervisor">Supervisor</option>
+              <option value="manager">Manager</option>
               {member.role === "owner" && <option value="owner">Owner</option>}
             </select>
             <button type="submit" style={button}>Add member</button>
@@ -136,7 +139,7 @@ export default function TeamPage() {
               <div style={{ flex: 1 }}>
                 <strong>{m.display_name}</strong>
                 {isManager && <span style={{ color: "var(--muted)", fontSize: "0.88rem" }}> • {m.email}</span>}
-                <div style={{ fontSize: "0.85rem", color: "var(--brand-deep)", fontWeight: 700 }}>{m.role}</div>
+                <div style={{ fontSize: "0.85rem", color: "var(--brand-deep)", fontWeight: 700 }}>{roleLabel(m.role)}</div>
                 {isManager && (
                   <label style={{ fontSize: "0.85rem", color: "var(--muted)", display: "flex", alignItems: "center", gap: 6, marginTop: 6 }}>
                     $/hr
@@ -160,9 +163,10 @@ export default function TeamPage() {
               </div>
               {isManager && m.user_id !== member.user_id && (
                 <div style={{ display: "flex", gap: 6 }}>
-                  <select value={m.role} onChange={(e) => changeRole(m, e.target.value)} style={{ ...input, width: "auto" }}>
+                  <select value={m.role === "admin" ? "manager" : m.role} onChange={(e) => changeRole(m, e.target.value)} style={{ ...input, width: "auto" }}>
                     <option value="employee">Employee</option>
-                    <option value="admin">Admin</option>
+                    <option value="supervisor">Supervisor</option>
+                    <option value="manager">Manager</option>
                     {member.role === "owner" && <option value="owner">Owner</option>}
                   </select>
                   <button onClick={() => removeMember(m)} style={dangerButton}>Remove</button>

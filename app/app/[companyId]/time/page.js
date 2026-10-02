@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { supabase } from "../../../../lib/supabase";
 import { useCompany } from "../../../../lib/company-context";
 import { canUse } from "../../../../lib/tiers";
+import { isManagerRole, isSupervisorRole } from "../../../../lib/roles";
 
 function getPosition() {
   return new Promise((resolve) => {
@@ -39,13 +40,15 @@ export default function TimeClockPage() {
   const [onClock, setOnClock] = useState([]);
   const [busy, setBusy] = useState(false);
 
-  const isManager = member && (member.role === "owner" || member.role === "admin");
+  const isManager = isManagerRole(member?.role);
+  // Supervisors and up see the team's entries and who's on the clock.
+  const canViewTeam = isSupervisorRole(member?.role);
   const geoEnforced = canUse(company?.effectiveTier || company?.tier, "geofencing");
 
   // Employees can only ever see their own entries.
   useEffect(() => {
-    if (!loading && member && !isManager) setFilter("mine");
-  }, [loading, member, isManager]);
+    if (!loading && member && !canViewTeam) setFilter("mine");
+  }, [loading, member, canViewTeam]);
 
   async function load() {
     const sb = supabase();
@@ -65,15 +68,15 @@ export default function TimeClockPage() {
       .eq("company_id", company.id)
       .order("clock_in", { ascending: false })
       .limit(30);
-    if (!isManager || filter === "mine") q = q.eq("member_id", member.id);
+    if (!canViewTeam || filter === "mine") q = q.eq("member_id", member.id);
     const { data } = await q;
     setEntries(data || []);
 
     const { data: locs } = await sb.from("locations").select("id, name, lat, lng, geofence_radius_m").eq("company_id", company.id).order("name");
     setLocations(locs || []);
 
-    // Managers see who's on the clock right now.
-    if (isManager) {
+    // Supervisors and up see who's on the clock right now.
+    if (canViewTeam) {
       const { data: openTeam } = await sb
         .from("time_entries")
         .select("*, locations(name), company_members(display_name)")
@@ -201,7 +204,7 @@ export default function TimeClockPage() {
         )}
       </section>
 
-      {isManager && (
+      {canViewTeam && (
         <section className="panel" style={{ padding: 20, margin: "18px 0" }}>
           <h3 style={{ margin: "0 0 10px" }}>Who's working now</h3>
           {onClock.length === 0 ? (
@@ -227,7 +230,7 @@ export default function TimeClockPage() {
 
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
         <h3 style={{ margin: 0 }}>Recent entries</h3>
-        {isManager && (
+        {canViewTeam && (
           <span style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
             <button onClick={() => setFilter("mine")} style={filterBtn(filter === "mine")}>Mine</button>
             <button onClick={() => setFilter("everyone")} style={filterBtn(filter === "everyone")}>Everyone</button>
