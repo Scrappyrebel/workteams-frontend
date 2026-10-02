@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { signOut } from "../lib/session";
 import { canUse, tierLabel } from "../lib/tiers";
 import { isProductOwner } from "../lib/product";
@@ -44,6 +44,27 @@ export default function AppShell({ company, member, children }) {
   const [isOwner, setIsOwner] = useState(false);
   const [pushStatus, setPushStatus] = useState("unknown");
   const [unacked, setUnacked] = useState(0);
+  // Tab-bar scroll cue: shows a "more" arrow at the right edge while there
+  // are hidden tabs to the right. Tapping it scrolls the bar over.
+  const navRef = useRef(null);
+  const [showMore, setShowMore] = useState(false);
+
+  useEffect(() => {
+    const el = navRef.current;
+    if (!el) return;
+    const update = () => {
+      setShowMore(el.scrollWidth - el.scrollLeft - el.clientWidth > 8);
+    };
+    update();
+    el.addEventListener("scroll", update, { passive: true });
+    window.addEventListener("resize", update);
+    const t = setTimeout(update, 300);
+    return () => {
+      el.removeEventListener("scroll", update);
+      window.removeEventListener("resize", update);
+      clearTimeout(t);
+    };
+  }, [companyId]);
 
   useEffect(() => {
     isProductOwner().then(setIsOwner);
@@ -186,7 +207,9 @@ export default function AppShell({ company, member, children }) {
           </button>
         </div>
         {companyId && (
+          <div style={{ position: "relative" }}>
           <nav
+            ref={navRef}
             className="site-shell"
             style={{
               display: "flex",
@@ -218,6 +241,32 @@ export default function AppShell({ company, member, children }) {
               );
             })}
           </nav>
+          {showMore && (
+            <button
+              aria-label="More tabs — scroll right"
+              onClick={() => navRef.current?.scrollBy({ left: 240, behavior: "smooth" })}
+              style={{
+                position: "absolute",
+                right: 2,
+                top: "50%",
+                transform: "translateY(-60%)",
+                width: 34,
+                height: 34,
+                borderRadius: "50%",
+                border: "none",
+                background: "var(--brand)",
+                color: "#fff",
+                fontSize: "1.2rem",
+                fontWeight: 800,
+                lineHeight: 1,
+                cursor: "pointer",
+                boxShadow: "0 2px 8px rgba(0,0,0,0.25)",
+              }}
+            >
+              ›
+            </button>
+          )}
+          </div>
         )}
       </header>
       {unacked > 0 && (
