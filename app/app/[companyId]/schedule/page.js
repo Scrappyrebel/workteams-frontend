@@ -7,6 +7,7 @@ import { chicagoToday, formatTime12h } from "../../../../lib/dates";
 import ClockPicker from "../../../../components/ClockPicker";
 
 const WEEKDAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 // Parse "YYYY-MM-DD" as local noon so timezone shifts can't move the day.
 function parseDay(iso) {
@@ -178,6 +179,61 @@ export default function SchedulePage() {
   // When editing a repeat-series shift: "one" = just this shift,
   // "series" = this and all future shifts in the series.
   const [editScope, setEditScope] = useState("one");
+  // Schedule display: "list" = upcoming list, "week" = 7-day week view.
+  const [view, setView] = useState("list");
+  // Sunday (ISO) of the week shown in week view.
+  const [weekStart, setWeekStart] = useState(() => startOfWeekISO(chicagoToday()));
+  const [weekShifts, setWeekShifts] = useState([]);
+
+  // Sunday of the week containing iso.
+  function startOfWeekISO(iso) {
+    const d = parseDay(iso);
+    d.setDate(d.getDate() - d.getDay());
+    return toISODate(d);
+  }
+  function addDaysISO(iso, n) {
+    const d = parseDay(iso);
+    d.setDate(d.getDate() + n);
+    return toISODate(d);
+  }
+
+  async function loadWeek(startISO) {
+    const sb = supabase();
+    const endISO = addDaysISO(startISO, 6);
+    const { data } = await sb
+      .from("shifts")
+      .select("*, locations(name)")
+      .eq("company_id", company.id)
+      .gte("shift_date", startISO)
+      .lte("shift_date", endISO)
+      .order("shift_date", { ascending: true })
+      .order("start_time", { ascending: true });
+    const rows = data || [];
+    const memberIds = [...new Set(rows.map((s) => s.member_id).filter(Boolean))];
+    let nameById = {};
+    if (memberIds.length > 0) {
+      const { data: dir } = await sb.from("team_directory").select("id, display_name").in("id", memberIds);
+      for (const d of dir || []) nameById[d.id] = d.display_name;
+    }
+    setWeekShifts(rows.map((s) => ({ ...s, assignee_name: s.member_id ? nameById[s.member_id] || null : null })));
+  }
+
+  function changeWeek(delta) {
+    const next = addDaysISO(weekStart, delta * 7);
+    setWeekStart(next);
+    loadWeek(next);
+  }
+
+  function weekLabel() {
+    const s = parseDay(weekStart);
+    const e = parseDay(addDaysISO(weekStart, 6));
+    const fmt = (d) => `${MONTHS[d.getMonth()]} ${d.getDate()}`;
+    if (s.getFullYear() === e.getFullYear()) {
+      if (s.getMonth() === e.getMonth()) return `${MONTHS[s.getMonth()]} ${s.getDate()} – ${e.getDate()}, ${s.getFullYear()}`;
+      return `${fmt(s)} – ${fmt(e)}, ${s.getFullYear()}`;
+    }
+    return `${fmt(s)}, ${s.getFullYear()} – ${fmt(e)}, ${e.getFullYear()}`;
+  }
   // Which time field the clock picker is open for: { f, setF, field } | null.
   const [clockField, setClockField] = useState(null);
 
@@ -261,6 +317,12 @@ export default function SchedulePage() {
     if (!loading && company) load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loading, company]);
+
+  // Load the visible week's shifts when entering week view.
+  useEffect(() => {
+    if (view === "week" && company) loadWeek(weekStart);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [view]);
 
   async function addShift(e) {
     e.preventDefault();
@@ -452,13 +514,137 @@ export default function SchedulePage() {
     ? `2nd & 4th ${WEEKDAY_NAMES[parseDay(previewShiftDate).getDay()]} of each month`
     : "2nd & 4th weekday of each month";
 
+  // One shift card, shared by the list view and the week view — edit and
+  // delete work the same in both.
+  function shiftCard(s) {
+    return (
+      <div key={s.id} className="portal-card" style={{ minHeight: 0, padding: "16px 20px" }}>
+        {editingId === s.id ? (
+          <div style={{ display: "grid", gap: 10 }}>
+            <h3 style={{ margin: 0 }}>Edit shift</h3>
+            {s.series_id ? (
+              <div style={{ display: "grid", gap: 6 }}>
+                <span style={{ fontSize: "0.85rem", fontWeight: 700, color: "var(--muted)" }}>Apply changes to:</span>
+                <label style={{ fontSize: "0.9rem", display: "flex", gap: 8, alignItems: "center" }}>
+                  <input type="radio" checked={editScope === "one"} onChange={() => setEditScope("one")} />
+                  Just this shift
+                </label>
+                <label style={{ fontSize: "0.9rem", display: "flex", gap: 8, alignItems: "center" }}>
+                  <input type="radio" checked={editScope === "series"} onChange={() => setEditScope("series")} />
+                  This and all future shifts in the series
+                </label>
+                {editScope === "series" && (
+                  <p style={{ fontSize: "0.85rem", color: "var(--muted)", margin: 0 }}>
+                    Time, location, person and notes update on every future repeat — each keeps its own date.
+                  </p>
+                )}
+              </div>
+            ) : (
+              <p style={{ fontSize: "0.85rem", color: "var(--muted)", margin: 0 }}>
+                This changes only this shift.
+              </p>
+            )}
+            <select value={editForm.location_id} onChange={(e) => setEditForm({ ...editForm, location_id: e.target.value })} required style={input}>
+              <option value="">Choose a location…</option>
+              {locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
+            </select>
+            <select value={editForm.member_id} onChange={(e) => setEditForm({ ...editForm, member_id: e.target.value })} style={input}>
+              <option value="">Assign to… (optional)</option>
+              {members.map((m) => <option key={m.id} value={m.id}>{m.display_name} ({m.email})</option>)}
+            </select>
+            {entryToggle(editForm, setEditForm)}
+            {dateTimeFields(editForm, setEditForm)}
+            <input value={editForm.notes} onChange={(e) => setEditForm({ ...editForm, notes: e.target.value })} placeholder="Notes (optional)" style={input} />
+            <div style={{ display: "flex", gap: 8 }}>
+              <button onClick={() => saveEdit(s)} style={{ ...button, flex: 1 }}>Save</button>
+              <button onClick={() => setEditingId(null)} style={{ ...secondaryButton, flex: 1 }}>Cancel</button>
+            </div>
+          </div>
+        ) : (
+          <>
+            <span className="card-kicker">
+              {s.shift_date} • {formatTime12h(s.start_time)}–{formatTime12h(s.end_time)}
+              {s.recurrence_label && <span style={chip}>↻ {s.recurrence_label}</span>}
+            </span>
+            <h3 style={{ margin: "6px 0" }}>{s.locations?.name || "No location"}</h3>
+            <p style={{ color: "var(--muted)", marginBottom: 6 }}>{s.assignee_name || "Unassigned"}</p>
+            {s.notes && <p style={{ fontSize: "0.9rem" }}>{s.notes}</p>}
+            {isManager && (
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                <button onClick={() => startEdit(s)} style={editButton}>Edit</button>
+                <button
+                  onClick={() => deleteShift(s.id)}
+                  style={confirmDeleteId === s.id ? confirmButton : dangerButton}
+                >
+                  {confirmDeleteId === s.id ? "Tap again to confirm delete" : "Delete"}
+                </button>
+                {s.series_id && (
+                  <button
+                    onClick={() => deleteSeries(s)}
+                    style={confirmSeriesId === s.series_id ? confirmButton : dangerButton}
+                  >
+                    {confirmSeriesId === s.series_id ? "Tap again: delete all future repeats" : "Delete series"}
+                  </button>
+                )}
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    );
+  }
+  // Week view: 7 day blocks (Sun–Sat) so the whole week can be checked at
+  // a glance — empty days say so, making gaps obvious.
+  function weekView() {
+    const today = chicagoToday();
+    const goThisWeek = () => {
+      const w = startOfWeekISO(chicagoToday());
+      setWeekStart(w);
+      loadWeek(w);
+    };
+    const days = [];
+    for (let i = 0; i < 7; i++) {
+      const iso = addDaysISO(weekStart, i);
+      const d = parseDay(iso);
+      const dayShifts = weekShifts.filter((s) => s.shift_date === iso);
+      days.push(
+        <div key={iso} style={dayBlock}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+            <strong>{WEEKDAY_NAMES[d.getDay()]}{iso === today ? " · Today" : ""}</strong>
+            <span style={{ color: "var(--muted)", fontSize: "0.85rem" }}>{MONTHS[d.getMonth()]} {d.getDate()}</span>
+          </div>
+          <div style={{ display: "grid", gap: 8, marginTop: 8 }}>
+            {dayShifts.length === 0
+              ? <p style={{ color: "var(--muted)", fontSize: "0.9rem", margin: 0 }}>No shifts scheduled</p>
+              : dayShifts.map(shiftCard)}
+          </div>
+        </div>
+      );
+    }
+    return (
+      <div>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
+          <button type="button" onClick={() => changeWeek(-1)} style={ghostBtn}>← Prev</button>
+          <strong style={{ flex: 1, textAlign: "center" }}>{weekLabel()}</strong>
+          <button type="button" onClick={() => changeWeek(1)} style={ghostBtn}>Next →</button>
+          <button type="button" onClick={goThisWeek} style={ghostBtn}>This week</button>
+        </div>
+        <div style={{ display: "grid", gap: 10 }}>{days}</div>
+      </div>
+    );
+  }
+
   return (
     <div>
       <p className="eyebrow">SCHEDULE</p>
-      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
         <h2 style={{ fontSize: "1.8rem", margin: 0 }}>Upcoming shifts</h2>
         <a href={`/app/${company.id}/schedule/repeats`} style={repeatsLink}>🔁 Repeats</a>
         <a href={`/app/${company.id}/schedule/history`} style={repeatsLink}>📜 History</a>
+        <div style={{ display: "flex", gap: 4, marginLeft: "auto" }}>
+          <button type="button" onClick={() => setView("list")} style={view === "list" ? toggleOn : toggleOff}>List</button>
+          <button type="button" onClick={() => setView("week")} style={view === "week" ? toggleOn : toggleOff}>📅 Week</button>
+        </div>
       </div>
 
       {isManager && (
@@ -508,82 +694,14 @@ export default function SchedulePage() {
       )}
 
       <div style={{ display: "grid", gap: 10 }}>
-        {shifts.length === 0 && <p style={{ color: "var(--muted)" }}>No upcoming shifts yet.</p>}
-        {shifts.map((s) => (
-          <div key={s.id} className="portal-card" style={{ minHeight: 0, padding: "16px 20px" }}>
-            {editingId === s.id ? (
-              <div style={{ display: "grid", gap: 10 }}>
-                <h3 style={{ margin: 0 }}>Edit shift</h3>
-                {s.series_id ? (
-                  <div style={{ display: "grid", gap: 6 }}>
-                    <span style={{ fontSize: "0.85rem", fontWeight: 700, color: "var(--muted)" }}>Apply changes to:</span>
-                    <label style={{ fontSize: "0.9rem", display: "flex", gap: 8, alignItems: "center" }}>
-                      <input type="radio" checked={editScope === "one"} onChange={() => setEditScope("one")} />
-                      Just this shift
-                    </label>
-                    <label style={{ fontSize: "0.9rem", display: "flex", gap: 8, alignItems: "center" }}>
-                      <input type="radio" checked={editScope === "series"} onChange={() => setEditScope("series")} />
-                      This and all future shifts in the series
-                    </label>
-                    {editScope === "series" && (
-                      <p style={{ fontSize: "0.85rem", color: "var(--muted)", margin: 0 }}>
-                        Time, location, person and notes update on every future repeat — each keeps its own date.
-                      </p>
-                    )}
-                  </div>
-                ) : (
-                  <p style={{ fontSize: "0.85rem", color: "var(--muted)", margin: 0 }}>
-                    This changes only this shift.
-                  </p>
-                )}
-                <select value={editForm.location_id} onChange={(e) => setEditForm({ ...editForm, location_id: e.target.value })} required style={input}>
-                  <option value="">Choose a location…</option>
-                  {locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
-                </select>
-                <select value={editForm.member_id} onChange={(e) => setEditForm({ ...editForm, member_id: e.target.value })} style={input}>
-                  <option value="">Assign to… (optional)</option>
-                  {members.map((m) => <option key={m.id} value={m.id}>{m.display_name} ({m.email})</option>)}
-                </select>
-                {entryToggle(editForm, setEditForm)}
-                {dateTimeFields(editForm, setEditForm)}
-                <input value={editForm.notes} onChange={(e) => setEditForm({ ...editForm, notes: e.target.value })} placeholder="Notes (optional)" style={input} />
-                <div style={{ display: "flex", gap: 8 }}>
-                  <button onClick={() => saveEdit(s)} style={{ ...button, flex: 1 }}>Save</button>
-                  <button onClick={() => setEditingId(null)} style={{ ...secondaryButton, flex: 1 }}>Cancel</button>
-                </div>
-              </div>
-            ) : (
-              <>
-                <span className="card-kicker">
-                  {s.shift_date} • {formatTime12h(s.start_time)}–{formatTime12h(s.end_time)}
-                  {s.recurrence_label && <span style={chip}>↻ {s.recurrence_label}</span>}
-                </span>
-                <h3 style={{ margin: "6px 0" }}>{s.locations?.name || "No location"}</h3>
-                <p style={{ color: "var(--muted)", marginBottom: 6 }}>{s.assignee_name || "Unassigned"}</p>
-                {s.notes && <p style={{ fontSize: "0.9rem" }}>{s.notes}</p>}
-                {isManager && (
-                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                    <button onClick={() => startEdit(s)} style={editButton}>Edit</button>
-                    <button
-                      onClick={() => deleteShift(s.id)}
-                      style={confirmDeleteId === s.id ? confirmButton : dangerButton}
-                    >
-                      {confirmDeleteId === s.id ? "Tap again to confirm delete" : "Delete"}
-                    </button>
-                    {s.series_id && (
-                      <button
-                        onClick={() => deleteSeries(s)}
-                        style={confirmSeriesId === s.series_id ? confirmButton : dangerButton}
-                      >
-                        {confirmSeriesId === s.series_id ? "Tap again: delete all future repeats" : "Delete series"}
-                      </button>
-                    )}
-                  </div>
-                )}
-              </>
-            )}
-          </div>
-        ))}
+        {view === "list" ? (
+          <>
+            {shifts.length === 0 && <p style={{ color: "var(--muted)" }}>No upcoming shifts yet.</p>}
+            {shifts.map(shiftCard)}
+          </>
+        ) : (
+          weekView()
+        )}
       </div>
 
       {clockField && (
@@ -607,6 +725,24 @@ const repeatsLink = {
   fontSize: "0.9rem",
   background: "#fff",
   whiteSpace: "nowrap",
+};
+
+const ghostBtn = {
+  border: "1px solid var(--line)",
+  borderRadius: 999,
+  padding: "8px 14px",
+  background: "#fff",
+  color: "inherit",
+  fontWeight: 700,
+  cursor: "pointer",
+  fontSize: "0.85rem",
+};
+
+const dayBlock = {
+  border: "1px solid var(--line)",
+  borderRadius: 16,
+  padding: 12,
+  background: "#fff",
 };
 
 const input = {
