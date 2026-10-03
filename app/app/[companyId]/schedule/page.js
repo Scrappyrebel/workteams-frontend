@@ -27,8 +27,9 @@ function nthWeekdayOfMonth(year, month, weekday, n) {
   return new Date(year, month, 1 + offset + (n - 1) * 7, 12);
 }
 
-// Expand a repeat pattern into concrete "YYYY-MM-DD" dates, capped at 120
-// occurrences so a typo in "repeat until" can't flood the schedule.
+// Expand a repeat pattern into concrete "YYYY-MM-DD" dates, capped at 520
+// occurrences (10 years of weekly shifts) so a typo in "repeat until"
+// can't flood the schedule.
 function buildOccurrences(startISO, pattern, untilISO) {
   if (!startISO || !untilISO) return [];
   const start = parseDay(startISO);
@@ -36,7 +37,7 @@ function buildOccurrences(startISO, pattern, untilISO) {
   if (isNaN(start) || isNaN(until) || until < start) return [];
   const out = [];
   const push = (d) => {
-    if (d >= start && d <= until && out.length < 120) out.push(toISODate(d));
+    if (d >= start && d <= until && out.length < 520) out.push(toISODate(d));
   };
   if (!pattern || pattern === "once") {
     push(start);
@@ -44,7 +45,7 @@ function buildOccurrences(startISO, pattern, untilISO) {
   }
   if (pattern === "weekly" || pattern === "biweekly") {
     const step = pattern === "weekly" ? 7 : 14;
-    for (let d = new Date(start); d <= until && out.length < 120; d.setDate(d.getDate() + step)) {
+    for (let d = new Date(start); d <= until && out.length < 520; d.setDate(d.getDate() + step)) {
       push(new Date(d));
     }
     return out;
@@ -52,7 +53,7 @@ function buildOccurrences(startISO, pattern, untilISO) {
   if (pattern === "monthly") {
     const dayOfMonth = start.getDate();
     let cursor = new Date(start.getFullYear(), start.getMonth(), 1, 12);
-    while (cursor <= until && out.length < 120) {
+    while (cursor <= until && out.length < 520) {
       const last = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 0, 12).getDate();
       push(new Date(cursor.getFullYear(), cursor.getMonth(), Math.min(dayOfMonth, last), 12));
       cursor = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1, 12);
@@ -63,7 +64,7 @@ function buildOccurrences(startISO, pattern, untilISO) {
     const weekday = start.getDay();
     const ordinals = pattern === "nth_weekday" ? [1, 3] : [2, 4];
     let cursor = new Date(start.getFullYear(), start.getMonth(), 1, 12);
-    while (cursor <= until && out.length < 120) {
+    while (cursor <= until && out.length < 520) {
       for (const n of ordinals) {
         push(nthWeekdayOfMonth(cursor.getFullYear(), cursor.getMonth(), weekday, n));
       }
@@ -454,7 +455,11 @@ export default function SchedulePage() {
   return (
     <div>
       <p className="eyebrow">SCHEDULE</p>
-      <h2 style={{ fontSize: "1.8rem" }}>Upcoming shifts</h2>
+      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+        <h2 style={{ fontSize: "1.8rem", margin: 0 }}>Upcoming shifts</h2>
+        <a href={`/app/${company.id}/schedule/repeats`} style={repeatsLink}>🔁 Repeats</a>
+        <a href={`/app/${company.id}/schedule/history`} style={repeatsLink}>📜 History</a>
+      </div>
 
       {isManager && (
         <section className="panel" style={{ padding: 22, margin: "18px 0" }}>
@@ -591,6 +596,18 @@ export default function SchedulePage() {
     </div>
   );
 }
+
+const repeatsLink = {
+  border: "1px solid var(--line)",
+  borderRadius: 999,
+  padding: "6px 14px",
+  textDecoration: "none",
+  color: "inherit",
+  fontWeight: 700,
+  fontSize: "0.9rem",
+  background: "#fff",
+  whiteSpace: "nowrap",
+};
 
 const input = {
   padding: "11px 13px",
