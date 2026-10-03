@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { supabase } from "../../../../lib/supabase";
 import { useCompany } from "../../../../lib/company-context";
 import { chicagoToday, formatTime12h } from "../../../../lib/dates";
+import ClockPicker from "../../../../components/ClockPicker";
 
 const WEEKDAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
@@ -58,11 +59,12 @@ function buildOccurrences(startISO, pattern, untilISO) {
     }
     return out;
   }
-  if (pattern === "nth_weekday") {
+  if (pattern === "nth_weekday" || pattern === "nth_weekday_24") {
     const weekday = start.getDay();
+    const ordinals = pattern === "nth_weekday" ? [1, 3] : [2, 4];
     let cursor = new Date(start.getFullYear(), start.getMonth(), 1, 12);
     while (cursor <= until && out.length < 120) {
-      for (const n of [1, 3]) {
+      for (const n of ordinals) {
         push(nthWeekdayOfMonth(cursor.getFullYear(), cursor.getMonth(), weekday, n));
       }
       cursor = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1, 12);
@@ -82,9 +84,10 @@ function recurrenceLabel(pattern, startISO) {
   if (pattern === "weekly") return "Weekly";
   if (pattern === "biweekly") return "Every 2 weeks";
   if (pattern === "monthly") return "Monthly";
-  if (pattern === "nth_weekday") {
+  if (pattern === "nth_weekday" || pattern === "nth_weekday_24") {
     const d = parseDay(startISO);
-    return `1st & 3rd ${WEEKDAY_NAMES[d.getDay()]}`;
+    const ord = pattern === "nth_weekday" ? "1st & 3rd" : "2nd & 4th";
+    return `${ord} ${WEEKDAY_NAMES[d.getDay()]}`;
   }
   return null;
 }
@@ -174,6 +177,8 @@ export default function SchedulePage() {
   // When editing a repeat-series shift: "one" = just this shift,
   // "series" = this and all future shifts in the series.
   const [editScope, setEditScope] = useState("one");
+  // Which time field the clock picker is open for: { f, setF, field } | null.
+  const [clockField, setClockField] = useState(null);
 
   const isManager = member && (member.role === "owner" || member.role === "admin");
 
@@ -403,7 +408,9 @@ export default function SchedulePage() {
     );
   }
 
-  // Date + start/end time inputs in the current entry mode.
+  // Date + start/end time inputs in the current entry mode. In Pick mode,
+  // dates use the native calendar and times open the tap-the-clock picker
+  // (no scrolling number lists).
   function dateTimeFields(f, setF) {
     if (dateEntry === "type") {
       return (
@@ -417,8 +424,12 @@ export default function SchedulePage() {
     return (
       <div style={{ display: "flex", gap: 8 }}>
         <input type="date" required value={f.shift_date} onChange={(e) => setF({ ...f, shift_date: e.target.value })} style={{ ...input, flex: 1 }} />
-        <input type="time" required value={f.start_time} onChange={(e) => setF({ ...f, start_time: e.target.value })} style={{ ...input, flex: 1 }} />
-        <input type="time" required value={f.end_time} onChange={(e) => setF({ ...f, end_time: e.target.value })} style={{ ...input, flex: 1 }} />
+        <button type="button" onClick={() => setClockField({ f, setF, field: "start_time" })} style={{ ...input, flex: 1, textAlign: "left", cursor: "pointer", color: f.start_time ? "inherit" : "var(--muted)" }}>
+          🕐 {f.start_time ? formatTime12h(f.start_time) : "Start time"}
+        </button>
+        <button type="button" onClick={() => setClockField({ f, setF, field: "end_time" })} style={{ ...input, flex: 1, textAlign: "left", cursor: "pointer", color: f.end_time ? "inherit" : "var(--muted)" }}>
+          🕐 {f.end_time ? formatTime12h(f.end_time) : "End time"}
+        </button>
       </div>
     );
   }
@@ -436,6 +447,9 @@ export default function SchedulePage() {
   const nthOptionLabel = previewShiftDate
     ? `1st & 3rd ${WEEKDAY_NAMES[parseDay(previewShiftDate).getDay()]} of each month`
     : "1st & 3rd weekday of each month";
+  const nthOptionLabel24 = previewShiftDate
+    ? `2nd & 4th ${WEEKDAY_NAMES[parseDay(previewShiftDate).getDay()]} of each month`
+    : "2nd & 4th weekday of each month";
 
   return (
     <div>
@@ -465,6 +479,7 @@ export default function SchedulePage() {
                 <option value="biweekly">Every 2 weeks</option>
                 <option value="monthly">Every month</option>
                 <option value="nth_weekday">{nthOptionLabel}</option>
+                <option value="nth_weekday_24">{nthOptionLabel24}</option>
               </select>
             </label>
             {form.repeat !== "once" && (
@@ -565,6 +580,14 @@ export default function SchedulePage() {
           </div>
         ))}
       </div>
+
+      {clockField && (
+        <ClockPicker
+          value={clockField.f[clockField.field]}
+          onChange={(v) => clockField.setF({ ...clockField.f, [clockField.field]: v })}
+          onClose={() => setClockField(null)}
+        />
+      )}
     </div>
   );
 }
