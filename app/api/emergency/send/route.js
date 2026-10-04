@@ -34,7 +34,7 @@ export async function POST(req) {
     const user = await authedUser(req);
     if (!user) return NextResponse.json({ error: "Sign in required" }, { status: 401 });
 
-    const { companyId, audience, message, locationName } = await req.json();
+    const { companyId, audience, category, message, locationName } = await req.json();
     if (!companyId || !["owner", "leaders"].includes(audience) || !message?.trim()) {
       return NextResponse.json({ error: "companyId, audience and message are required" }, { status: 400 });
     }
@@ -54,6 +54,7 @@ export async function POST(req) {
         company_id: companyId,
         sender_member_id: sender.id,
         audience,
+        category: String(category || "emergency").slice(0, 40),
         message: message.trim().slice(0, 500),
         location_name: locationName?.trim().slice(0, 120) || null,
       })
@@ -80,9 +81,17 @@ export async function POST(req) {
         .from("push_subscriptions")
         .select("id, endpoint, p256dh, auth")
         .in("member_id", targetIds);
-      const who = audience === "owner" ? "the owner" : "your managers";
+      const categoryLabels = {
+        clock_issue: "Clock-in / clock-out problem",
+        safety: "Safety alert",
+        customer_issue: "Customer / communication-book issue",
+        schedule_coverage: "Schedule / coverage issue",
+        proof_upload: "Proof / upload problem",
+        equipment: "Equipment / supply issue",
+        emergency: "Urgent employee alert",
+      };
       const payload = {
-        title: `🚨 Emergency — ${sender.display_name}`,
+        title: `🚨 ${categoryLabels[category] || categoryLabels.emergency} — ${sender.display_name}`,
         body: `${message.trim().slice(0, 140)}${locationName ? ` (${locationName.trim().slice(0, 60)})` : ""}`,
         tag: `emergency-${alert.id}`,
         url: `${APP_URL}/app/${companyId}/emergency`,
