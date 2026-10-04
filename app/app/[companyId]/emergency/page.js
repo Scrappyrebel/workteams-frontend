@@ -17,7 +17,7 @@ export default function EmergencyPage() {
   async function load() {
     const { data } = await supabase()
       .from("emergency_alerts")
-      .select("id, audience, message, location_name, created_at, acknowledged_at, company_members!emergency_alerts_sender_member_id_fkey(display_name)")
+      .select("id, audience, category, message, location_name, created_at, acknowledged_at, company_members!emergency_alerts_sender_member_id_fkey(display_name)")
       .eq("company_id", company.id)
       .order("created_at", { ascending: false })
       .limit(50);
@@ -86,7 +86,7 @@ export default function EmergencyPage() {
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
               <div style={{ flex: 1 }}>
                 <div style={{ fontWeight: 800 }}>
-                  🚨 {a.company_members?.display_name || "Someone"}
+                  🚨 {a.company_members?.display_name || "Someone"}{a.category ? ` · ${a.category.replaceAll("_", " ")}` : ""}
                   <span style={{ fontWeight: 400, color: "var(--muted)", fontSize: "0.85rem" }}>
                     {" "}→ {a.audience === "owner" ? "Owner" : "Managers & supervisors"}
                   </span>
