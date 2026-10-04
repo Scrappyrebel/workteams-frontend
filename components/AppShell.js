@@ -31,6 +31,7 @@ const NAV = [
   { key: "sales", label: "Sales", href: (c) => `/app/${c}/sales`, minRole: null, productOwnerOnly: true },
   { key: "training", label: "Training", href: (c) => `/app/${c}/training`, minRole: null },
   { key: "connections", label: "Connections", href: (c) => `/app/${c}/connections`, minRole: null },
+  { key: "notifications", label: "🔔 Notifications", href: (c) => `/app/${c}/notifications`, minRole: null },
   { key: "emergency", label: "🚨 Alerts", href: (c) => `/app/${c}/emergency`, minRole: null },
 ];
 
@@ -176,7 +177,7 @@ export default function AppShell({ company, member, children }) {
                 getSession: () => supabase().auth.getSession(),
                 onStatus: setPushStatus,
               })}
-              title={pushStatus === "blocked" ? "Notifications are blocked — allow them in your browser settings" : "Turn on emergency notifications"}
+              title={pushStatus === "blocked" ? "Notifications are blocked — allow them in your browser settings" : "Turn on WorkTeams notifications"}
               style={{
                 border: "1px solid #b3261e",
                 background: "#fdf0ef",
@@ -188,7 +189,7 @@ export default function AppShell({ company, member, children }) {
                 cursor: pushStatus === "blocked" ? "default" : "pointer",
               }}
             >
-              🔔 {pushStatus === "blocked" ? "Alerts blocked" : "Enable alerts"}
+              🔔 {pushStatus === "blocked" ? "Notifications blocked" : "Enable notifications"}
             </button>
           )}
           <button
