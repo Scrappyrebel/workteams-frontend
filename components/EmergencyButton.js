@@ -12,6 +12,7 @@ export default function EmergencyButton({ compact = false }) {
   const [open, setOpen] = useState(false);
   const [audience, setAudience] = useState("owner");
   const [message, setMessage] = useState("");
+  const [category, setCategory] = useState("emergency");
   const [sending, setSending] = useState(false);
 
   async function send() {
@@ -31,6 +32,7 @@ export default function EmergencyButton({ compact = false }) {
         body: JSON.stringify({
           companyId: company.id,
           audience,
+          category,
           message: message.trim(),
         }),
       });
@@ -38,6 +40,7 @@ export default function EmergencyButton({ compact = false }) {
       if (!res.ok) throw new Error(json.error || "Send failed");
       setOpen(false);
       setMessage("");
+      setCategory("emergency");
       alert(
         json.pushReady
           ? "🚨 Alert sent. They're being notified now."
@@ -120,6 +123,36 @@ export default function EmergencyButton({ compact = false }) {
                 >
                   <div style={{ fontWeight: 800 }}>{a.label}</div>
                   <div style={{ fontSize: "0.85rem", color: "var(--muted)" }}>{a.desc}</div>
+                </button>
+              ))}
+            </div>
+
+            <div style={{ fontWeight: 800, fontSize: "0.9rem", marginBottom: 8 }}>What kind of help is needed?</div>
+            <div style={{ display: "grid", gap: 8, marginBottom: 16 }}>
+              {[
+                ["clock_issue", "Clock-in / clock-out problem"],
+                ["safety", "Safety or emergency"],
+                ["customer_issue", "Customer / communication-book problem"],
+                ["schedule_coverage", "Schedule / coverage / no-show problem"],
+                ["proof_upload", "Photo / video / proof upload problem"],
+                ["equipment", "Equipment or supply problem"],
+                ["emergency", "Other urgent problem"],
+              ].map(([key, label]) => (
+                <button
+                  type="button"
+                  key={key}
+                  onClick={() => setCategory(key)}
+                  style={{
+                    textAlign: "left",
+                    padding: "10px 14px",
+                    borderRadius: 12,
+                    border: category === key ? "2px solid #b3261e" : "1px solid var(--line)",
+                    background: category === key ? "#fdf0ef" : "#fff",
+                    cursor: "pointer",
+                    fontWeight: 700,
+                  }}
+                >
+                  {label}
                 </button>
               ))}
             </div>

@@ -57,3 +57,36 @@ export async function POST(req) {
     return NextResponse.json({ error: "Could not save notification settings." }, { status: 500 });
   }
 }
+
+
+export async function DELETE(req) {
+  try {
+    const user = await authedUser(req);
+    if (!user) return NextResponse.json({ error: "Sign in required" }, { status: 401 });
+
+    const { companyId, endpoint } = await req.json();
+    if (!companyId || !endpoint) {
+      return NextResponse.json({ error: "companyId and endpoint required" }, { status: 400 });
+    }
+
+    const sb = admin();
+    const { data: member } = await sb
+      .from("company_members")
+      .select("id")
+      .eq("company_id", companyId)
+      .eq("user_id", user.id)
+      .maybeSingle();
+    if (!member) return NextResponse.json({ error: "Not a member" }, { status: 403 });
+
+    await sb
+      .from("push_subscriptions")
+      .delete()
+      .eq("member_id", member.id)
+      .eq("endpoint", endpoint);
+
+    return NextResponse.json({ ok: true });
+  } catch (e) {
+    console.error("push unsubscribe error", e);
+    return NextResponse.json({ error: "Could not turn notifications off." }, { status: 500 });
+  }
+}
