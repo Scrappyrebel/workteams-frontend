@@ -54,7 +54,7 @@ export default function BidReviewPage() {
         <>
           <h2 style={{ fontSize: "1.6rem" }}>{data.bid.title}</h2>
           <p style={{ color: "var(--muted)" }}>
-            From {data.bid.companies?.name} • Prepared for {data.bid.client_name}
+            From {data.bid.company_name} • Prepared for {data.bid.client_name}
             {data.bid.valid_until ? ` • Valid until ${data.bid.valid_until}` : ""}
           </p>
           {data.bid.description && (

@@ -24,19 +24,14 @@ export async function GET(req) {
     const client = sb();
     const { data: bid, error } = await client
       .from("bids")
-      .select("id, title, client_name, description, status, frequency, job_type, valid_until, pricing_mode, hours, hourly_rate, square_footage, rate_per_sqft, base_rate, companies(name)")
+      .select("id, company_id, title, client_name, description, status, frequency, job_type, valid_until, pricing_mode, hours, hourly_rate, square_footage, rate_per_sqft, base_rate")
       .eq("approve_token", token)
       .maybeSingle();
     if (error || !bid) {
-      // Temporary: diagnose expiry filter
-      const { data: allBids } = await client.from("bids").select("id, approve_token, valid_until, status").not("approve_token", "is", null);
-      const today = new Date().toISOString().slice(0, 10);
-      let diag = `today=${today}; `;
-      for (const b of (allBids || [])) {
-        diag += `valid_until=${b.valid_until} status=${b.status} expired=${b.valid_until < today}; `;
-      }
-      return NextResponse.json({ error: `Bid not found. ${diag}` }, { status: 404, headers: { "Cache-Control": "no-store" } });
+      return NextResponse.json({ error: "Bid not found" }, { status: 404, headers: { "Cache-Control": "no-store" } });
     }
+    // Fetch company name separately (avoids join issues)
+    const { data: company } = await client.from("companies").select("name").eq("id", bid.company_id).maybeSingle();
     if (bid.valid_until && bid.valid_until < chicagoToday()) {
       return NextResponse.json({ error: "This proposal has expired." }, { status: 410 });
     }
@@ -69,7 +64,7 @@ export async function GET(req) {
       const mult = { weekly: 4.33, "2x-week": 8.67, "3x-week": 13, "5x-week": 21.67, biweekly: 2.17, monthly: 1 }[freq] || 0;
       if (mult) monthlyNote = `~$${(total * mult).toFixed(2)}/mo`;
     }
-    return NextResponse.json({ bid, items: items || [], total, totalLabel, monthlyNote }, { headers: { "Cache-Control": "no-store" } });
+    return NextResponse.json({ bid: { ...bid, company_name: company?.name }, items: items || [], total, totalLabel, monthlyNote }, { headers: { "Cache-Control": "no-store" } });
   } catch (e) {
     console.error("bid public lookup error", e);
     return NextResponse.json({ error: "Could not load the proposal." }, { status: 500 });
