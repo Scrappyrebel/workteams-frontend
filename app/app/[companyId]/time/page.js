@@ -39,6 +39,7 @@ export default function TimeClockPage() {
   const [locationId, setLocationId] = useState("");
   const [filter, setFilter] = useState("everyone");
   const [onClock, setOnClock] = useState([]);
+  const [teamOffClock, setTeamOffClock] = useState([]);
   const [busy, setBusy] = useState(false);
   // Hats the member can clock in as (e.g. Cleaner vs Manager). Shown only
   // when they have more than one pay rate set.
@@ -104,8 +105,21 @@ export default function TimeClockPage() {
         .is("clock_out", null)
         .order("clock_in", { ascending: false });
       setOnClock(openTeam || []);
+      // Team members NOT on the clock (for manager clock-in).
+      if (isManager) {
+        const onClockIds = new Set((openTeam || []).map((e) => e.member_id));
+        const { data: allMembers } = await sb
+          .from("company_members")
+          .select("id, display_name")
+          .eq("company_id", company.id)
+          .order("display_name");
+        setTeamOffClock((allMembers || []).filter((m) => !onClockIds.has(m.id) && m.id !== member.id));
+      } else {
+        setTeamOffClock([]);
+      }
     } else {
       setOnClock([]);
+      setTeamOffClock([]);
     }
   }
 
@@ -177,6 +191,29 @@ export default function TimeClockPage() {
       await load();
     } catch (e) {
       alert("Clock-out failed: " + e.message);
+    }
+    setBusy(false);
+  }
+
+  async function managerClock(targetMemberId, action) {
+    if (!confirm(action === "in" ? "Clock this person in?" : "Clock this person out?")) return;
+    setBusy(true);
+    try {
+      const res = await fetch("/api/time/manager-clock", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          company_id: company.id,
+          target_member_id: targetMemberId,
+          action,
+          actor_member_id: member.id,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed");
+      await load();
+    } catch (e) {
+      alert("Failed: " + e.message);
     }
     setBusy(false);
   }
@@ -267,15 +304,40 @@ export default function TimeClockPage() {
               {onClock.map((e) => (
                 <div key={e.id} style={{ display: "flex", alignItems: "center", gap: 10 }}>
                   <span style={{ color: "#1e8e4d", fontSize: "1.2rem" }}>🟢</span>
-                  <div>
+                  <div style={{ flex: 1 }}>
                     <strong>{e.company_members?.display_name || "Unknown"}</strong>
                     <span style={{ color: "var(--muted)" }}>
                       {" "}• {e.locations?.name || "No location"} • since{" "}
                       {new Date(e.clock_in).toLocaleTimeString([], { hour: "numeric", minute: "2-digit", hour12: true })}
                     </span>
                   </div>
+                  {isManager && e.member_id !== member.id && (
+                    <button onClick={() => managerClock(e.member_id, "out")}
+                      disabled={busy}
+                      style={{ border: "1px solid #f0c9c4", background: "#fff", color: "#b3261e", borderRadius: 999, padding: "6px 14px", fontWeight: 700, cursor: "pointer", fontSize: "0.85rem" }}>
+                      Clock out
+                    </button>
+                  )}
                 </div>
               ))}
+            </div>
+          )}
+          {isManager && teamOffClock.length > 0 && (
+            <div style={{ marginTop: 16 }}>
+              <h4 style={{ margin: "0 0 8px", fontSize: "0.95rem", color: "var(--muted)" }}>Off the clock</h4>
+              <div style={{ display: "grid", gap: 8 }}>
+                {teamOffClock.map((m) => (
+                  <div key={m.id} style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                    <span style={{ color: "var(--muted)", fontSize: "1.2rem" }}>⚪</span>
+                    <div style={{ flex: 1 }}><strong>{m.display_name || "Unknown"}</strong></div>
+                    <button onClick={() => managerClock(m.id, "in")}
+                      disabled={busy}
+                      style={{ border: "1px solid #a8dab5", background: "#e6f4ea", color: "#137333", borderRadius: 999, padding: "6px 14px", fontWeight: 700, cursor: "pointer", fontSize: "0.85rem" }}>
+                      Clock in
+                    </button>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
         </section>
