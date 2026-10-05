@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { checkRateLimit, clientIp } from "../../../../lib/rate-limit";
+import { chicagoToday } from "../../../../lib/dates";
 import { buildContractText } from "../../../../lib/contracts";
 
 const sb = () =>
@@ -30,10 +31,13 @@ export async function POST(req) {
     const client = sb();
     const { data: bid } = await client
       .from("bids")
-      .select("id, company_id, location_id, title, client_name, frequency, companies(name)")
+      .select("id, company_id, location_id, title, client_name, frequency, status, valid_until, companies(name)")
       .eq("approve_token", token)
       .maybeSingle();
     if (!bid) return NextResponse.json({ error: "Bid not found." }, { status: 404 });
+    if (bid.valid_until && bid.valid_until < chicagoToday()) {
+      return NextResponse.json({ error: "This proposal has expired." }, { status: 410 });
+    }
     if (bid.status === "accepted" || bid.status === "declined") {
       return NextResponse.json({ error: `This bid is already ${bid.status}.` }, { status: 409 });
     }
