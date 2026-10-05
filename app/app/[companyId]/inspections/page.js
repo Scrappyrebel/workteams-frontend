@@ -10,7 +10,17 @@ import { chicagoToday } from "../../../../lib/dates";
 import { validatePhotoFile } from "../../../../lib/inspection-photos";
 
 const SCORE_LABELS = { 1: "1 — Poor", 2: "2 — Fair", 3: "3 — Good", 4: "4 — Very good", 5: "5 — Excellent" };
-const emptySection = { name: "", score: "5", notes: "", photos: [] };
+const CHECKLIST = [
+  "Floors vacuumed / mopped — no debris or stains",
+  "Dusting — desks, shelves, blinds, vents",
+  "Trash emptied — liners replaced",
+  "Glass & mirrors — streak-free",
+  "Restroom fixtures — toilets, sinks, mirrors cleaned",
+  "Restroom stocked — soap, paper towels, toilet paper",
+  "Kitchen / break room — counters, sink, microwave wiped",
+  "High-touch areas disinfected — handles, switches",
+];
+const emptySection = { name: "", score: "5", notes: "", photos: [], checks: [] };
 
 export default function InspectionsPage() {
   const { company, member, loading } = useCompany();
@@ -87,6 +97,7 @@ export default function InspectionsPage() {
       section_name: newSection.name.trim(),
       score: parseInt(newSection.score, 10),
       notes: newSection.notes.trim() || null,
+      checklist: newSection.checks,
       sort_order: sections.length,
     }).select("id").single();
     if (error) { setSaving(false); alert("Could not add section: " + error.message); return; }
@@ -198,7 +209,23 @@ export default function InspectionsPage() {
               </label>
             </div>
             <textarea value={newSection.notes} onChange={(e) => setNewSection({ ...newSection, notes: e.target.value })}
-              placeholder="Notes for this section — what was checked, what needs attention…" rows={2} style={{ ...input, resize: "vertical" }} />
+              placeholder="Notes for this section — what needs attention…" rows={2} style={{ ...input, resize: "vertical" }} />
+            <div style={{ display: "grid", gap: 6 }}>
+              <p style={{ fontSize: "0.9rem", fontWeight: 700, margin: "4px 0 2px" }}>Checklist — tick what passed</p>
+              {CHECKLIST.map((item) => (
+                <label key={item} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: "0.9rem", cursor: "pointer" }}>
+                  <input type="checkbox" checked={newSection.checks.includes(item)}
+                    onChange={(e) => setNewSection({
+                      ...newSection,
+                      checks: e.target.checked
+                        ? [...newSection.checks, item]
+                        : newSection.checks.filter((c) => c !== item),
+                    })}
+                    style={{ width: 18, height: 18 }} />
+                  {item}
+                </label>
+              ))}
+            </div>
             {newSection.photos.length > 0 && <p style={{ fontSize: "0.85rem", color: "var(--muted)", margin: 0 }}>{newSection.photos.length} photo(s) selected</p>}
             <button type="submit" disabled={saving} style={secondaryBtn}>
               {saving ? "Adding…" : "+ Add this section"}

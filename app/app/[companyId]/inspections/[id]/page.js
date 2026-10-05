@@ -150,6 +150,11 @@ export default function InspectionDetailPage() {
               <p style={{ fontWeight: 800, margin: "0 0 6px", fontSize: "1.05rem" }}>
                 {"★".repeat(s.score || 0)}{"★".repeat(5 - (s.score || 0)).replace(/★/g, "☆")} {s.section_name}
               </p>
+              {Array.isArray(s.checklist) && s.checklist.length > 0 && (
+                <ul style={{ margin: "0 0 8px", paddingLeft: 20, fontSize: "0.9rem", color: "#1e8e4d" }}>
+                  {s.checklist.map((c, ci) => <li key={ci}>✓ {c}</li>)}
+                </ul>
+              )}
               {s.notes && <p style={{ color: "var(--muted)", whiteSpace: "pre-wrap", margin: "0 0 10px" }}>{s.notes}</p>}
               {s.photos.length > 0 && (
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(130px, 1fr))", gap: 8 }}>
