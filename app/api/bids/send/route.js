@@ -13,16 +13,20 @@ function makeToken() {
 async function tryEmail({ to, subject, text }) {
   const key = process.env.RESEND_API_KEY;
   const from = process.env.RESEND_FROM || "WorkTeams <noreply@workteams.app>";
-  if (!key || !to) return false;
+  if (!key || !to) return { ok: false, reason: !key ? "missing-key" : "missing-to" };
   try {
     const res = await fetch("https://api.resend.com/emails", {
       method: "POST",
       headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
       body: JSON.stringify({ from, to, subject, text }),
     });
-    return res.ok;
-  } catch {
-    return false;
+    if (res.ok) return { ok: true };
+    const body = await res.text().catch(() => "");
+    console.error("resend error", res.status, body.slice(0, 300));
+    return { ok: false, reason: `resend-${res.status}`, detail: body.slice(0, 200) };
+  } catch (e) {
+    console.error("resend fetch failed", e?.message);
+    return { ok: false, reason: "fetch-failed" };
   }
 }
 
@@ -81,16 +85,17 @@ export async function POST(req) {
     const appUrl = process.env.WORKTEAMS_APP_URL || "https://app.lillybsjanitorial.com";
     const link = `${appUrl}/bid/${token}`;
     const companyName = bid.companies?.name || "us";
-    const emailed = await tryEmail({
+    const result = await tryEmail({
       to: to.trim(),
       subject: `Your cleaning proposal from ${companyName}`,
       text: `Hi ${bid.client_name || "there"},\n\n${companyName} has prepared a cleaning proposal for you: ${bid.title}.\n\nReview and accept or decline it here:\n${link}\n\nThanks!`,
     });
+    const emailed = result.ok;
 
     // Stash the email on the bid for next time.
     await client.from("bids").update({ client_email: to.trim() }).eq("id", bidId);
 
-    return NextResponse.json({ ok: true, emailed, link });
+    return NextResponse.json({ ok: true, emailed, link, emailDebug: emailed ? undefined : result.reason });
   } catch (e) {
     console.error("bid send error", e);
     return NextResponse.json({ error: "Could not send the bid." }, { status: 500 });

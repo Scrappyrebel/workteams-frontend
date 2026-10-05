@@ -230,7 +230,7 @@ export default function BidDetailPage() {
         alert(`Sent to ${email}. When they accept, a contract is created automatically.`);
       } else {
         try { await navigator.clipboard.writeText(out.link); } catch {}
-        alert("Email isn't configured yet — the approval link was copied instead. Text or email it to the client manually.");
+        alert(`Email isn't configured yet — the approval link was copied instead. Text or email it to the client manually.${out.emailDebug ? ` (debug: ${out.emailDebug})` : ""}`);
       }
     } finally {
       setSaving(false);
