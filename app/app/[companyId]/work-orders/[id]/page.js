@@ -123,6 +123,22 @@ export default function WorkOrderDetailPage() {
         {order.locations?.name ? `${order.locations.name} • ` : ""}
         {order.due_date ? `Due ${order.due_date}` : "No due date"}
       </p>
+      {/* Status banner — makes progress visible */}
+      <div style={{
+        padding: "12px 16px",
+        borderRadius: 12,
+        margin: "12px 0",
+        fontWeight: 700,
+        fontSize: "0.95rem",
+        background: order.status === "completed" ? "#e6f4ea" : order.status === "in_progress" ? "#e8f0fe" : order.status === "cancelled" ? "#fce8e6" : "#fef7e0",
+        color: order.status === "completed" ? "#137333" : order.status === "in_progress" ? "#1a73e8" : order.status === "cancelled" ? "#a50e0e" : "#b06000",
+        border: `1px solid ${order.status === "completed" ? "#a8dab5" : order.status === "in_progress" ? "#aecbfa" : order.status === "cancelled" ? "#f5c6c2" : "#fde68a"}`,
+      }}>
+        {order.status === "open" && "📋 Open — waiting to be started"}
+        {order.status === "in_progress" && "🔧 In progress — work is underway"}
+        {order.status === "completed" && `✅ Completed${order.completed_at ? ` on ${new Date(order.completed_at).toLocaleDateString()} at ${new Date(order.completed_at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}` : ""}`}
+        {order.status === "cancelled" && "❌ Cancelled"}
+      </div>
       {order.description && (
         <section className="panel" style={{ padding: 18, margin: "16px 0" }}>
           <p style={{ margin: 0, whiteSpace: "pre-wrap" }}>{order.description}</p>
