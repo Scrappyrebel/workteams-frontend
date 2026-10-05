@@ -52,12 +52,16 @@ export async function GET(req) {
     } else {
       total = (items || []).reduce((s, i) => s + Number(i.quantity) * Number(i.unit_price), 0);
     }
-    // Add monthly estimate for recurring frequencies.
+    // Monthly estimate only for recurring frequencies — never for one-time jobs.
     let monthlyNote = "";
     const freq = (bid.frequency || "").toLowerCase();
     if (total > 0 && totalLabel === "per visit") {
-      const mult = freq.includes("week") ? 4.33 : freq.includes("month") ? 1 : freq.includes("once") || freq.includes("one-time") ? 0 : 4.33;
-      if (mult) monthlyNote = `~$${(total * mult).toFixed(2)}/mo`;
+      const isRecurring = freq.includes("week") || freq.includes("biweek") || freq.includes("month");
+      const isOneTime = freq.includes("once") || freq.includes("one-time") || freq.includes("one time");
+      if (isRecurring && !isOneTime) {
+        const mult = freq.includes("month") && !freq.includes("week") ? 1 : 4.33;
+        monthlyNote = `~$${(total * mult).toFixed(2)}/mo`;
+      }
     }
     return NextResponse.json({ bid, items: items || [], total, totalLabel, monthlyNote });
   } catch (e) {
