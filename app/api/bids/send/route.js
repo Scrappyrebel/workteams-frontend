@@ -83,6 +83,12 @@ export async function POST(req) {
       token = makeToken();
       const { error } = await client.from("bids").update({ approve_token: token, status: "sent" }).eq("id", bidId);
       if (error) return NextResponse.json({ error: "Could not prepare the bid link." }, { status: 500 });
+      // Verify the token actually persisted
+      const { data: verify } = await client.from("bids").select("approve_token").eq("id", bidId).maybeSingle();
+      if (!verify?.approve_token) {
+        return NextResponse.json({ error: "Could not save the approval link. Please try again." }, { status: 500 });
+      }
+      token = verify.approve_token;
     }
 
     const appUrl = process.env.WORKTEAMS_APP_URL || "https://app.lillybsjanitorial.com";
