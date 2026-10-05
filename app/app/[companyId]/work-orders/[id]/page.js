@@ -63,8 +63,25 @@ export default function WorkOrderDetailPage() {
 
   async function update(patch) {
     const { error } = await supabase().from("work_orders").update(patch).eq("id", orderId);
-    if (error) alert("Could not update: " + error.message);
-    else load();
+    if (error) { alert("Could not update: " + error.message); return; }
+    // Fire notifications (best effort).
+    try {
+      if (patch.status === "completed") {
+        await fetch("/api/work-orders/notify", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ work_order_id: orderId, event: "completed", actor_member_id: member.id }),
+        });
+      }
+      if (patch.assigned_to) {
+        await fetch("/api/work-orders/notify", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ work_order_id: orderId, event: "assigned", actor_member_id: member.id }),
+        });
+      }
+    } catch {}
+    load();
   }
 
   async function deleteOrder() {

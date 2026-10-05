@@ -79,7 +79,7 @@ export default function WorkOrdersPage() {
       return;
     }
     setSaving(true);
-    const { error } = await supabase().from("work_orders").insert({
+    const { data: created, error } = await supabase().from("work_orders").insert({
       company_id: company.id,
       title: form.title.trim(),
       description: form.description.trim() || null,
@@ -88,13 +88,21 @@ export default function WorkOrdersPage() {
       assigned_to: form.assigned_to || null,
       due_date: form.due_date || null,
       status: "open",
-    });
+    }).select("id").single();
     setSaving(false);
-    if (error) alert("Could not save work order: " + error.message);
-    else {
-      setForm(emptyForm);
-      load();
+    if (error) { alert("Could not save work order: " + error.message); return; }
+    // Notify the assignee (best effort).
+    if (created?.id && form.assigned_to) {
+      try {
+        await fetch("/api/work-orders/notify", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ work_order_id: created.id, event: "assigned", actor_member_id: member.id }),
+        });
+      } catch {}
     }
+    setForm(emptyForm);
+    load();
   }
 
   if (loading || !company) return <p>Loading…</p>;
