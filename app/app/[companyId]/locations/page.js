@@ -343,6 +343,16 @@ const button = {
   cursor: "pointer",
 };
 
+const brandButton = {
+  padding: "12px 20px",
+  borderRadius: 999,
+  border: "none",
+  background: "var(--brand)",
+  color: "#fff",
+  fontWeight: 800,
+  cursor: "pointer",
+};
+
 const ghostButton = {
   border: "1px solid var(--line)",
   background: "#fff",
