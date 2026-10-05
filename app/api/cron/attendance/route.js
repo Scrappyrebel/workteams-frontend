@@ -75,18 +75,19 @@ export async function GET(req) {
     if (scheduled > now || scheduled < earliest) continue;
     const lateMinutes = Math.floor((now - scheduled) / 60000);
     if (lateMinutes < 10) continue;
-    const critical = lateMinutes >= 30;
+    // Single alert per shift: the dedupe key no longer changes with severity,
+    // so the 10-minute warning is the one and only alert. No 30-min escalation.
     const memberName = shift.company_members?.display_name || "Employee";
     const locationName = shift.locations?.name || "assigned location";
     const result = await sendOwnerAlert(sb, {
       companyId: shift.company_id,
       senderMemberId: shift.member_id,
       category: "schedule_coverage",
-      title: critical ? `🚨 Possible no-show — ${memberName}` : `⚠️ Missing clock-in — ${memberName}`,
+      title: `⚠️ Missing clock-in — ${memberName}`,
       message: `${memberName} has not clocked in at ${locationName} and is ${lateMinutes} minutes past the scheduled start.`,
       locationName,
-      dedupeKey: `${critical ? "no-show" : "missing-clock"}:${shift.id}`,
-      tag: `${critical ? "no-show" : "missing-clock"}-${shift.id}`,
+      dedupeKey: `attendance:${shift.id}`,
+      tag: `attendance-${shift.id}`,
       url: `${process.env.WORKTEAMS_APP_URL || "https://app.lillybsjanitorial.com"}/app/${shift.company_id}/emergency`,
     });
     if (!result.duplicate) alerts++;
