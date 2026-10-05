@@ -95,7 +95,7 @@ export async function POST(req) {
     // Stash the email on the bid for next time.
     await client.from("bids").update({ client_email: to.trim() }).eq("id", bidId);
 
-    return NextResponse.json({ ok: true, emailed, link, emailDebug: emailed ? undefined : result.reason });
+    return NextResponse.json({ ok: true, emailed, link, emailDebug: emailed ? undefined : `${result.reason}: ${result.detail || "no detail"}` });
   } catch (e) {
     console.error("bid send error", e);
     return NextResponse.json({ error: "Could not send the bid." }, { status: 500 });
