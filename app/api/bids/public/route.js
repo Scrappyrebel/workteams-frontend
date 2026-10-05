@@ -56,8 +56,8 @@ export async function GET(req) {
     let monthlyNote = "";
     const freq = (bid.frequency || "").toLowerCase();
     if (total > 0 && totalLabel === "per visit") {
-      const mult = freq.includes("week") ? 4.33 : freq.includes("month") ? 1 : 0;
-      if (mult) monthlyNote = ` (~$${(total * mult).toFixed(2)}/mo)`;
+      const mult = freq.includes("week") ? 4.33 : freq.includes("month") ? 1 : freq.includes("once") || freq.includes("one-time") ? 0 : 4.33;
+      if (mult) monthlyNote = `~$${(total * mult).toFixed(2)}/mo`;
     }
     return NextResponse.json({ bid, items: items || [], total, totalLabel, monthlyNote });
   } catch (e) {

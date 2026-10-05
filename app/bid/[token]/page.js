@@ -70,9 +70,17 @@ export default function BidReviewPage() {
                 <strong>${(Number(i.quantity) * Number(i.unit_price)).toFixed(2)}</strong>
               </div>
             ))}
-            <div style={{ display: "flex", justifyContent: "space-between", padding: "12px 0 0", fontSize: "1.15rem" }}>
-              <strong>Total</strong>
-              <strong>${data.total.toFixed(2)}{data.totalLabel ? ` ${data.totalLabel}` : ""}{data.monthlyNote || ""}</strong>
+            <div style={{ padding: "12px 0 0", fontSize: "1.15rem" }}>
+              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                <strong>Total</strong>
+                <strong>${data.total.toFixed(2)}{data.totalLabel ? ` ${data.totalLabel}` : ""}</strong>
+              </div>
+              {data.monthlyNote && (
+                <div style={{ display: "flex", justifyContent: "space-between", color: "var(--muted)", fontSize: "0.95rem", marginTop: 4 }}>
+                  <span>Estimated monthly</span>
+                  <span>{data.monthlyNote}</span>
+                </div>
+              )}
             </div>
           </section>
           {data.bid.status !== "sent" ? (
