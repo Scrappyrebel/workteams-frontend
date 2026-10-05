@@ -18,7 +18,7 @@ const emptyEntry = { location_id: "", amount: "", description: "", entry_date: c
 
 export default function ProfitabilityPage() {
   const { company, member, loading } = useCompany();
-  const { clockedIn, checking } = useClockedIn();
+  const { clockedIn, checking } = useClockedIn(true);
   const [locations, setLocations] = useState([]);
   const [rows, setRows] = useState([]);
   const [range, setRange] = useState("90");
