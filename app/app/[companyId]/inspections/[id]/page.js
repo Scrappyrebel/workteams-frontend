@@ -9,6 +9,16 @@ import { canUse } from "../../../../../lib/tiers";
 import { storagePathFromUrl, validatePhotoFile, withSignedUrls } from "../../../../../lib/inspection-photos";
 
 const SCORE_LABELS = { 1: "1 — Poor", 2: "2 — Fair", 3: "3 — Good", 4: "4 — Very good", 5: "5 — Excellent" };
+const CHECKLIST = [
+  "Floors vacuumed / mopped — no debris or stains",
+  "Dusting — desks, shelves, blinds, vents",
+  "Trash emptied — liners replaced",
+  "Glass & mirrors — streak-free",
+  "Restroom fixtures — toilets, sinks, mirrors cleaned",
+  "Restroom stocked — soap, paper towels, toilet paper",
+  "Kitchen / break room — counters, sink, microwave wiped",
+  "High-touch areas disinfected — handles, switches",
+];
 
 export default function InspectionDetailPage() {
   const params = useParams();
@@ -23,6 +33,13 @@ export default function InspectionDetailPage() {
   const isManager = member && (member.role === "owner" || member.role === "admin");
   const allowed = canUse(company?.effectiveTier || company?.tier, "inspections");
   const [sections, setSections] = useState([]);
+  const [newSecName, setNewSecName] = useState("");
+  const [newSecScore, setNewSecScore] = useState("5");
+  const [newSecNotes, setNewSecNotes] = useState("");
+  const [newSecPhotos, setNewSecPhotos] = useState([]);
+  const [newSecChecks, setNewSecChecks] = useState([]);
+  const [secSaving, setSecSaving] = useState(false);
+  const [editingSec, setEditingSec] = useState(null);
 
   async function load() {
     const sb = supabase();
@@ -87,8 +104,56 @@ export default function InspectionDetailPage() {
     load();
   }
 
-  async function removePhoto(id, url) {
-    if (!confirm("Delete this photo?")) return;
+  async function addSectionToExisting(e) {
+    e.preventDefault();
+    if (!newSecName.trim()) { alert("Name the section first."); return; }
+    setSecSaving(true);
+    const sb = supabase();
+    const { data: item, error } = await sb.from("inspection_items").insert({
+      inspection_id: inspectionId,
+      section_name: newSecName.trim(),
+      score: parseInt(newSecScore, 10),
+      notes: newSecNotes.trim() || null,
+      checklist: newSecChecks,
+      sort_order: sections.length,
+    }).select("id").single();
+    if (error) { setSecSaving(false); alert("Could not add section: " + error.message); return; }
+    for (const file of newSecPhotos) {
+      const prob = validatePhotoFile(file);
+      if (prob) { alert(prob); continue; }
+      const path = `${company.id}/${inspectionId}/${item.id}_${Date.now()}_${file.name.replace(/[^a-zA-Z0-9._-]/g, "_")}`;
+      const { error: upErr } = await sb.storage.from("inspection-photos").upload(path, file);
+      if (upErr) { alert("Photo upload failed: " + upErr.message); continue; }
+      await sb.from("inspection_photos").insert({ inspection_id: inspectionId, inspection_item_id: item.id, photo_url: path });
+    }
+    setSecSaving(false);
+    setNewSecName(""); setNewSecScore("5"); setNewSecNotes(""); setNewSecPhotos([]); setNewSecChecks([]);
+    load();
+  }
+
+  async function saveSectionEdit(e) {
+    e.preventDefault();
+    if (!editingSec) return;
+    const sb = supabase();
+    const { error } = await sb.from("inspection_items").update({
+      section_name: editingSec.section_name.trim(),
+      score: parseInt(editingSec.score, 10),
+      notes: editingSec.notes?.trim() || null,
+      checklist: editingSec.checklist || [],
+    }).eq("id", editingSec.id);
+    if (error) { alert("Could not save: " + error.message); return; }
+    setEditingSec(null);
+    load();
+  }
+
+  async function deleteSection(id) {
+    if (!confirm("Delete this section and its photos?")) return;
+    const { error } = await supabase().from("inspection_items").delete().eq("id", id);
+    if (error) alert("Could not delete: " + error.message);
+    else load();
+  }
+
+  async function removePhoto(id, url) {    if (!confirm("Delete this photo?")) return;
     const sb = supabase();
     const path = storagePathFromUrl(url);
     if (path) {
@@ -147,24 +212,66 @@ export default function InspectionDetailPage() {
           <h3>Sections ({sections.length})</h3>
           {sections.map((s) => (
             <section key={s.id} className="panel" style={{ padding: 18, margin: "12px 0" }}>
-              <p style={{ fontWeight: 800, margin: "0 0 6px", fontSize: "1.05rem" }}>
-                {"★".repeat(s.score || 0)}{"★".repeat(5 - (s.score || 0)).replace(/★/g, "☆")} {s.section_name}
-              </p>
-              {Array.isArray(s.checklist) && s.checklist.length > 0 && (
-                <ul style={{ margin: "0 0 8px", paddingLeft: 20, fontSize: "0.9rem", color: "#1e8e4d" }}>
-                  {s.checklist.map((c, ci) => <li key={ci}>✓ {c}</li>)}
-                </ul>
-              )}
-              {s.notes && <p style={{ color: "var(--muted)", whiteSpace: "pre-wrap", margin: "0 0 10px" }}>{s.notes}</p>}
-              {s.photos.length > 0 && (
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(130px, 1fr))", gap: 8 }}>
-                  {s.photos.map((p) => (
-                    <a key={p.id} href={p.signed_url || undefined} target="_blank" rel="noreferrer">
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={p.signed_url || undefined} alt={p.caption || s.section_name} style={{ width: "100%", borderRadius: 10, display: "block" }} />
-                    </a>
-                  ))}
-                </div>
+              {editingSec?.id === s.id ? (
+                <form onSubmit={saveSectionEdit} style={{ display: "grid", gap: 10 }}>
+                  <input value={editingSec.section_name}
+                    onChange={(e) => setEditingSec({ ...editingSec, section_name: e.target.value })}
+                    style={input} required />
+                  <select value={editingSec.score}
+                    onChange={(e) => setEditingSec({ ...editingSec, score: e.target.value })} style={input}>
+                    {Object.keys(SCORE_LABELS).map((sc) => <option key={sc} value={sc}>{SCORE_LABELS[sc]}</option>)}
+                  </select>
+                  <div style={{ display: "grid", gap: 6 }}>
+                    {CHECKLIST.map((item) => (
+                      <label key={item} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: "0.9rem", cursor: "pointer" }}>
+                        <input type="checkbox" checked={(editingSec.checklist || []).includes(item)}
+                          onChange={(e) => setEditingSec({
+                            ...editingSec,
+                            checklist: e.target.checked
+                              ? [...(editingSec.checklist || []), item]
+                              : (editingSec.checklist || []).filter((c) => c !== item),
+                          })}
+                          style={{ width: 18, height: 18 }} />
+                        {item}
+                      </label>
+                    ))}
+                  </div>
+                  <textarea value={editingSec.notes || ""}
+                    onChange={(e) => setEditingSec({ ...editingSec, notes: e.target.value })}
+                    rows={2} style={{ ...input, resize: "vertical" }} />
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <button type="submit" style={button}>Save</button>
+                    <button type="button" onClick={() => setEditingSec(null)} style={secondaryBtn}>Cancel</button>
+                  </div>
+                </form>
+              ) : (
+                <>
+                  <p style={{ fontWeight: 800, margin: "0 0 6px", fontSize: "1.05rem" }}>
+                    {"★".repeat(s.score || 0)}{"★".repeat(5 - (s.score || 0)).replace(/★/g, "☆")} {s.section_name}
+                  </p>
+                  {Array.isArray(s.checklist) && s.checklist.length > 0 && (
+                    <ul style={{ margin: "0 0 8px", paddingLeft: 20, fontSize: "0.9rem", color: "#1e8e4d" }}>
+                      {s.checklist.map((c, ci) => <li key={ci}>✓ {c}</li>)}
+                    </ul>
+                  )}
+                  {s.notes && <p style={{ color: "var(--muted)", whiteSpace: "pre-wrap", margin: "0 0 10px" }}>{s.notes}</p>}
+                  {s.photos.length > 0 && (
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(130px, 1fr))", gap: 8, marginBottom: 8 }}>
+                      {s.photos.map((p) => (
+                        <a key={p.id} href={p.signed_url || undefined} target="_blank" rel="noreferrer">
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img src={p.signed_url || undefined} alt={p.caption || s.section_name} style={{ width: "100%", borderRadius: 10, display: "block" }} />
+                        </a>
+                      ))}
+                    </div>
+                  )}
+                  {isManager && (
+                    <div style={{ display: "flex", gap: 8 }}>
+                      <button onClick={() => setEditingSec({ ...s, score: String(s.score) })} style={smallBtn}>Edit</button>
+                      <button onClick={() => deleteSection(s.id)} style={smallDanger}>Delete section</button>
+                    </div>
+                  )}
+                </>
               )}
             </section>
           ))}
@@ -202,6 +309,48 @@ export default function InspectionDetailPage() {
           </div>
         ))}
       </div>
+
+      {isManager && (
+        <section className="panel" style={{ padding: 22, marginBottom: 18 }}>
+          <h3 style={{ marginTop: 0 }}>Add a section</h3>
+          <form onSubmit={addSectionToExisting} style={{ display: "grid", gap: 10, maxWidth: 520 }}>
+            <input value={newSecName} onChange={(e) => setNewSecName(e.target.value)}
+              placeholder="Section name — e.g. Restrooms, Break room…" style={input} required />
+            <div style={{ display: "flex", gap: 8 }}>
+              <label style={{ flex: 1, fontSize: "0.9rem", color: "var(--muted)" }}>
+                Score
+                <select value={newSecScore} onChange={(e) => setNewSecScore(e.target.value)} style={{ ...input, marginTop: 6 }}>
+                  {Object.keys(SCORE_LABELS).map((sc) => <option key={sc} value={sc}>{SCORE_LABELS[sc]}</option>)}
+                </select>
+              </label>
+              <label style={{ flex: 2, fontSize: "0.9rem", color: "var(--muted)" }}>
+                Photos
+                <input type="file" accept="image/*" multiple capture="environment"
+                  onChange={(e) => setNewSecPhotos(Array.from(e.target.files || []))}
+                  style={{ ...input, marginTop: 6 }} />
+              </label>
+            </div>
+            <div style={{ display: "grid", gap: 6 }}>
+              <p style={{ fontSize: "0.9rem", fontWeight: 700, margin: "4px 0 2px" }}>Checklist — tick what passed</p>
+              {CHECKLIST.map((item) => (
+                <label key={item} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: "0.9rem", cursor: "pointer" }}>
+                  <input type="checkbox" checked={newSecChecks.includes(item)}
+                    onChange={(e) => setNewSecChecks(e.target.checked
+                      ? [...newSecChecks, item]
+                      : newSecChecks.filter((c) => c !== item))}
+                    style={{ width: 18, height: 18 }} />
+                  {item}
+                </label>
+              ))}
+            </div>
+            <textarea value={newSecNotes} onChange={(e) => setNewSecNotes(e.target.value)}
+              placeholder="Notes for this section…" rows={2} style={{ ...input, resize: "vertical" }} />
+            <button type="submit" disabled={secSaving} style={button}>
+              {secSaving ? "Adding…" : "+ Add this section"}
+            </button>
+          </form>
+        </section>
+      )}
 
       {isManager && (
         <section className="panel" style={{ padding: 22 }}>
@@ -253,4 +402,34 @@ const dangerButton = {
   fontWeight: 700,
   cursor: "pointer",
   marginTop: 10,
+};
+
+const secondaryBtn = {
+  padding: "10px 20px",
+  borderRadius: 999,
+  border: "1px solid var(--line)",
+  background: "#fff",
+  fontWeight: 700,
+  cursor: "pointer",
+};
+
+const smallBtn = {
+  border: "1px solid var(--line)",
+  background: "#fff",
+  borderRadius: 999,
+  padding: "6px 14px",
+  fontWeight: 700,
+  cursor: "pointer",
+  fontSize: "0.85rem",
+};
+
+const smallDanger = {
+  border: "1px solid #f0c9c4",
+  background: "#fff",
+  color: "#b3261e",
+  borderRadius: 999,
+  padding: "6px 14px",
+  fontWeight: 700,
+  cursor: "pointer",
+  fontSize: "0.85rem",
 };
