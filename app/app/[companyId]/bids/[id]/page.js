@@ -139,6 +139,7 @@ export default function BidDetailPage() {
     const { error } = await supabase().from("bids").update({
       title: pricing.title.trim(),
       client_name: pricing.client_name.trim(),
+      client_email: pricing.client_email.trim() || null,
       description: pricing.description.trim() || null,
       valid_until: pricing.valid_until || null,
     }).eq("id", bidId);
@@ -313,6 +314,7 @@ export default function BidDetailPage() {
           <div style={{ display: "grid", gap: 8, maxWidth: 520, marginTop: 10 }}>
             <input value={pricing.title} onChange={(e) => setPricing({ ...pricing, title: e.target.value })} placeholder="Bid title" style={input} />
             <input value={pricing.client_name} onChange={(e) => setPricing({ ...pricing, client_name: e.target.value })} placeholder="Client name" style={input} />
+            <input type="email" value={pricing.client_email} onChange={(e) => setPricing({ ...pricing, client_email: e.target.value })} placeholder="Client email (for sending the bid)" style={input} />
             <textarea value={pricing.description} onChange={(e) => setPricing({ ...pricing, description: e.target.value })} placeholder="Description" rows={3} style={input} />
             <label style={{ fontSize: "0.9rem", color: "var(--muted)" }}>Valid until
               <input type="date" value={pricing.valid_until} onChange={(e) => setPricing({ ...pricing, valid_until: e.target.value })} style={{ ...input, marginTop: 4 }} />
