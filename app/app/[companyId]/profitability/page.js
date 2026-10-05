@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { supabase } from "../../../../lib/supabase";
 import { useCompany } from "../../../../lib/company-context";
+import { useClockedIn } from "../../../../lib/use-clocked-in";
 import { canUse } from "../../../../lib/tiers";
 import { chicagoToday, chicagoDaysAgo } from "../../../../lib/dates";
 
@@ -17,6 +18,7 @@ const emptyEntry = { location_id: "", amount: "", description: "", entry_date: c
 
 export default function ProfitabilityPage() {
   const { company, member, loading } = useCompany();
+  const { clockedIn, checking } = useClockedIn();
   const [locations, setLocations] = useState([]);
   const [rows, setRows] = useState([]);
   const [range, setRange] = useState("90");
@@ -124,7 +126,7 @@ export default function ProfitabilityPage() {
   }
 
   useEffect(() => {
-    if (!loading && company && allowed && isManager) compute();
+    if (!loading && !checking && company && allowed && isManager && (member.role === "owner" || clockedIn)) compute();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loading, company, allowed, range]);
 
@@ -150,7 +152,19 @@ export default function ProfitabilityPage() {
     }
   }
 
-  if (loading || !company) return <p>Loading…</p>;
+  if (loading || checking || !company) return <p>Loading…</p>;
+  const needsClockIn = isManager && member.role !== 'owner' && !clockedIn;
+  if (needsClockIn) {
+    return (
+      <div>
+        <p className="eyebrow">PROFITABILITY</p>
+        <h2 style={{ fontSize: '1.8rem' }}>🔒 Profitability</h2>
+        <section className="panel" style={{ padding: 22, marginTop: 18 }}>
+          <p>Clock in on the Time Clock tab to view profitability.</p>
+        </section>
+      </div>
+    );
+  }
   if (!allowed || !isManager) {
     return (
       <div>
