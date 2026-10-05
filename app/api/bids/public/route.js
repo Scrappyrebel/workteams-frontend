@@ -27,7 +27,12 @@ export async function GET(req) {
       .select("id, title, client_name, description, status, frequency, job_type, valid_until, pricing_mode, hours, hourly_rate, square_footage, rate_per_sqft, base_rate, companies(name)")
       .eq("approve_token", token)
       .maybeSingle();
-    if (error || !bid) return NextResponse.json({ error: "Bid not found" }, { status: 404, headers: { "Cache-Control": "no-store" } });
+    if (error || !bid) {
+      // Temporary: show token prefixes to diagnose mismatch
+      const { data: allTokens } = await client.from("bids").select("approve_token").not("approve_token", "is", null);
+      const prefixes = (allTokens || []).map((b) => b.approve_token.slice(0, 8)).join(",");
+      return NextResponse.json({ error: `Bid not found (you sent: ${token.slice(0, 8)}…, in DB: ${prefixes})` }, { status: 404, headers: { "Cache-Control": "no-store" } });
+    }
     if (bid.valid_until && bid.valid_until < chicagoToday()) {
       return NextResponse.json({ error: "This proposal has expired." }, { status: 410 });
     }
