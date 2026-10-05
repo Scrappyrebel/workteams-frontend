@@ -238,7 +238,10 @@ export default function BidDetailPage() {
   }
 
   async function copyApprovalLink() {
-    let token = bid.approve_token;
+    // Reload first so we never overwrite a token the email already sent.
+    await load();
+    const { data: fresh } = await supabase().from("bids").select("approve_token").eq("id", bidId).maybeSingle();
+    let token = fresh?.approve_token;
     if (!token) {
       token = makeToken();
       const { error } = await supabase().from("bids").update({ approve_token: token, status: "sent" }).eq("id", bidId);
