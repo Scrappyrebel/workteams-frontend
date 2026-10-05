@@ -146,6 +146,28 @@ export async function POST(req) {
       console.error("clock-in insert failed", error.message);
       return NextResponse.json({ error: "Clock-in failed. Try again." }, { status: 500 });
     }
+    // Auto-link to today's shift at this location (so attendance tracking works
+    // even though the user just picked the location, not the shift).
+    try {
+      const todayStr = new Intl.DateTimeFormat("en-CA", {
+        timeZone: "America/Chicago", year: "numeric", month: "2-digit", day: "2-digit",
+      }).format(new Date());
+      const { data: shift } = await sb
+        .from("shifts")
+        .select("id")
+        .eq("company_id", companyId)
+        .eq("member_id", member.id)
+        .eq("location_id", locationId)
+        .eq("shift_date", todayStr)
+        .limit(1)
+        .maybeSingle();
+      if (shift) {
+        await sb.from("time_entries").update({ shift_id: shift.id }).eq("id", entry.id);
+        entry.shift_id = shift.id;
+      }
+    } catch (e) {
+      console.error("shift auto-link failed", e.message);
+    }
     return NextResponse.json({ entry });
   } catch (e) {
     console.error("clock-in error", e);
