@@ -53,15 +53,12 @@ export async function GET(req) {
       total = (items || []).reduce((s, i) => s + Number(i.quantity) * Number(i.unit_price), 0);
     }
     // Monthly estimate only for recurring frequencies — never for one-time jobs.
+    // Multipliers = visits per month for each frequency.
     let monthlyNote = "";
     const freq = (bid.frequency || "").toLowerCase();
     if (total > 0 && totalLabel === "per visit") {
-      const isRecurring = freq.includes("week") || freq.includes("biweek") || freq.includes("month");
-      const isOneTime = freq.includes("once") || freq.includes("one-time") || freq.includes("one time");
-      if (isRecurring && !isOneTime) {
-        const mult = freq.includes("month") && !freq.includes("week") ? 1 : 4.33;
-        monthlyNote = `~$${(total * mult).toFixed(2)}/mo`;
-      }
+      const mult = { weekly: 4.33, "2x-week": 8.67, "3x-week": 13, "5x-week": 21.67, biweekly: 2.17, monthly: 1 }[freq] || 0;
+      if (mult) monthlyNote = `~$${(total * mult).toFixed(2)}/mo`;
     }
     return NextResponse.json({ bid, items: items || [], total, totalLabel, monthlyNote });
   } catch (e) {

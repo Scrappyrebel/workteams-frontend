@@ -350,7 +350,7 @@ export default function BidDetailPage() {
               </div>
             </div>
             <div style={{ marginBottom: 10 }}>
-              <div style={{ fontSize: "0.9rem", color: "var(--muted)", marginBottom: 6 }}>How often?</div>
+              <div style={{ fontSize: "0.9rem", color: "var(--muted)", marginBottom: 6 }}>How often will you visit?</div>
               <select
                 value={pricing.frequency}
                 onChange={(e) => setPricing({ ...pricing, frequency: e.target.value })}
