@@ -32,9 +32,15 @@ export async function POST(req) {
     // Workaround: approve_token index may be corrupted; match in JS.
     const { data: candidates } = await client
       .from("bids")
-      .select("id, company_id, location_id, title, client_name, frequency, status, valid_until, approve_token")
+      .select("id, approve_token")
       .not("approve_token", "is", null);
-    const bid = (candidates || []).find((b) => b.approve_token === token);
+    const match = (candidates || []).find((b) => b.approve_token === token);
+    if (!match) return NextResponse.json({ error: "Bid not found." }, { status: 404 });
+    const { data: bid } = await client
+      .from("bids")
+      .select("id, company_id, location_id, title, client_name, frequency, status, valid_until")
+      .eq("id", match.id)
+      .maybeSingle();
     if (!bid) return NextResponse.json({ error: "Bid not found." }, { status: 404 });
     if (bid.valid_until && bid.valid_until < chicagoToday()) {
       return NextResponse.json({ error: "This proposal has expired." }, { status: 410 });

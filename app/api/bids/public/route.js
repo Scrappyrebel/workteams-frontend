@@ -23,19 +23,26 @@ export async function GET(req) {
     }
     const client = sb();
     // Workaround: the approve_token index may be corrupted (.eq() fails on
-    // identical values). Fetch candidates and match in JS.
+    // identical values). Find the bid id by scanning tokens in JS.
     const { data: candidates, error: candErr } = await client
       .from("bids")
-      .select("id, company_id, title, client_name, description, status, frequency, job_type, valid_until, pricing_mode, hours, hourly_rate, square_footage, rate_per_sqft, base_rate, approve_token")
+      .select("id, approve_token")
       .not("approve_token", "is", null);
     if (candErr) {
       return NextResponse.json({ error: "Could not load the proposal." }, { status: 500 });
     }
-    const bid = (candidates || []).find((b) => b.approve_token === token);
-    if (!bid) {
+    const match = (candidates || []).find((b) => b.approve_token === token);
+    if (!match) {
       return NextResponse.json({ error: "Bid not found" }, { status: 404, headers: { "Cache-Control": "no-store" } });
     }
-    delete bid.approve_token;
+    const { data: bid, error: bidErr } = await client
+      .from("bids")
+      .select("id, company_id, title, client_name, description, status, frequency, job_type, valid_until, pricing_mode, hours, hourly_rate, square_footage, rate_per_sqft, base_rate")
+      .eq("id", match.id)
+      .maybeSingle();
+    if (bidErr || !bid) {
+      return NextResponse.json({ error: "Bid not found" }, { status: 404, headers: { "Cache-Control": "no-store" } });
+    }
     // Fetch company name separately (avoids join issues)
     const { data: company } = await client.from("companies").select("name").eq("id", bid.company_id).maybeSingle();
     if (bid.valid_until && bid.valid_until < chicagoToday()) {
