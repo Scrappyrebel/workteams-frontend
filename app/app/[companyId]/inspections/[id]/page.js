@@ -22,6 +22,7 @@ export default function InspectionDetailPage() {
   const inspectionId = params.id;
   const isManager = member && (member.role === "owner" || member.role === "admin");
   const allowed = canUse(company?.effectiveTier || company?.tier, "inspections");
+  const [sections, setSections] = useState([]);
 
   async function load() {
     const sb = supabase();
@@ -35,14 +36,25 @@ export default function InspectionDetailPage() {
       router.replace(`/app/${company.id}/inspections`);
       return;
     }
-    setInspection(insp);
     let inspectorName = "Unknown inspector";
     if (insp.inspector_id) {
       const { data: m } = await sb.from("team_directory").select("display_name").eq("id", insp.inspector_id).single();
       if (m) inspectorName = m.display_name;
     }
     setInspection({ ...insp, inspector_name: inspectorName });
-    const { data: ph } = await sb.from("inspection_photos").select("*").eq("inspection_id", inspectionId).order("created_at");
+    // Load sections with their photos.
+    const { data: items } = await sb.from("inspection_items")
+      .select("*, inspection_photos(*)")
+      .eq("inspection_id", inspectionId)
+      .order("sort_order");
+    const withUrls = [];
+    for (const it of items || []) {
+      withUrls.push({ ...it, photos: await withSignedUrls(sb, it.inspection_photos || []) });
+    }
+    setSections(withUrls);
+    // Legacy: photos attached directly to the inspection (no section).
+    const { data: ph } = await sb.from("inspection_photos").select("*")
+      .eq("inspection_id", inspectionId).is("inspection_item_id", null).order("created_at");
     setPhotos(await withSignedUrls(sb, ph || []));
   }
 
@@ -130,8 +142,31 @@ export default function InspectionDetailPage() {
         )}
       </section>
 
-      <h3>Photos ({photos.length})</h3>
-      {photos.length === 0 && <p style={{ color: "var(--muted)" }}>No photos yet.</p>}
+      {sections.length > 0 && (
+        <>
+          <h3>Sections ({sections.length})</h3>
+          {sections.map((s) => (
+            <section key={s.id} className="panel" style={{ padding: 18, margin: "12px 0" }}>
+              <p style={{ fontWeight: 800, margin: "0 0 6px", fontSize: "1.05rem" }}>
+                {"★".repeat(s.score || 0)}{"★".repeat(5 - (s.score || 0)).replace(/★/g, "☆")} {s.section_name}
+              </p>
+              {s.notes && <p style={{ color: "var(--muted)", whiteSpace: "pre-wrap", margin: "0 0 10px" }}>{s.notes}</p>}
+              {s.photos.length > 0 && (
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(130px, 1fr))", gap: 8 }}>
+                  {s.photos.map((p) => (
+                    <a key={p.id} href={p.signed_url || undefined} target="_blank" rel="noreferrer">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={p.signed_url || undefined} alt={p.caption || s.section_name} style={{ width: "100%", borderRadius: 10, display: "block" }} />
+                    </a>
+                  ))}
+                </div>
+              )}
+            </section>
+          ))}
+        </>
+      )}
+
+      {photos.length > 0 && <h3>General photos ({photos.length})</h3>}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))", gap: 10, marginBottom: 18 }}>
         {photos.map((p) => (
           <div key={p.id} style={{ position: "relative" }}>
