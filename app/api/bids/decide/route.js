@@ -29,11 +29,12 @@ export async function POST(req) {
       return NextResponse.json({ error: "Token and a valid decision are required." }, { status: 400 });
     }
     const client = sb();
-    const { data: bid } = await client
+    // Workaround: approve_token index may be corrupted; match in JS.
+    const { data: candidates } = await client
       .from("bids")
-      .select("id, company_id, location_id, title, client_name, frequency, status, valid_until, companies(name)")
-      .eq("approve_token", token)
-      .maybeSingle();
+      .select("id, company_id, location_id, title, client_name, frequency, status, valid_until, approve_token")
+      .not("approve_token", "is", null);
+    const bid = (candidates || []).find((b) => b.approve_token === token);
     if (!bid) return NextResponse.json({ error: "Bid not found." }, { status: 404 });
     if (bid.valid_until && bid.valid_until < chicagoToday()) {
       return NextResponse.json({ error: "This proposal has expired." }, { status: 410 });
@@ -56,8 +57,9 @@ export async function POST(req) {
     const scope = (items || []).map((i) =>
       Number(i.quantity) > 1 ? `${i.description} (x${i.quantity})` : i.description
     );
+    const { data: co } = await client.from("companies").select("name").eq("id", bid.company_id).maybeSingle();
     const terms = buildContractText({
-      companyName: bid.companies?.name || "",
+      companyName: co?.name || "",
       clientName: name?.trim() || bid.client_name,
       locationName: "",
       scopeOfWork: scope,
