@@ -308,7 +308,7 @@ export default function BidDetailPage() {
       </p>
       {bid.description && <p style={{ marginTop: 8 }}>{bid.description}</p>}
 
-      {(bid.status === "draft" || bid.status === "sent") && (
+      {(bid.status === "draft" || bid.status === "sent" || bid.status === "declined") && (
         <details style={{ margin: "12px 0" }}>
           <summary style={{ cursor: "pointer", fontWeight: 700, color: "var(--brand-deep)" }}>Edit bid details</summary>
           <div style={{ display: "grid", gap: 8, maxWidth: 520, marginTop: 10 }}>
@@ -563,7 +563,7 @@ export default function BidDetailPage() {
             <p style={{ color: "var(--muted)" }}>This bid is {STATUS_LABELS[bid.status].toLowerCase()} — no further actions.</p>
           )}
         </div>
-        {(bid.status === "draft" || bid.status === "sent") && (
+        {(bid.status === "draft" || bid.status === "sent" || bid.status === "declined") && (
           <>
             <button onClick={sendToClient} disabled={saving} style={{ ...button, marginTop: 12 }}>
               {saving ? "Sending…" : "Send to client by email"}

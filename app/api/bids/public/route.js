@@ -24,7 +24,7 @@ export async function GET(req) {
     const client = sb();
     const { data: bid, error } = await client
       .from("bids")
-      .select("id, title, client_name, description, status, frequency, job_type, valid_until, companies(name)")
+      .select("id, title, client_name, description, status, frequency, job_type, valid_until, pricing_mode, hours, hourly_rate, square_footage, rate_per_sqft, base_rate, companies(name)")
       .eq("approve_token", token)
       .maybeSingle();
     if (error || !bid) return NextResponse.json({ error: "Bid not found" }, { status: 404 });
