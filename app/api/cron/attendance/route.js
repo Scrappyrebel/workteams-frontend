@@ -56,7 +56,7 @@ export async function GET(req) {
 
   const { data: shifts, error } = await sb
     .from("shifts")
-    .select("id, company_id, member_id, location_id, shift_date, start_time, locations(name), company_members!shifts_member_id_fkey(display_name)")
+    .select("id, company_id, member_id, location_id, shift_date, start_time, end_time, locations(name), company_members!shifts_member_id_fkey(display_name)")
     .not("member_id", "is", null)
     .gte("shift_date", yesterday)
     .lte("shift_date", chicagoDate);
@@ -71,14 +71,45 @@ export async function GET(req) {
   // Also treat a member as present if they have ANY open time entry (clocked in
   // without linking to the shift — e.g. tapped Clock In and picked the location).
   const { data: openEntries } = memberIds.length
-    ? await sb.from("time_entries").select("member_id").in("member_id", memberIds).is("clock_out", null)
+    ? await sb.from("time_entries").select("id, member_id, shift_id, clock_in").in("member_id", memberIds).is("clock_out", null)
     : { data: [] };
   const clockedInAnywhere = new Set((openEntries || []).map((x) => x.member_id));
+  // Map shift_id -> open entry, and member_id -> open entry, for overtime checks.
+  const openByShift = new Map();
+  const openByMember = new Map();
+  for (const e of openEntries || []) {
+    if (e.shift_id) openByShift.set(e.shift_id, e);
+    if (!openByMember.has(e.member_id)) openByMember.set(e.member_id, e);
+  }
 
   let alerts = 0;
   for (const shift of shifts || []) {
     if (clocked.has(shift.id)) continue;
-    if (clockedInAnywhere.has(shift.member_id)) continue;
+    if (clockedInAnywhere.has(shift.member_id)) {
+      // They're clocked in — check for overtime (15+ min past shift end).
+      const open = openByShift.get(shift.id) || openByMember.get(shift.member_id);
+      if (open && shift.end_time) {
+        const shiftEnd = localShiftToUtc(shift.shift_date, shift.end_time);
+        const overMinutes = Math.floor((now - shiftEnd) / 60000);
+        if (overMinutes >= 15) {
+          const memberName = shift.company_members?.display_name || "Employee";
+          const locationName = shift.locations?.name || "assigned location";
+          const result = await sendOwnerAlert(sb, {
+            companyId: shift.company_id,
+            senderMemberId: shift.member_id,
+            category: "schedule_coverage",
+            title: `⏰ Overtime — ${memberName}`,
+            message: `${memberName} is ${overMinutes} minutes past their scheduled end time at ${locationName}.`,
+            locationName,
+            dedupeKey: `overtime:${shift.id}`,
+            tag: `overtime-${shift.id}`,
+            url: `${process.env.WORKTEAMS_APP_URL || "https://app.lillybsjanitorial.com"}/app/${shift.company_id}/time`,
+          });
+          if (!result.duplicate) alerts++;
+        }
+      }
+      continue;
+    }
     const scheduled = localShiftToUtc(shift.shift_date, shift.start_time);
     if (scheduled > now || scheduled < earliest) continue;
     const lateMinutes = Math.floor((now - scheduled) / 60000);
