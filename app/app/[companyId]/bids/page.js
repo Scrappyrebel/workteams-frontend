@@ -366,7 +366,12 @@ export default function BidsPage() {
                 </label>
               </div>
               <p style={{ fontWeight: 800, margin: "8px 0 0" }}>
-                Estimated total: ${((parseFloat(form.hours) || 0) * (parseFloat(form.hourly_rate) || 0)).toFixed(2)}
+                Estimated per visit: ${((parseFloat(form.hours) || 0) * (parseFloat(form.hourly_rate) || 0)).toFixed(2)}
+                {form.frequency && form.frequency !== "one-time" && (
+                  <span style={{ fontWeight: 400, color: "var(--muted)" }}>
+                    {" "}· ~${(((parseFloat(form.hours) || 0) * (parseFloat(form.hourly_rate) || 0)) * ({ weekly: 4.33, "2x-week": 8.67, "3x-week": 13, "5x-week": 21.67, biweekly: 2.17, monthly: 1 }[form.frequency] || 4.33)).toFixed(2)}/mo
+                  </span>
+                )}
               </p>
             </div>
           )}
@@ -399,7 +404,12 @@ export default function BidsPage() {
                 </label>
               </div>
               <p style={{ fontWeight: 800, margin: "8px 0 0" }}>
-                Estimated total: ${((parseFloat(form.square_footage) || 0) * (parseFloat(form.rate_per_sqft) || 0)).toFixed(2)}
+                Estimated per visit: ${((parseFloat(form.square_footage) || 0) * (parseFloat(form.rate_per_sqft) || 0)).toFixed(2)}
+                {form.frequency && form.frequency !== "one-time" && (
+                  <span style={{ fontWeight: 400, color: "var(--muted)" }}>
+                    {" "}· ~${(((parseFloat(form.square_footage) || 0) * (parseFloat(form.rate_per_sqft) || 0)) * ({ weekly: 4.33, "2x-week": 8.67, "3x-week": 13, "5x-week": 21.67, biweekly: 2.17, monthly: 1 }[form.frequency] || 4.33)).toFixed(2)}/mo
+                  </span>
+                )}
               </p>
             </div>
           )}
