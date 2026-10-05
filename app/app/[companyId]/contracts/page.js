@@ -40,7 +40,7 @@ export default function ContractsPage() {
     setContracts(cs || []);
     const { data: locs } = await sb.from("locations").select("id, name").eq("company_id", company.id).order("name");
     setLocations(locs || []);
-    const { data: bd } = await sb.from("bids").select("id, title, client_name").eq("company_id", company.id).eq("status", "accepted").order("created_at", { ascending: false });
+    const { data: bd } = await sb.from("bids").select("id, title, client_name, location_id, description, pricing_mode, hours, hourly_rate, square_footage, rate_per_sqft, frequency").eq("company_id", company.id).eq("status", "accepted").order("created_at", { ascending: false });
     setBids(bd || []);
   }
 
@@ -157,7 +157,27 @@ export default function ContractsPage() {
         <section className="panel" style={{ padding: 22, margin: "18px 0" }}>
           <form onSubmit={saveContract} style={{ display: "grid", gap: 10, maxWidth: 560 }}>
             {bids.length > 0 && (
-              <select value={form.bid_id} onChange={(e) => setForm({ ...form, bid_id: e.target.value })} style={input}>
+              <select value={form.bid_id} onChange={(e) => {
+                const bidId = e.target.value;
+                const b = bids.find((x) => x.id === bidId);
+                if (!b) { setForm({ ...form, bid_id: "" }); return; }
+                // Pre-fill the contract from the accepted bid.
+                const perVisit = b.pricing_mode === "hourly"
+                  ? (Number(b.hours) || 0) * (Number(b.hourly_rate) || 0)
+                  : b.pricing_mode === "sqft"
+                  ? (Number(b.square_footage) || 0) * (Number(b.rate_per_sqft) || 0)
+                  : 0;
+                const visitsPerWeek = { weekly: 1, "2x-week": 2, "3x-week": 3, "5x-week": 5, biweekly: 0.5, monthly: 0.23 }[b.frequency] || "";
+                setForm({
+                  ...form,
+                  bid_id: bidId,
+                  client_name: b.client_name || "",
+                  location_id: b.location_id || "",
+                  scope: b.description || "",
+                  price_per_visit: perVisit ? String(Math.round(perVisit * 100) / 100) : "",
+                  visits_per_week: visitsPerWeek === "" ? "" : String(visitsPerWeek),
+                });
+              }} style={input}>
                 <option value="">From accepted bid… (optional)</option>
                 {bids.map((b) => <option key={b.id} value={b.id}>{b.title} — {b.client_name}</option>)}
               </select>
