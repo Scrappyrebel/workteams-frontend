@@ -27,18 +27,17 @@ export async function GET(req) {
       return NextResponse.json({ error: "company_id, start, and end are required." }, { status: 400 });
     }
     const client = sb();
-    // Verify requester is owner/admin of this company via the auth header.
+    // Verify requester is owner/admin via the Supabase auth token.
     const auth = req.headers.get("authorization");
-    if (!auth) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    const userClient = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
-      { global: { headers: { Authorization: auth } } }
-    );
-    const { data: membership } = await userClient
+    if (!auth?.startsWith("Bearer ")) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    const jwt = auth.slice(7);
+    const { data: { user }, error: userErr } = await client.auth.getUser(jwt);
+    if (userErr || !user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    const { data: membership } = await client
       .from("company_members")
       .select("role")
       .eq("company_id", companyId)
+      .eq("user_id", user.id)
       .maybeSingle();
     if (!membership || !["owner", "admin"].includes(membership.role)) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
