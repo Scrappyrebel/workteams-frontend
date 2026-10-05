@@ -27,6 +27,27 @@ export default function LocationsPage() {
   const [loaded, setLoaded] = useState(false);
   const [loadError, setLoadError] = useState("");
   const [confirmDelete, setConfirmDelete] = useState(null);
+  const [verifyStart, setVerifyStart] = useState("2026-10-03");
+  const [verifyEnd, setVerifyEnd] = useState("2026-10-04");
+  const [verifyData, setVerifyData] = useState(null);
+  const [verifyBusy, setVerifyBusy] = useState(false);
+
+  async function runVerification() {
+    setVerifyBusy(true);
+    try {
+      const { data: { session } } = await supabase().auth.getSession();
+      const res = await fetch(
+        `/api/locations/geofence-check?company_id=${company.id}&start=${verifyStart}&end=${verifyEnd}`,
+        { headers: { Authorization: `Bearer ${session?.access_token}` } }
+      );
+      const j = await res.json();
+      if (!res.ok) throw new Error(j.error || "Failed");
+      setVerifyData(j);
+    } catch (e) {
+      alert("Verification failed: " + e.message);
+    }
+    setVerifyBusy(false);
+  }
 
   const canManage = isManagerRole(member?.role);
   const canView = isSupervisorRole(member?.role);
@@ -235,6 +256,42 @@ export default function LocationsPage() {
 
       {loadError && <p style={{ color: "#b3261e", fontWeight: 700 }}>{loadError}</p>}
       {!loaded && !loadError && <p style={{ color: "var(--muted)" }}>Loading locations…</p>}
+
+      {canManage && geoAllowed && (
+        <section className="panel" style={{ padding: 22, margin: "18px 0" }}>
+          <h3 style={{ marginTop: 0 }}>📍 Geofence verification</h3>
+          <p style={{ fontSize: "0.9rem", color: "var(--muted)", margin: "0 0 12px" }}>
+            Check that clock-ins happened inside each location's geofence.
+          </p>
+          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginBottom: 12 }}>
+            <input type="date" value={verifyStart} onChange={(e) => setVerifyStart(e.target.value)} style={input} />
+            <span style={{ color: "var(--muted)" }}>to</span>
+            <input type="date" value={verifyEnd} onChange={(e) => setVerifyEnd(e.target.value)} style={input} />
+            <button onClick={runVerification} disabled={verifyBusy} style={brandButton}>
+              {verifyBusy ? "Checking…" : "Verify clock-ins"}
+            </button>
+          </div>
+          {verifyData && (
+            <div>
+              <p style={{ fontWeight: 700 }}>{verifyData.count} clock-in{verifyData.count === 1 ? "" : "s"} found</p>
+              {verifyData.entries.map((e, i) => (
+                <div key={i} style={{ border: "1px solid var(--line)", borderRadius: 10, padding: 12, marginBottom: 8, fontSize: "0.9rem" }}>
+                  <p style={{ margin: "0 0 4px", fontWeight: 700 }}>
+                    {e.in_geofence === true ? "✅ " : e.in_geofence === false ? "❌ " : "⚪ "}
+                    {e.member} @ {e.location}
+                  </p>
+                  <p style={{ margin: 0, color: "var(--muted)" }}>
+                    {new Date(e.clock_in).toLocaleString()}
+                    {!e.has_gps && " • no GPS captured"}
+                    {!e.location_has_gps && " • location has no geofence set"}
+                    {e.in_distance_m != null && ` • ${e.in_distance_m}m from center (fence: ${e.geofence_radius_m}m)`}
+                  </p>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+      )}
 
       <div style={{ display: "grid", gap: 10 }}>
         {loaded && locations.length === 0 && <p style={{ color: "var(--muted)" }}>{canManage ? "No locations yet — add your first job site above." : "No locations yet."}</p>}
