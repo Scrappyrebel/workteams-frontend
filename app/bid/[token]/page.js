@@ -14,7 +14,7 @@ export default function BidReviewPage() {
 
   useEffect(() => {
     if (!token) return;
-    fetch(`/api/bids/public?token=${encodeURIComponent(token)}`)
+    fetch(`/api/bids/public?token=${encodeURIComponent(token)}`, { cache: "no-store" })
       .then((r) => r.json())
       .then((j) => {
         if (j.error) setError(j.error);

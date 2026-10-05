@@ -27,7 +27,7 @@ export async function GET(req) {
       .select("id, title, client_name, description, status, frequency, job_type, valid_until, pricing_mode, hours, hourly_rate, square_footage, rate_per_sqft, base_rate, companies(name)")
       .eq("approve_token", token)
       .maybeSingle();
-    if (error || !bid) return NextResponse.json({ error: "Bid not found" }, { status: 404 });
+    if (error || !bid) return NextResponse.json({ error: "Bid not found" }, { status: 404, headers: { "Cache-Control": "no-store" } });
     if (bid.valid_until && bid.valid_until < chicagoToday()) {
       return NextResponse.json({ error: "This proposal has expired." }, { status: 410 });
     }
@@ -60,7 +60,7 @@ export async function GET(req) {
       const mult = { weekly: 4.33, "2x-week": 8.67, "3x-week": 13, "5x-week": 21.67, biweekly: 2.17, monthly: 1 }[freq] || 0;
       if (mult) monthlyNote = `~$${(total * mult).toFixed(2)}/mo`;
     }
-    return NextResponse.json({ bid, items: items || [], total, totalLabel, monthlyNote });
+    return NextResponse.json({ bid, items: items || [], total, totalLabel, monthlyNote }, { headers: { "Cache-Control": "no-store" } });
   } catch (e) {
     console.error("bid public lookup error", e);
     return NextResponse.json({ error: "Could not load the proposal." }, { status: 500 });
