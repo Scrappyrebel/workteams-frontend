@@ -42,6 +42,9 @@ export default function WalkthroughDetailPage() {
   const [saving, setSaving] = useState(false);
   const [manualSqft, setManualSqft] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [editingWt, setEditingWt] = useState(false);
+  const [wtForm, setWtForm] = useState({ name: "", notes: "" });
+  const [savingWt, setSavingWt] = useState(false);
   const [creatingWOs, setCreatingWOs] = useState(false);
   const [loadError, setLoadError] = useState(null);
 
@@ -275,6 +278,39 @@ export default function WalkthroughDetailPage() {
         {walkthrough.locations?.name || "No location"}
         {walkthrough.notes ? ` · ${walkthrough.notes}` : ""}
       </p>
+      {!editingWt ? (
+        <button
+          onClick={() => { setWtForm({ name: walkthrough.name || "", notes: walkthrough.notes || "" }); setEditingWt(true); }}
+          style={{ ...ghostBtnWide, marginBottom: 16 }}
+        >
+          Edit walkthrough details
+        </button>
+      ) : (
+        <div className="panel" style={{ padding: 18, marginBottom: 16 }}>
+          <div style={{ display: "grid", gap: 8 }}>
+            <input value={wtForm.name} onChange={(e) => setWtForm({ ...wtForm, name: e.target.value })} placeholder="Walkthrough name" style={input} />
+            <input value={wtForm.notes} onChange={(e) => setWtForm({ ...wtForm, notes: e.target.value })} placeholder="Notes" style={input} />
+            <div style={{ display: "flex", gap: 8 }}>
+              <button
+                disabled={savingWt}
+                onClick={async () => {
+                  if (!wtForm.name.trim()) { alert("Name is required."); return; }
+                  setSavingWt(true);
+                  const sb = supabase();
+                  const { error } = await sb.from("walkthroughs").update({ name: wtForm.name.trim(), notes: wtForm.notes.trim() || null }).eq("id", wid);
+                  setSavingWt(false);
+                  if (error) alert("Could not save: " + error.message);
+                  else { setWalkthrough({ ...walkthrough, name: wtForm.name.trim(), notes: wtForm.notes.trim() || null }); setEditingWt(false); }
+                }}
+                style={primaryBtn}
+              >
+                {savingWt ? "Saving…" : "Save"}
+              </button>
+              <button onClick={() => setEditingWt(false)} style={ghostBtnWide}>Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="panel" style={{ padding: 18, marginBottom: 16, background: "var(--brand)", color: "#fff", border: "none" }}>
         <div style={{ fontSize: "0.85rem", opacity: 0.85 }}>Total square footage</div>

@@ -52,7 +52,7 @@ export default function BidDetailPage() {
   const [bid, setBid] = useState(null);
   const [items, setItems] = useState([]);
   const [form, setForm] = useState({ description: "", quantity: "1", unit_price: "" });
-  const [pricing, setPricing] = useState({ mode: "line_items", hours: "", hourly_rate: "", square_footage: "", rate_per_sqft: "", frequency: "", job_type: "commercial", client_email: "" });
+  const [pricing, setPricing] = useState({ mode: "line_items", hours: "", hourly_rate: "", square_footage: "", rate_per_sqft: "", frequency: "", job_type: "commercial", client_email: "", title: "", client_name: "", description: "", valid_until: "" });
   const [walkthroughs, setWalkthroughs] = useState([]);
   const [rateAreaName, setRateAreaName] = useState("");
   const [saving, setSaving] = useState(false);
@@ -82,6 +82,10 @@ export default function BidDetailPage() {
       frequency: data.frequency || "",
       job_type: data.job_type || "commercial",
       client_email: data.client_email || "",
+      title: data.title || "",
+      client_name: data.client_name || "",
+      description: data.description || "",
+      valid_until: data.valid_until || "",
     });
     const { data: its } = await sb.from("bid_items").select("*").eq("bid_id", bidId).order("created_at");
     setItems(its || []);
@@ -128,6 +132,20 @@ export default function BidDetailPage() {
       : mode === "sqft"
       ? `Square footage — ${bid.square_footage ?? "—"} sq ft × $${Number(bid.rate_per_sqft || 0).toFixed(2)}/sq ft${freqText}${jobText}`
       : `Priced by line items${freqText}${jobText}`;
+
+  async function saveDetails() {
+    if (!pricing.title.trim() || !pricing.client_name.trim()) { alert("Title and client name are required."); return; }
+    setSaving(true);
+    const { error } = await supabase().from("bids").update({
+      title: pricing.title.trim(),
+      client_name: pricing.client_name.trim(),
+      description: pricing.description.trim() || null,
+      valid_until: pricing.valid_until || null,
+    }).eq("id", bidId);
+    setSaving(false);
+    if (error) alert("Could not save: " + error.message);
+    else load();
+  }
 
   async function savePricing() {
     const pm = pricing.mode;
@@ -288,6 +306,23 @@ export default function BidDetailPage() {
         {bid.valid_until ? ` • valid until ${bid.valid_until}` : ""}
       </p>
       {bid.description && <p style={{ marginTop: 8 }}>{bid.description}</p>}
+
+      {(bid.status === "draft" || bid.status === "sent") && (
+        <details style={{ margin: "12px 0" }}>
+          <summary style={{ cursor: "pointer", fontWeight: 700, color: "var(--brand-deep)" }}>Edit bid details</summary>
+          <div style={{ display: "grid", gap: 8, maxWidth: 520, marginTop: 10 }}>
+            <input value={pricing.title} onChange={(e) => setPricing({ ...pricing, title: e.target.value })} placeholder="Bid title" style={input} />
+            <input value={pricing.client_name} onChange={(e) => setPricing({ ...pricing, client_name: e.target.value })} placeholder="Client name" style={input} />
+            <textarea value={pricing.description} onChange={(e) => setPricing({ ...pricing, description: e.target.value })} placeholder="Description" rows={3} style={input} />
+            <label style={{ fontSize: "0.9rem", color: "var(--muted)" }}>Valid until
+              <input type="date" value={pricing.valid_until} onChange={(e) => setPricing({ ...pricing, valid_until: e.target.value })} style={{ ...input, marginTop: 4 }} />
+            </label>
+            <button onClick={saveDetails} disabled={saving} style={{ ...button, marginTop: 4 }}>
+              {saving ? "Saving…" : "Save details"}
+            </button>
+          </div>
+        </details>
+      )}
 
       <section className="panel" style={{ padding: 22, margin: "18px 0" }}>
         <h3 style={{ marginTop: 0 }}>Pricing</h3>
