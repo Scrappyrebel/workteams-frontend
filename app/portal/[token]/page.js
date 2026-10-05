@@ -16,12 +16,15 @@ export default function PortalPage() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [contract, setContract] = useState(null);
-  const [contact, setContact] = useState({ name: "", subject: "", body: "" });
+  const [contact, setContact] = useState({ name: "", subject: "", body: "", category: "general" });
   const [contactSent, setContactSent] = useState(false);
   const [contactBusy, setContactBusy] = useState(false);
   const [cleanReq, setCleanReq] = useState({ kind: "extra", date: "", notes: "" });
   const [cleanBusy, setCleanBusy] = useState(false);
   const [cleanDone, setCleanDone] = useState(null);
+  const [signingAmend, setSigningAmend] = useState(null);
+  const [signName, setSignName] = useState("");
+  const [signBusy, setSignBusy] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -59,11 +62,34 @@ export default function PortalPage() {
       const j = await res.json();
       if (!res.ok) throw new Error(j.error || "Could not send");
       setContactSent(true);
-      setContact({ name: "", subject: "", body: "" });
+      setContact({ name: "", subject: "", body: "", category: "general" });
     } catch (err) {
       alert(err.message);
     }
     setContactBusy(false);
+  }
+
+  async function signAmendment(e) {
+    e.preventDefault();
+    if (!signingAmend || !signName.trim()) { alert("Please type your name to sign."); return; }
+    if (!window.confirm("Sign this amendment? This makes the changes part of your contract.")) return;
+    setSignBusy(true);
+    try {
+      const res = await fetch("/api/amendments/sign", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sign_token: signingAmend.sign_token, name: signName.trim() }),
+      });
+      const j = await res.json();
+      if (!res.ok) throw new Error(j.error || "Could not sign");
+      alert("Amendment signed! Thank you.");
+      setSigningAmend(null);
+      setSignName("");
+      window.location.reload();
+    } catch (err) {
+      alert(err.message);
+    }
+    setSignBusy(false);
   }
 
   async function requestClean(e) {
@@ -210,6 +236,49 @@ export default function PortalPage() {
               </section>
             )}
 
+            {data?.amendments?.length > 0 && (
+              <section className="panel" style={{ padding: 22, margin: "18px 0" }}>
+                <h3 style={{ marginTop: 0 }}>Contract amendments</h3>
+                {data.amendments.map((a) => (
+                  <div key={a.id} style={{ border: "1px solid var(--line)", borderRadius: 12, padding: 16, marginBottom: 12 }}>
+                    <p style={{ fontWeight: 800, margin: "0 0 6px" }}>{a.title}</p>
+                    <p style={{ fontSize: "0.9rem", whiteSpace: "pre-line", margin: "0 0 8px" }}>{a.description}</p>
+                    {a.changes && Object.keys(a.changes).length > 0 && (
+                      <p style={{ fontSize: "0.85rem", color: "var(--muted)", margin: "0 0 8px" }}>
+                        {a.changes.price_per_visit ? `New price: $${Number(a.changes.price_per_visit).toFixed(2)}/visit. ` : ""}
+                        {a.changes.visits_per_week ? `New schedule: ${a.changes.visits_per_week}/week. ` : ""}
+                        {a.changes.end_date ? `New end date: ${a.changes.end_date}.` : ""}
+                      </p>
+                    )}
+                    {a.status === "signed" ? (
+                      <p style={{ color: "#1e8e4d", fontWeight: 700, fontSize: "0.9rem", margin: 0 }}>
+                        ✅ Signed by {a.signed_name} on {new Date(a.signed_at).toLocaleDateString()}
+                      </p>
+                    ) : a.status === "sent" ? (
+                      <button onClick={() => setSigningAmend(a)} style={{ ...pButton, padding: "10px 20px" }}>
+                        Review & sign
+                      </button>
+                    ) : null}
+                  </div>
+                ))}
+              </section>
+            )}
+
+            {signingAmend && (
+              <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50, padding: 16 }}>
+                <form onSubmit={signAmendment} style={{ background: "#fff", borderRadius: 16, padding: 24, maxWidth: 480, width: "100%", display: "grid", gap: 12 }}>
+                  <h3 style={{ margin: 0 }}>Sign amendment</h3>
+                  <p style={{ fontWeight: 800, margin: 0 }}>{signingAmend.title}</p>
+                  <p style={{ fontSize: "0.9rem", whiteSpace: "pre-line", margin: 0 }}>{signingAmend.description}</p>
+                  <input required placeholder="Type your full name to sign" value={signName} onChange={(e) => setSignName(e.target.value)} style={pInput} />
+                  <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+                    <button type="button" onClick={() => setSigningAmend(null)} style={{ ...pButton, background: "#fff", color: "var(--text)", border: "1px solid var(--line)" }}>Cancel</button>
+                    <button type="submit" disabled={signBusy} style={pButton}>{signBusy ? "Signing…" : "Sign amendment"}</button>
+                  </div>
+                </form>
+              </div>
+            )}
+
             <section className="panel" style={{ padding: 22, margin: "18px 0" }}>
               <h3 style={{ marginTop: 0 }}>Request extra service</h3>
               {cleanDone ? (
@@ -244,11 +313,23 @@ export default function PortalPage() {
                 <p style={{ color: "#1e8e4d", fontWeight: 700 }}>✅ Message sent — we'll get back to you soon.</p>
               ) : (
                 <form onSubmit={sendContact} style={{ display: "grid", gap: 10 }}>
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                    {[
+                      ["general", "💬 General question"],
+                      ["service_problem", "⚠️ Problem with service"],
+                      ["callback_request", "📞 Please call me"],
+                    ].map(([val, label]) => (
+                      <label key={val} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: "0.9rem", fontWeight: contact.category === val ? 800 : 400, cursor: "pointer", padding: "8px 12px", borderRadius: 999, border: contact.category === val ? "2px solid var(--brand)" : "1px solid var(--line)", background: contact.category === val ? "var(--bg-soft)" : "transparent" }}>
+                        <input type="radio" name="category" value={val} checked={contact.category === val} onChange={() => setContact({ ...contact, category: val })} style={{ display: "none" }} />
+                        {label}
+                      </label>
+                    ))}
+                  </div>
                   <div style={{ display: "flex", gap: 8 }}>
                     <input placeholder="Your name" value={contact.name} onChange={(e) => setContact({ ...contact, name: e.target.value })} style={{ ...pInput, flex: 1 }} />
                     <input placeholder="Subject" value={contact.subject} onChange={(e) => setContact({ ...contact, subject: e.target.value })} style={{ ...pInput, flex: 1 }} />
                   </div>
-                  <textarea placeholder="How can we help?" required value={contact.body} onChange={(e) => setContact({ ...contact, body: e.target.value })} rows={3} style={pInput} />
+                  <textarea placeholder={contact.category === "service_problem" ? "Tell us what went wrong — we'll make it right." : contact.category === "callback_request" ? "Best number and time to reach you…" : "How can we help?"} required value={contact.body} onChange={(e) => setContact({ ...contact, body: e.target.value })} rows={3} style={pInput} />
                   <button type="submit" disabled={contactBusy} style={pButton}>{contactBusy ? "Sending…" : "Send message"}</button>
                 </form>
               )}

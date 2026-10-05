@@ -27,6 +27,9 @@ export default function ContractsPage() {
   const [showForm, setShowForm] = useState(false);
   const [preview, setPreview] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [amendFor, setAmendFor] = useState(null);
+  const [amendForm, setAmendForm] = useState({ title: "", description: "", price_per_visit: "", visits_per_week: "", end_date: "" });
+  const [amendBusy, setAmendBusy] = useState(false);
 
   const isManager = member && (member.role === "owner" || member.role === "admin");
   const allowed = canUse(company?.effectiveTier || company?.tier, "portal");
@@ -131,6 +134,38 @@ export default function ContractsPage() {
     const { error } = await supabase().from("contracts").delete().eq("id", id);
     if (error) alert("Could not delete: " + error.message);
     else load();
+  }
+
+  async function createAmendment(e) {
+    e.preventDefault();
+    if (!amendFor) return;
+    setAmendBusy(true);
+    try {
+      const changes = {};
+      if (amendForm.price_per_visit) changes.price_per_visit = Number(amendForm.price_per_visit);
+      if (amendForm.visits_per_week) changes.visits_per_week = Number(amendForm.visits_per_week);
+      if (amendForm.end_date) changes.end_date = amendForm.end_date;
+      const res = await fetch("/api/amendments/create", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contract_id: amendFor.id,
+          company_id: company.id,
+          title: amendForm.title,
+          description: amendForm.description,
+          changes,
+        }),
+      });
+      const j = await res.json();
+      if (!res.ok) throw new Error(j.error || "Failed");
+      alert("Amendment sent! The client will see it in their portal.");
+      setAmendFor(null);
+      setAmendForm({ title: "", description: "", price_per_visit: "", visits_per_week: "", end_date: "" });
+    } catch (err) {
+      alert("Could not create amendment: " + err.message);
+    } finally {
+      setAmendBusy(false);
+    }
   }
 
   if (loading || !company) return <p>Loading…</p>;
@@ -245,6 +280,9 @@ export default function ContractsPage() {
                   {c.status === "draft" && <button onClick={() => markSent(c.id)} style={smallButton}>Mark as sent</button>}
                 </>
               )}
+              {(c.status === "sent" || c.status === "signed") && (
+                <button onClick={() => setAmendFor(c)} style={smallButton}>Propose amendment</button>
+              )}
               <button onClick={() => deleteContract(c.id)} style={smallDanger}>Delete</button>
             </div>
             {c.terms_text && (
@@ -260,6 +298,38 @@ export default function ContractsPage() {
           </div>
         ))}
       </div>
+
+      {amendFor && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50, padding: 16 }}>
+          <form onSubmit={createAmendment} style={{ background: "#fff", borderRadius: 16, padding: 24, maxWidth: 520, width: "100%", display: "grid", gap: 12, maxHeight: "90vh", overflowY: "auto" }}>
+            <h3 style={{ margin: 0 }}>Propose amendment</h3>
+            <p style={{ margin: 0, fontSize: "0.9rem", color: "var(--muted)" }}>
+              For {amendFor.client_name}. The client will see this in their portal and can sign it there.
+            </p>
+            <label style={lbl}>Title
+              <input required value={amendForm.title} onChange={(e) => setAmendForm({ ...amendForm, title: e.target.value })} placeholder="e.g. Price adjustment — Jan 2026" style={input} />
+            </label>
+            <label style={lbl}>What changes (client will read this)
+              <textarea required value={amendForm.description} onChange={(e) => setAmendForm({ ...amendForm, description: e.target.value })} rows={4} placeholder="Describe the change in plain language…" style={input} />
+            </label>
+            <div style={{ display: "flex", gap: 8 }}>
+              <label style={lbl}>New price/visit ($)
+                <input type="number" step="0.01" value={amendForm.price_per_visit} onChange={(e) => setAmendForm({ ...amendForm, price_per_visit: e.target.value })} placeholder="Optional" style={input} />
+              </label>
+              <label style={lbl}>Visits/week
+                <input type="number" value={amendForm.visits_per_week} onChange={(e) => setAmendForm({ ...amendForm, visits_per_week: e.target.value })} placeholder="Optional" style={input} />
+              </label>
+            </div>
+            <label style={lbl}>New end date
+              <input type="date" value={amendForm.end_date} onChange={(e) => setAmendForm({ ...amendForm, end_date: e.target.value })} style={input} />
+            </label>
+            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+              <button type="button" onClick={() => setAmendFor(null)} style={secondaryButton}>Cancel</button>
+              <button type="submit" disabled={amendBusy} style={button}>{amendBusy ? "Sending…" : "Send amendment"}</button>
+            </div>
+          </form>
+        </div>
+      )}
     </div>
   );
 }

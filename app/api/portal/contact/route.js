@@ -41,10 +41,12 @@ export async function POST(req) {
     const rl = checkRateLimit(`portal-contact:${clientIp(req)}`, { limit: 10, windowMs: 60_000 });
     if (!rl.ok) return NextResponse.json({ error: "Too many requests. Try again shortly." }, { status: 429 });
 
-    const { token, name, subject, body } = await req.json();
+    const { token, name, subject, body, category } = await req.json();
     if (!token || !body || !body.trim()) {
       return NextResponse.json({ error: "Message is required." }, { status: 400 });
     }
+    const cat = ["general", "service_problem", "callback_request"].includes(category) ? category : "general";
+    const priority = cat === "service_problem" ? "urgent" : cat === "callback_request" ? "high" : "normal";
     const pt = await validToken(token);
     if (!pt) return NextResponse.json({ error: "This link is not valid." }, { status: 404 });
 
@@ -58,6 +60,8 @@ export async function POST(req) {
         sender_name: (name || "").trim() || null,
         subject: (subject || "").trim() || null,
         body: body.trim(),
+        category: cat,
+        priority,
       })
       .select("id")
       .single();
@@ -73,8 +77,8 @@ export async function POST(req) {
       .maybeSingle();
     const emailed = await tryEmail({
       to: owner?.email,
-      subject: `Client message${subject ? `: ${subject}` : ""}`,
-      text: `New message from your client portal${name ? ` (${name})` : ""}:\n\n${body.trim()}`,
+      subject: `${priority === "urgent" ? "🚨 URGENT — " : priority === "high" ? "⚠️ " : ""}Client message${subject ? `: ${subject}` : ""}`,
+      text: `${priority === "urgent" ? "🚨 SERVICE PROBLEM reported" : priority === "high" ? "⚠️ CALLBACK REQUESTED" : "New message"} from your client portal${name ? ` (${name})` : ""}:\n\n${body.trim()}`,
     });
     if (emailed) await client.from("portal_messages").update({ emailed_at: new Date().toISOString() }).eq("id", msg.id);
 
