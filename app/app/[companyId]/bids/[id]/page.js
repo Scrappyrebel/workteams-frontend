@@ -119,8 +119,8 @@ export default function BidDetailPage() {
       : lineTotal;
   const isDraft = bid?.status === "draft";
 
-  const freqText = bid.frequency ? ` · ${FREQ_LABELS[bid.frequency] || bid.frequency}` : "";
-  const jobText = bid.job_type && bid.job_type !== "commercial" ? ` · ${JOB_LABELS[bid.job_type] || bid.job_type}` : "";
+  const freqText = bid?.frequency ? ` · ${FREQ_LABELS[bid.frequency] || bid.frequency}` : "";
+  const jobText = bid?.job_type && bid.job_type !== "commercial" ? ` · ${JOB_LABELS[bid.job_type] || bid.job_type}` : "";
   const pricingSummary =
     mode === "hourly"
       ? `Hourly — ${bid.hours ?? "—"} hrs × $${Number(bid.hourly_rate || 0).toFixed(2)}/hr${freqText}${jobText}`
