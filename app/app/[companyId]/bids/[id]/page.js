@@ -369,7 +369,13 @@ export default function BidDetailPage() {
         ) : (
           <p style={{ color: "var(--muted)", marginTop: 0 }}>{pricingSummary}</p>
         )}
-        <p style={{ fontWeight: 800, fontSize: "1.2rem", marginBottom: 0 }}>Total: ${total.toFixed(2)}</p>
+        <p style={{ fontWeight: 800, fontSize: "1.2rem", marginBottom: 0 }}>Total: ${total.toFixed(2)} per visit
+          {bid?.frequency && bid.frequency !== "one-time" && mode !== "line_items" && (
+            <span style={{ fontWeight: 400, fontSize: "0.95rem", color: "var(--muted)" }}>
+              {" "}· ~${(total * ({ weekly: 4.33, "2x-week": 8.67, "3x-week": 13, "5x-week": 21.67, biweekly: 2.17, monthly: 1 }[bid.frequency] || 4.33)).toFixed(2)}/mo
+            </span>
+          )}
+        </p>
         <RateLookup
           companyId={company.id}
           defaultArea={rateAreaName || bid.locations?.address || ""}
