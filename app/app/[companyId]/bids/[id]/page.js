@@ -574,6 +574,11 @@ export default function BidDetailPage() {
             <button onClick={copyApprovalLink} style={{ ...button, marginTop: 12, background: "#fff", color: "var(--ink)", border: "1px solid var(--line)" }}>
               {bid.approve_token ? "Copy approval link" : "Copy approval link instead"}
             </button>
+            {bid.approve_token && (
+              <p style={{ fontSize: "0.8rem", color: "var(--muted)", wordBreak: "break-all", marginTop: 8 }}>
+                Client link: {typeof window !== "undefined" ? window.location.origin : ""}/bid/{bid.approve_token}
+              </p>
+            )}
           </>
         )}
         <button onClick={deleteBid} style={{ ...dangerButton, marginTop: 16 }}>
