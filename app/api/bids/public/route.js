@@ -32,7 +32,8 @@ export async function GET(req) {
     }
     const match = (candidates || []).find((b) => b.approve_token === token);
     if (!match) {
-      return NextResponse.json({ error: "Bid not found" }, { status: 404, headers: { "Cache-Control": "no-store" } });
+      const got = (candidates || []).map((b) => `${b.id.slice(0,8)}:${(b.approve_token || "null").slice(0, 8)}`).join(",");
+      return NextResponse.json({ error: `Bid not found. recv=${token.slice(0, 8)} len=${token.length} candidates=${got}` }, { status: 404, headers: { "Cache-Control": "no-store" } });
     }
     const { data: bid, error: bidErr } = await client
       .from("bids")
