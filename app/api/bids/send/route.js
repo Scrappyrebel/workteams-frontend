@@ -10,9 +10,12 @@ function makeToken() {
   return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
 }
 
-async function tryEmail({ to, subject, text }) {
+async function tryEmail({ to, subject, text, fromName }) {
   const key = process.env.RESEND_API_KEY;
-  const from = process.env.RESEND_FROM || "WorkTeams <noreply@workteams.app>";
+  const domain = (process.env.RESEND_FROM_DOMAIN || "lillybsjanitorial.com").trim();
+  const from = fromName
+    ? `${fromName} <noreply@${domain}>`
+    : process.env.RESEND_FROM || `WorkTeams <noreply@${domain}>`;
   if (!key || !to) return { ok: false, reason: !key ? "missing-key" : "missing-to" };
   try {
     const res = await fetch("https://api.resend.com/emails", {
@@ -89,6 +92,7 @@ export async function POST(req) {
       to: to.trim(),
       subject: `Your cleaning proposal from ${companyName}`,
       text: `Hi ${bid.client_name || "there"},\n\n${companyName} has prepared a cleaning proposal for you: ${bid.title}.\n\nReview and accept or decline it here:\n${link}\n\nThanks!`,
+      fromName: companyName,
     });
     const emailed = result.ok;
 

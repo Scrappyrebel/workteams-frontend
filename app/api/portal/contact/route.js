@@ -20,7 +20,7 @@ async function validToken(token) {
 
 async function tryEmail({ to, subject, text }) {
   const key = process.env.RESEND_API_KEY;
-  const from = process.env.RESEND_FROM || "WorkTeams <noreply@workteams.app>";
+  const from = process.env.RESEND_FROM || `WorkTeams <noreply@${process.env.RESEND_FROM_DOMAIN || "lillybsjanitorial.com"}>`;
   if (!key || !to) return false;
   try {
     const res = await fetch("https://api.resend.com/emails", {
