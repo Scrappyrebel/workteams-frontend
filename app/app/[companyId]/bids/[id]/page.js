@@ -52,7 +52,7 @@ export default function BidDetailPage() {
   const [bid, setBid] = useState(null);
   const [items, setItems] = useState([]);
   const [form, setForm] = useState({ description: "", quantity: "1", unit_price: "" });
-  const [pricing, setPricing] = useState({ mode: "line_items", hours: "", hourly_rate: "", square_footage: "", rate_per_sqft: "", frequency: "", job_type: "commercial" });
+  const [pricing, setPricing] = useState({ mode: "line_items", hours: "", hourly_rate: "", square_footage: "", rate_per_sqft: "", frequency: "", job_type: "commercial", client_email: "" });
   const [walkthroughs, setWalkthroughs] = useState([]);
   const [rateAreaName, setRateAreaName] = useState("");
   const [saving, setSaving] = useState(false);
@@ -81,6 +81,7 @@ export default function BidDetailPage() {
       rate_per_sqft: data.rate_per_sqft != null ? String(data.rate_per_sqft) : "",
       frequency: data.frequency || "",
       job_type: data.job_type || "commercial",
+      client_email: data.client_email || "",
     });
     const { data: its } = await sb.from("bid_items").select("*").eq("bid_id", bidId).order("created_at");
     setItems(its || []);
@@ -139,6 +140,7 @@ export default function BidDetailPage() {
       rate_per_sqft: pm === "sqft" ? parseFloat(pricing.rate_per_sqft) || null : null,
       frequency: pricing.frequency || null,
       job_type: pricing.job_type || "commercial",
+      client_email: pricing.client_email.trim() || null,
     }).eq("id", bidId);
     setSaving(false);
     if (error) alert("Could not save pricing: " + error.message);
@@ -182,6 +184,38 @@ export default function BidDetailPage() {
   function makeToken() {
     const bytes = crypto.getRandomValues(new Uint8Array(32));
     return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+  }
+
+  async function sendToClient() {
+    const email = (pricing.client_email || bid.client_email || "").trim();
+    if (!email || !email.includes("@")) {
+      alert("Add the client's email above (in the Pricing section) first, then send.");
+      return;
+    }
+    if (!confirm(`Email the approval link to ${email}?`)) return;
+    setSaving(true);
+    try {
+      const { data: { session } } = await supabase().auth.getSession();
+      const res = await fetch("/api/bids/send", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
+        },
+        body: JSON.stringify({ bidId, to: email }),
+      });
+      const out = await res.json();
+      if (!res.ok) { alert(out.error || "Could not send."); return; }
+      await load();
+      if (out.emailed) {
+        alert(`Sent to ${email}. When they accept, a contract is created automatically.`);
+      } else {
+        try { await navigator.clipboard.writeText(out.link); } catch {}
+        alert("Email isn't configured yet — the approval link was copied instead. Text or email it to the client manually.");
+      }
+    } finally {
+      setSaving(false);
+    }
   }
 
   async function copyApprovalLink() {
@@ -249,6 +283,7 @@ export default function BidDetailPage() {
       <h2 style={{ fontSize: "1.8rem", margin: "4px 0" }}>{bid.title}</h2>
       <p style={{ color: "var(--muted)" }}>
         {bid.client_name}
+        {bid.client_email ? ` • ${bid.client_email}` : ""}
         {bid.locations?.name ? ` • ${bid.locations.name}` : ""}
         {bid.valid_until ? ` • valid until ${bid.valid_until}` : ""}
       </p>
@@ -362,6 +397,16 @@ export default function BidDetailPage() {
                 </label>
               </div>
             )}
+            <div style={{ marginBottom: 10 }}>
+              <div style={{ fontSize: "0.9rem", color: "var(--muted)", marginBottom: 6 }}>Client email (for sending the bid)</div>
+              <input
+                type="email"
+                value={pricing.client_email}
+                onChange={(e) => setPricing({ ...pricing, client_email: e.target.value })}
+                placeholder="client@example.com"
+                style={input}
+              />
+            </div>
             <button onClick={savePricing} disabled={saving} style={{ ...button, marginBottom: 10 }}>
               {saving ? "Saving…" : "Save pricing"}
             </button>
@@ -482,9 +527,14 @@ export default function BidDetailPage() {
           )}
         </div>
         {(bid.status === "draft" || bid.status === "sent") && (
-          <button onClick={copyApprovalLink} style={{ ...button, marginTop: 12 }}>
-            {bid.approve_token ? "Copy client approval link" : "Send to client for approval"}
-          </button>
+          <>
+            <button onClick={sendToClient} disabled={saving} style={{ ...button, marginTop: 12 }}>
+              {saving ? "Sending…" : "Send to client by email"}
+            </button>
+            <button onClick={copyApprovalLink} style={{ ...button, marginTop: 12, background: "#fff", color: "var(--ink)", border: "1px solid var(--line)" }}>
+              {bid.approve_token ? "Copy approval link" : "Copy approval link instead"}
+            </button>
+          </>
         )}
         <button onClick={deleteBid} style={{ ...dangerButton, marginTop: 16 }}>
           Delete bid

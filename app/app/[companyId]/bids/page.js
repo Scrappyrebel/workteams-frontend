@@ -9,6 +9,7 @@ import RateLookup from "../../../../components/RateLookup";
 
 const emptyForm = {
   client_name: "",
+  client_email: "",
   title: "",
   description: "",
   location_id: "",
@@ -101,6 +102,7 @@ export default function BidsPage() {
     const { error } = await supabase().from("bids").insert({
       company_id: company.id,
       client_name: form.client_name.trim(),
+      client_email: form.client_email.trim() || null,
       title: form.title.trim(),
       description: form.description.trim() || null,
       location_id: form.location_id || null,
@@ -235,6 +237,13 @@ export default function BidsPage() {
             onChange={(e) => setForm({ ...form, client_name: e.target.value })}
             placeholder="Client name"
             required
+            style={input}
+          />
+          <input
+            value={form.client_email}
+            onChange={(e) => setForm({ ...form, client_email: e.target.value })}
+            placeholder="Client email (for sending the bid)"
+            type="email"
             style={input}
           />
           <input
