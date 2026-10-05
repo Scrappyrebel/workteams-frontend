@@ -57,7 +57,12 @@ export default function BidReviewPage() {
             From {data.bid.companies?.name} • Prepared for {data.bid.client_name}
             {data.bid.valid_until ? ` • Valid until ${data.bid.valid_until}` : ""}
           </p>
-          {data.bid.description && <p>{data.bid.description}</p>}
+          {data.bid.description && (
+            <div className="panel" style={{ padding: 22, margin: "18px 0" }}>
+              <h3 style={{ marginTop: 0 }}>Scope of work</h3>
+              <div style={{ whiteSpace: "pre-line", lineHeight: 1.6 }}>{data.bid.description}</div>
+            </div>
+          )}
           <section className="panel" style={{ padding: 22, margin: "18px 0" }}>
             {data.items.map((i, idx) => (
               <div key={idx} style={{ display: "flex", justifyContent: "space-between", padding: "8px 0", borderBottom: "1px solid var(--line)" }}>
@@ -67,7 +72,7 @@ export default function BidReviewPage() {
             ))}
             <div style={{ display: "flex", justifyContent: "space-between", padding: "12px 0 0", fontSize: "1.15rem" }}>
               <strong>Total</strong>
-              <strong>${data.total.toFixed(2)}</strong>
+              <strong>${data.total.toFixed(2)}{data.totalLabel ? ` ${data.totalLabel}` : ""}{data.monthlyNote || ""}</strong>
             </div>
           </section>
           {data.bid.status !== "sent" ? (

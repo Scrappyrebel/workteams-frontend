@@ -36,8 +36,30 @@ export async function GET(req) {
       .select("description, quantity, unit_price")
       .eq("bid_id", bid.id)
       .order("created_at");
-    const total = (items || []).reduce((s, i) => s + Number(i.quantity) * Number(i.unit_price), 0);
-    return NextResponse.json({ bid, items: items || [], total });
+    // Total depends on the pricing mode, not just line items.
+    let total = 0;
+    let totalLabel = "";
+    const pm = bid.pricing_mode;
+    if (pm === "hourly" && bid.hours && bid.hourly_rate) {
+      total = Number(bid.hours) * Number(bid.hourly_rate);
+      totalLabel = "per visit";
+    } else if (pm === "sqft" && bid.square_footage && bid.rate_per_sqft) {
+      total = Number(bid.square_footage) * Number(bid.rate_per_sqft);
+      totalLabel = "per visit";
+    } else if (pm === "base_rate" && bid.base_rate) {
+      total = Number(bid.base_rate);
+      totalLabel = "per visit";
+    } else {
+      total = (items || []).reduce((s, i) => s + Number(i.quantity) * Number(i.unit_price), 0);
+    }
+    // Add monthly estimate for recurring frequencies.
+    let monthlyNote = "";
+    const freq = (bid.frequency || "").toLowerCase();
+    if (total > 0 && totalLabel === "per visit") {
+      const mult = freq.includes("week") ? 4.33 : freq.includes("month") ? 1 : 0;
+      if (mult) monthlyNote = ` (~$${(total * mult).toFixed(2)}/mo)`;
+    }
+    return NextResponse.json({ bid, items: items || [], total, totalLabel, monthlyNote });
   } catch (e) {
     console.error("bid public lookup error", e);
     return NextResponse.json({ error: "Could not load the proposal." }, { status: 500 });
