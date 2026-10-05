@@ -28,16 +28,12 @@ export async function GET(req) {
       .eq("approve_token", token)
       .maybeSingle();
     if (error || !bid) {
-      // Temporary: diagnose exact mismatch
-      const { data: allTokens } = await client.from("bids").select("id, approve_token").not("approve_token", "is", null);
-      let diag = `sent_len=${token.length}; `;
-      for (const b of (allTokens || [])) {
-        const db = b.approve_token;
-        let firstDiff = -1;
-        for (let i = 0; i < Math.max(token.length, db.length); i++) {
-          if (token[i] !== db[i]) { firstDiff = i; break; }
-        }
-        diag += `db_len=${db.length} firstDiff=${firstDiff} sent_start=${token.slice(0,12)} db_start=${db.slice(0,12)}; `;
+      // Temporary: diagnose expiry filter
+      const { data: allBids } = await client.from("bids").select("id, approve_token, valid_until, status").not("approve_token", "is", null);
+      const today = new Date().toISOString().slice(0, 10);
+      let diag = `today=${today}; `;
+      for (const b of (allBids || [])) {
+        diag += `valid_until=${b.valid_until} status=${b.status} expired=${b.valid_until < today}; `;
       }
       return NextResponse.json({ error: `Bid not found. ${diag}` }, { status: 404, headers: { "Cache-Control": "no-store" } });
     }
