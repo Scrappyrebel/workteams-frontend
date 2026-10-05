@@ -575,9 +575,16 @@ export default function BidDetailPage() {
               {bid.approve_token ? "Copy approval link" : "Copy approval link instead"}
             </button>
             {bid.approve_token && (
-              <p style={{ fontSize: "0.8rem", color: "var(--muted)", wordBreak: "break-all", marginTop: 8 }}>
-                Client link: {typeof window !== "undefined" ? window.location.origin : ""}/bid/{bid.approve_token}
-              </p>
+              <div style={{ marginTop: 8 }}>
+                <a
+                  href={`/bid/${bid.approve_token}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  style={{ fontSize: "0.9rem", fontWeight: 700, color: "var(--brand-deep)" }}
+                >
+                  Open client view →
+                </a>
+              </div>
             )}
           </>
         )}

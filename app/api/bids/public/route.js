@@ -27,11 +27,7 @@ export async function GET(req) {
       .select("id, title, client_name, description, status, frequency, job_type, valid_until, pricing_mode, hours, hourly_rate, square_footage, rate_per_sqft, base_rate, companies(name)")
       .eq("approve_token", token)
       .maybeSingle();
-    if (error || !bid) {
-      // Temporary debug: report what we received vs what exists
-      const { count } = await client.from("bids").select("id", { count: "exact", head: true }).not("approve_token", "is", null);
-      return NextResponse.json({ error: `Bid not found (debug: token_len=${token.length}, bids_with_tokens=${count})` }, { status: 404 });
-    }
+    if (error || !bid) return NextResponse.json({ error: "Bid not found" }, { status: 404 });
     if (bid.valid_until && bid.valid_until < chicagoToday()) {
       return NextResponse.json({ error: "This proposal has expired." }, { status: 410 });
     }
