@@ -63,14 +63,22 @@ export async function GET(req) {
   if (error) throw error;
 
   const ids = (shifts || []).map((s) => s.id);
+  const memberIds = [...new Set((shifts || []).map((s) => s.member_id).filter(Boolean))];
   const { data: entries } = ids.length
     ? await sb.from("time_entries").select("shift_id").in("shift_id", ids)
     : { data: [] };
   const clocked = new Set((entries || []).map((x) => x.shift_id));
+  // Also treat a member as present if they have ANY open time entry (clocked in
+  // without linking to the shift — e.g. tapped Clock In and picked the location).
+  const { data: openEntries } = memberIds.length
+    ? await sb.from("time_entries").select("member_id").in("member_id", memberIds).is("clock_out", null)
+    : { data: [] };
+  const clockedInAnywhere = new Set((openEntries || []).map((x) => x.member_id));
 
   let alerts = 0;
   for (const shift of shifts || []) {
     if (clocked.has(shift.id)) continue;
+    if (clockedInAnywhere.has(shift.member_id)) continue;
     const scheduled = localShiftToUtc(shift.shift_date, shift.start_time);
     if (scheduled > now || scheduled < earliest) continue;
     const lateMinutes = Math.floor((now - scheduled) / 60000);
