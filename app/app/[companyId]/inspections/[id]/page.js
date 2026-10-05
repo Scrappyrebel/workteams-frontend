@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { supabase } from "../../../../../lib/supabase";
 import { useCompany } from "../../../../../lib/company-context";
+import { useClockedIn, requireClockedIn } from "../../../../../lib/use-clocked-in";
 import { canUse } from "../../../../../lib/tiers";
 import { storagePathFromUrl, validatePhotoFile, withSignedUrls } from "../../../../../lib/inspection-photos";
 
@@ -24,6 +25,7 @@ export default function InspectionDetailPage() {
   const params = useParams();
   const router = useRouter();
   const { company, member, loading } = useCompany();
+  const { clockedIn } = useClockedIn();
   const [inspection, setInspection] = useState(null);
   const [photos, setPhotos] = useState([]);
   const [files, setFiles] = useState([]);
@@ -82,6 +84,7 @@ export default function InspectionDetailPage() {
 
   async function addPhotos(e) {
     e.preventDefault();
+    if (!requireClockedIn(clockedIn, "upload inspection photos")) return;
     if (files.length === 0) return;
     setUploading(true);
     const sb = supabase();
@@ -106,6 +109,7 @@ export default function InspectionDetailPage() {
 
   async function addSectionToExisting(e) {
     e.preventDefault();
+    if (!requireClockedIn(clockedIn, "add an inspection section")) return;
     if (!newSecName.trim()) { alert("Name the section first."); return; }
     setSecSaving(true);
     const sb = supabase();
@@ -133,6 +137,7 @@ export default function InspectionDetailPage() {
 
   async function saveSectionEdit(e) {
     e.preventDefault();
+    if (!requireClockedIn(clockedIn, "edit an inspection section")) return;
     if (!editingSec) return;
     const sb = supabase();
     const { error } = await sb.from("inspection_items").update({
@@ -147,13 +152,16 @@ export default function InspectionDetailPage() {
   }
 
   async function deleteSection(id) {
+    if (!requireClockedIn(clockedIn, "delete an inspection section")) return;
     if (!confirm("Delete this section and its photos?")) return;
     const { error } = await supabase().from("inspection_items").delete().eq("id", id);
     if (error) alert("Could not delete: " + error.message);
     else load();
   }
 
-  async function removePhoto(id, url) {    if (!confirm("Delete this photo?")) return;
+  async function removePhoto(id, url) {
+    if (!requireClockedIn(clockedIn, "delete a photo")) return;
+    if (!confirm("Delete this photo?")) return;
     const sb = supabase();
     const path = storagePathFromUrl(url);
     if (path) {

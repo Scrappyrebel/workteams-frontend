@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { supabase } from "../../../../lib/supabase";
 import { useCompany } from "../../../../lib/company-context";
+import { useClockedIn, requireClockedIn } from "../../../../lib/use-clocked-in";
 import { canUse } from "../../../../lib/tiers";
 
 const emptyForm = {
@@ -32,6 +33,7 @@ const PRIORITY_LABELS = {
 
 export default function WorkOrdersPage() {
   const { company, member, loading } = useCompany();
+  const { clockedIn } = useClockedIn();
   const [orders, setOrders] = useState([]);
   const [locations, setLocations] = useState([]);
   const [members, setMembers] = useState([]);
@@ -75,6 +77,7 @@ export default function WorkOrdersPage() {
 
   async function save(e) {
     e.preventDefault();
+    if (!requireClockedIn(clockedIn, "create a work order")) return;
     if (!form.title.trim()) {
       alert("Give the work order a title.");
       return;

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { supabase } from "../../../../lib/supabase";
 import { useCompany } from "../../../../lib/company-context";
+import { useClockedIn, requireClockedIn } from "../../../../lib/use-clocked-in";
 import { isSupervisorRole } from "../../../../lib/roles";
 import { canUse } from "../../../../lib/tiers";
 import { chicagoToday } from "../../../../lib/dates";
@@ -24,6 +25,7 @@ const emptySection = { name: "", score: "5", notes: "", photos: [], checks: [] }
 
 export default function InspectionsPage() {
   const { company, member, loading } = useCompany();
+  const { clockedIn } = useClockedIn();
   const [inspections, setInspections] = useState([]);
   const [locations, setLocations] = useState([]);
   const [locationId, setLocationId] = useState("");
@@ -70,6 +72,7 @@ export default function InspectionsPage() {
   }, [loading, company]);
 
   async function startInspection() {
+    if (!requireClockedIn(clockedIn, "start an inspection")) return;
     if (!locationId) { alert("Pick a location first."); return; }
     setSaving(true);
     const sb = supabase();
@@ -89,6 +92,7 @@ export default function InspectionsPage() {
 
   async function addSection(e) {
     e.preventDefault();
+    if (!requireClockedIn(clockedIn, "add an inspection section")) return;
     if (!newSection.name.trim()) { alert("Name the section (e.g. Lobby, Restrooms)."); return; }
     setSaving(true);
     const sb = supabase();

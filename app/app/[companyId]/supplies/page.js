@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { supabase } from "../../../../lib/supabase";
 import { useCompany } from "../../../../lib/company-context";
+import { useClockedIn, requireClockedIn } from "../../../../lib/use-clocked-in";
 import { canUse } from "../../../../lib/tiers";
 
 const emptyForm = {
@@ -18,6 +19,7 @@ const emptyForm = {
 
 export default function SuppliesPage() {
   const { company, member, loading } = useCompany();
+  const { clockedIn } = useClockedIn();
   const [items, setItems] = useState([]);
   const [form, setForm] = useState(emptyForm);
   const [saving, setSaving] = useState(false);
@@ -42,6 +44,7 @@ export default function SuppliesPage() {
 
   async function save(e) {
     e.preventDefault();
+    if (!requireClockedIn(clockedIn, "add a supply item")) return;
     if (!form.name.trim()) {
       alert("Name the supply.");
       return;
@@ -73,6 +76,7 @@ export default function SuppliesPage() {
   }
 
   async function adjust(id, delta) {
+    if (!requireClockedIn(clockedIn, "adjust inventory")) return;
     const item = items.find((i) => i.id === id);
     if (!item) return;
     const next = Math.max(0, Number(item.quantity_on_hand) + delta);
@@ -82,6 +86,7 @@ export default function SuppliesPage() {
   }
 
   async function removeItem(id, name) {
+    if (!requireClockedIn(clockedIn, "remove a supply item")) return;
     if (!confirm(`Delete "${name}" from inventory?`)) return;
     const { error } = await supabase().from("supplies").delete().eq("id", id);
     if (error) alert("Could not delete: " + error.message);

@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { supabase } from "../../../../../lib/supabase";
 import { useCompany } from "../../../../../lib/company-context";
+import { useClockedIn, requireClockedIn } from "../../../../../lib/use-clocked-in";
 import { canUse } from "../../../../../lib/tiers";
 
 const STATUS_LABELS = {
@@ -26,6 +27,7 @@ export default function WorkOrderDetailPage() {
   const router = useRouter();
   const orderId = params.id;
   const { company, member, loading } = useCompany();
+  const { clockedIn } = useClockedIn();
   const [order, setOrder] = useState(null);
   const [members, setMembers] = useState([]);
   const [comments, setComments] = useState([]);
@@ -72,6 +74,7 @@ export default function WorkOrderDetailPage() {
   }, [loading, company, allowed]);
 
   async function update(patch) {
+    if (!requireClockedIn(clockedIn, "update a work order")) return;
     const { error } = await supabase().from("work_orders").update(patch).eq("id", orderId);
     if (error) { alert("Could not update: " + error.message); return; }
     // Fire notifications (best effort).
@@ -96,6 +99,7 @@ export default function WorkOrderDetailPage() {
 
   async function addComment(e) {
     e.preventDefault();
+    if (!requireClockedIn(clockedIn, "post an update")) return;
     if (!newComment.trim()) return;
     setCommentSaving(true);
     const { error } = await supabase().from("work_order_comments").insert({
