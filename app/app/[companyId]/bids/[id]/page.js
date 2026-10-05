@@ -309,7 +309,12 @@ export default function BidDetailPage() {
         {bid.locations?.name ? ` • ${bid.locations.name}` : ""}
         {bid.valid_until ? ` • valid until ${bid.valid_until}` : ""}
       </p>
-      {bid.description && <p style={{ marginTop: 8 }}>{bid.description}</p>}
+      {bid.description && (
+        <div className="panel" style={{ padding: 18, marginTop: 8 }}>
+          <div style={{ fontWeight: 700, marginBottom: 8 }}>Scope of work</div>
+          <div style={{ whiteSpace: "pre-line", lineHeight: 1.6 }}>{bid.description}</div>
+        </div>
+      )}
 
       {(bid.status === "draft" || bid.status === "sent" || bid.status === "declined") && (
         <details style={{ margin: "12px 0" }}>
