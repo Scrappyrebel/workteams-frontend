@@ -28,6 +28,9 @@ export default function WorkOrderDetailPage() {
   const { company, member, loading } = useCompany();
   const [order, setOrder] = useState(null);
   const [members, setMembers] = useState([]);
+  const [comments, setComments] = useState([]);
+  const [newComment, setNewComment] = useState("");
+  const [commentSaving, setCommentSaving] = useState(false);
 
   const isManager = member && (member.role === "owner" || member.role === "admin");
   const allowed = canUse(company?.effectiveTier || company?.tier, "workorders");
@@ -50,6 +53,13 @@ export default function WorkOrderDetailPage() {
       return;
     }
     setOrder(data);
+    // Load comments with author names.
+    const { data: cmts } = await sb
+      .from("work_order_comments")
+      .select("id, body, created_at, author_id, company_members!work_order_comments_author_id_fkey(name)")
+      .eq("work_order_id", orderId)
+      .order("created_at", { ascending: true });
+    setComments(cmts || []);
     if (isManager) {
       const { data: ms } = await sb.from("team_directory").select("id, display_name").eq("company_id", company.id).order("display_name");
       setMembers(ms || []);
@@ -84,8 +94,30 @@ export default function WorkOrderDetailPage() {
     load();
   }
 
-  async function deleteOrder() {
-    if (!confirm("Delete this work order?")) return;
+  async function addComment(e) {
+    e.preventDefault();
+    if (!newComment.trim()) return;
+    setCommentSaving(true);
+    const { error } = await supabase().from("work_order_comments").insert({
+      work_order_id: orderId,
+      company_id: company.id,
+      author_id: member.id,
+      body: newComment.trim(),
+    });
+    setCommentSaving(false);
+    if (error) { alert("Could not add update: " + error.message); return; }
+    setNewComment("");
+    load();
+  }
+
+  async function deleteComment(id) {
+    if (!confirm("Delete this update?")) return;
+    const { error } = await supabase().from("work_order_comments").delete().eq("id", id);
+    if (error) alert("Could not delete: " + error.message);
+    else load();
+  }
+
+  async function deleteOrder() {    if (!confirm("Delete this work order?")) return;
     const { error } = await supabase().from("work_orders").delete().eq("id", orderId);
     if (error) alert("Could not delete: " + error.message);
     else router.replace(`/app/${company.id}/work-orders`);
@@ -144,6 +176,37 @@ export default function WorkOrderDetailPage() {
           <p style={{ margin: 0, whiteSpace: "pre-wrap" }}>{order.description}</p>
         </section>
       )}
+
+      {/* Updates / comments */}
+      <section className="panel" style={{ padding: 22, margin: "18px 0" }}>
+        <h3 style={{ marginTop: 0 }}>Updates</h3>
+        {comments.length === 0 && (
+          <p style={{ color: "var(--muted)", fontSize: "0.9rem" }}>No updates yet — add one as work progresses.</p>
+        )}
+        {comments.map((c) => (
+          <div key={c.id} style={{ padding: "10px 0", borderBottom: "1px solid var(--line)" }}>
+            <p style={{ margin: "0 0 4px", whiteSpace: "pre-wrap" }}>{c.body}</p>
+            <p style={{ margin: 0, fontSize: "0.8rem", color: "var(--muted)" }}>
+              {c.company_members?.name || "Someone"} • {new Date(c.created_at).toLocaleDateString()} {new Date(c.created_at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
+              {isManager && (
+                <button onClick={() => deleteComment(c.id)}
+                  style={{ marginLeft: 8, border: "none", background: "none", color: "#b3261e", cursor: "pointer", fontSize: "0.8rem" }}>
+                  Delete
+                </button>
+              )}
+            </p>
+          </div>
+        ))}
+        <form onSubmit={addComment} style={{ display: "flex", gap: 8, marginTop: 12 }}>
+          <input
+            value={newComment}
+            onChange={(e) => setNewComment(e.target.value)}
+            placeholder="Add an update — e.g. lobby done, moving to restrooms…"
+            style={{ ...input, flex: 1 }}
+          />
+          <button type="submit" disabled={commentSaving || !newComment.trim()} style={button}>Post</button>
+        </form>
+      </section>
 
       {canEdit && (
         <section className="panel" style={{ padding: 22, margin: "18px 0" }}>
@@ -215,6 +278,17 @@ const input = {
   border: "1px solid var(--line)",
   fontSize: "1rem",
   width: "100%",
+};
+
+const button = {
+  padding: "11px 20px",
+  borderRadius: 999,
+  border: "none",
+  background: "var(--brand)",
+  color: "#fff",
+  fontWeight: 800,
+  cursor: "pointer",
+  whiteSpace: "nowrap",
 };
 
 const chip = {
