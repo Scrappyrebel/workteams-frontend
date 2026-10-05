@@ -247,6 +247,16 @@ export default function ContractsPage() {
               )}
               <button onClick={() => deleteContract(c.id)} style={smallDanger}>Delete</button>
             </div>
+            {c.terms_text && (
+              <details style={{ marginTop: 10 }}>
+                <summary style={{ cursor: "pointer", fontWeight: 700, fontSize: "0.85rem", color: "var(--brand-deep)" }}>
+                  View contract terms
+                </summary>
+                <div style={{ whiteSpace: "pre-line", fontSize: "0.85rem", lineHeight: 1.6, marginTop: 8, padding: 14, background: "var(--bg-soft)", borderRadius: 8 }}>
+                  {c.terms_text}
+                </div>
+              </details>
+            )}
           </div>
         ))}
       </div>

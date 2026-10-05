@@ -197,6 +197,16 @@ export default function PortalPage() {
                   Rate increases {contract.yearly_increase_pct ?? 3}% yearly. Extra clean: {money(contract.extra_clean_price)} •
                   Heavy clean: {money(contract.heavy_clean_price)}.
                 </p>
+                {contract.terms_text && (
+                  <details style={{ marginTop: 12 }}>
+                    <summary style={{ cursor: "pointer", fontWeight: 700, fontSize: "0.9rem", color: "var(--brand-deep)" }}>
+                      View full contract terms
+                    </summary>
+                    <div style={{ whiteSpace: "pre-line", fontSize: "0.85rem", lineHeight: 1.6, marginTop: 10, padding: 14, background: "var(--bg-soft)", borderRadius: 8 }}>
+                      {contract.terms_text}
+                    </div>
+                  </details>
+                )}
               </section>
             )}
 
