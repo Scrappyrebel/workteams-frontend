@@ -2,7 +2,7 @@
 // (real "Install app" prompt, standalone window, home-screen icon that
 // behaves like an app). Static assets are cached; API/auth always hit
 // the network and are never cached.
-const CACHE = "workteams-v1";
+const CACHE = "workteams-v2";
 const STATIC_RE = /\.(js|css|png|jpg|jpeg|gif|svg|ico|woff2?)$/i;
 
 self.addEventListener("install", (event) => {
