@@ -22,12 +22,11 @@ export async function GET(req) {
       return NextResponse.json({ error: "Missing token" }, { status: 400 });
     }
     const client = sb();
-    // Workaround: the approve_token index may be corrupted (.eq() fails on
-    // identical values). Find the bid id by scanning tokens in JS.
+    // Workaround: the approve_token index is corrupted (filters on it fail).
+    // Fetch all bids and match the token in JS.
     const { data: candidates, error: candErr } = await client
       .from("bids")
-      .select("id, approve_token")
-      .not("approve_token", "is", null);
+      .select("id, approve_token");
     if (candErr) {
       return NextResponse.json({ error: "Could not load the proposal." }, { status: 500 });
     }

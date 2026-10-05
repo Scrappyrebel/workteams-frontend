@@ -29,11 +29,10 @@ export async function POST(req) {
       return NextResponse.json({ error: "Token and a valid decision are required." }, { status: 400 });
     }
     const client = sb();
-    // Workaround: approve_token index may be corrupted; match in JS.
+    // Workaround: approve_token index is corrupted; match in JS.
     const { data: candidates } = await client
       .from("bids")
-      .select("id, approve_token")
-      .not("approve_token", "is", null);
+      .select("id, approve_token");
     const match = (candidates || []).find((b) => b.approve_token === token);
     if (!match) return NextResponse.json({ error: "Bid not found." }, { status: 404 });
     const { data: bid } = await client
