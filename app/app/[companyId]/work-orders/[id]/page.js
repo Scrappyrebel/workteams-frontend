@@ -149,8 +149,15 @@ export default function WorkOrderDetailPage() {
       </Link>
       <p className="eyebrow" style={{ marginTop: 12 }}>
         {STATUS_LABELS[order.status].toUpperCase()} • {PRIORITY_LABELS[order.priority].toUpperCase()} PRIORITY
+        {order.source === "portal" ? " • 📩 CLIENT REQUEST" : ""}
       </p>
       <h2 style={{ fontSize: "1.8rem", margin: "4px 0" }}>{order.title}</h2>
+      {order.agreed_price != null && (
+        <p style={{ fontSize: "1.3rem", fontWeight: 800, color: "var(--brand-deep)", margin: "4px 0" }}>
+          ${Number(order.agreed_price).toFixed(2)}
+          <span style={{ fontSize: "0.9rem", fontWeight: 400, color: "var(--muted)" }}> agreed price</span>
+        </p>
+      )}
       <p style={{ color: "var(--muted)" }}>
         {order.locations?.name ? `${order.locations.name} • ` : ""}
         {order.due_date ? `Due ${order.due_date}` : "No due date"}

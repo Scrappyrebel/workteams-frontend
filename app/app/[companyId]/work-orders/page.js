@@ -13,6 +13,7 @@ const emptyForm = {
   priority: "normal",
   assigned_to: "",
   due_date: "",
+  agreed_price: "",
 };
 
 const STATUS_LABELS = {
@@ -45,7 +46,7 @@ export default function WorkOrdersPage() {
     const sb = supabase();
     let q = sb
       .from("work_orders")
-      .select("id, title, description, priority, status, due_date, assigned_to, created_at, locations(name)")
+      .select("id, title, description, priority, status, due_date, assigned_to, created_at, source, agreed_price, locations(name)")
       .eq("company_id", company.id)
       .order("created_at", { ascending: false });
     // Employees only see their own assigned work orders.
@@ -87,6 +88,7 @@ export default function WorkOrdersPage() {
       priority: form.priority,
       assigned_to: form.assigned_to || null,
       due_date: form.due_date || null,
+      agreed_price: form.agreed_price ? parseFloat(form.agreed_price) : null,
       status: "open",
     }).select("id").single();
     setSaving(false);
@@ -190,6 +192,18 @@ export default function WorkOrdersPage() {
                   style={{ ...input, marginTop: 6 }}
                 />
               </label>
+              <label style={{ flex: 1, fontSize: "0.9rem", color: "var(--muted)" }}>
+                Price $ (if billable)
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={form.agreed_price}
+                  onChange={(e) => setForm({ ...form, agreed_price: e.target.value })}
+                  placeholder="0.00"
+                  style={{ ...input, marginTop: 6 }}
+                />
+              </label>
             </div>
             <button type="submit" disabled={saving} style={button}>
               {saving ? "Saving…" : "Create work order"}
@@ -226,8 +240,14 @@ export default function WorkOrdersPage() {
             <span className="card-kicker">
               {STATUS_LABELS[o.status]} • {PRIORITY_LABELS[o.priority]}
               {o.priority === "urgent" ? " 🔥" : ""}
+              {o.source === "portal" ? " • 📩 CLIENT REQUEST" : ""}
             </span>
             <p style={{ margin: "6px 0 0", fontWeight: 700 }}>{o.title}</p>
+            {o.agreed_price != null && (
+              <p style={{ margin: "4px 0 0", fontWeight: 800, color: "var(--brand-deep)", fontSize: "1.05rem" }}>
+                ${Number(o.agreed_price).toFixed(2)}
+              </p>
+            )}
             <p style={{ margin: "4px 0 0", color: "var(--muted)", fontSize: "0.9rem" }}>
               {o.locations?.name ? `${o.locations.name} • ` : ""}
               {o.assignee_name}
