@@ -22,25 +22,16 @@ export async function GET(req) {
       return NextResponse.json({ error: "Missing token" }, { status: 400 });
     }
     const client = sb();
-    // Workaround: the approve_token index is corrupted (filters on it fail).
-    // Fetch all bids and match the token in JS.
-    const { data: candidates, error: candErr } = await client
+    const { data: bid, error } = await client
       .from("bids")
-      .select("id, approve_token");
-    if (candErr) {
+      .select("id, company_id, title, client_name, description, status, frequency, job_type, valid_until, pricing_mode, hours, hourly_rate, square_footage, rate_per_sqft")
+      .eq("approve_token", token)
+      .maybeSingle();
+    if (error) {
+      console.error("bid public lookup db error", error);
       return NextResponse.json({ error: "Could not load the proposal." }, { status: 500 });
     }
-    const match = (candidates || []).find((b) => b.approve_token === token);
-    if (!match) {
-      const got = (candidates || []).map((b) => `${b.id.slice(0,8)}:${(b.approve_token || "null").slice(0, 8)}`).join(",");
-      return NextResponse.json({ error: `Bid not found. recv=${token.slice(0, 8)} len=${token.length} candidates=${got}` }, { status: 404, headers: { "Cache-Control": "no-store" } });
-    }
-    const { data: bid, error: bidErr } = await client
-      .from("bids")
-      .select("id, company_id, title, client_name, description, status, frequency, job_type, valid_until, pricing_mode, hours, hourly_rate, square_footage, rate_per_sqft, base_rate")
-      .eq("id", match.id)
-      .maybeSingle();
-    if (bidErr || !bid) {
+    if (!bid) {
       return NextResponse.json({ error: "Bid not found" }, { status: 404, headers: { "Cache-Control": "no-store" } });
     }
     // Fetch company name separately (avoids join issues)
@@ -54,6 +45,7 @@ export async function GET(req) {
       .eq("bid_id", bid.id)
       .order("created_at");
     // Total depends on the pricing mode, not just line items.
+    // Pricing modes: line_items, hourly, sqft (no base_rate — not in the live schema).
     let total = 0;
     let totalLabel = "";
     const pm = bid.pricing_mode;
@@ -62,9 +54,6 @@ export async function GET(req) {
       totalLabel = "per visit";
     } else if (pm === "sqft" && bid.square_footage && bid.rate_per_sqft) {
       total = Number(bid.square_footage) * Number(bid.rate_per_sqft);
-      totalLabel = "per visit";
-    } else if (pm === "base_rate" && bid.base_rate) {
-      total = Number(bid.base_rate);
       totalLabel = "per visit";
     } else {
       total = (items || []).reduce((s, i) => s + Number(i.quantity) * Number(i.unit_price), 0);

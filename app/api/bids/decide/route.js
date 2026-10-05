@@ -29,17 +29,15 @@ export async function POST(req) {
       return NextResponse.json({ error: "Token and a valid decision are required." }, { status: 400 });
     }
     const client = sb();
-    // Workaround: approve_token index is corrupted; match in JS.
-    const { data: candidates } = await client
-      .from("bids")
-      .select("id, approve_token");
-    const match = (candidates || []).find((b) => b.approve_token === token);
-    if (!match) return NextResponse.json({ error: "Bid not found." }, { status: 404 });
-    const { data: bid } = await client
+    const { data: bid, error: bidErr } = await client
       .from("bids")
       .select("id, company_id, location_id, title, client_name, frequency, status, valid_until")
-      .eq("id", match.id)
+      .eq("approve_token", token)
       .maybeSingle();
+    if (bidErr) {
+      console.error("bid decide lookup db error", bidErr);
+      return NextResponse.json({ error: "Could not process the decision." }, { status: 500 });
+    }
     if (!bid) return NextResponse.json({ error: "Bid not found." }, { status: 404 });
     if (bid.valid_until && bid.valid_until < chicagoToday()) {
       return NextResponse.json({ error: "This proposal has expired." }, { status: 410 });

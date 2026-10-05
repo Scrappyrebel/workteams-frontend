@@ -589,7 +589,6 @@ export default function BidDetailPage() {
                 >
                   Open client view →
                 </a>
-                <p style={{ fontSize: "0.75rem", color: "var(--muted)" }}>token: {bid.approve_token.slice(0, 8)}…</p>
               </div>
             )}
           </>
