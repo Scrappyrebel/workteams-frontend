@@ -74,12 +74,10 @@ export async function GET(req) {
     ? await sb.from("time_entries").select("id, member_id, shift_id, clock_in").in("member_id", memberIds).is("clock_out", null)
     : { data: [] };
   const clockedInAnywhere = new Set((openEntries || []).map((x) => x.member_id));
-  // Map shift_id -> open entry, and member_id -> open entry, for overtime checks.
+  // Map shift_id -> open entry for overtime checks.
   const openByShift = new Map();
-  const openByMember = new Map();
   for (const e of openEntries || []) {
     if (e.shift_id) openByShift.set(e.shift_id, e);
-    if (!openByMember.has(e.member_id)) openByMember.set(e.member_id, e);
   }
 
   let alerts = 0;
@@ -87,7 +85,9 @@ export async function GET(req) {
     if (clocked.has(shift.id)) continue;
     if (clockedInAnywhere.has(shift.member_id)) {
       // They're clocked in — check for overtime (15+ min past shift end).
-      const open = openByShift.get(shift.id) || openByMember.get(shift.member_id);
+      // Only when the open entry is linked to THIS shift; otherwise we'd compare
+      // today's clock-in against an old shift's end time and fire false alerts.
+      const open = openByShift.get(shift.id);
       if (open && shift.end_time) {
         const shiftEnd = localShiftToUtc(shift.shift_date, shift.end_time);
         const overMinutes = Math.floor((now - shiftEnd) / 60000);
