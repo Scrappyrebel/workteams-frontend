@@ -137,7 +137,10 @@ export default function PrivacyPage() {
         </ul>
         <p style={p}>
           Each provider processes data under contractual obligations and only as needed
-          to perform its function.
+          to perform its function. Our current subprocessors are listed above. A data
+          processing agreement (DPA) incorporating these subprocessors is available on
+          request — contact us at{" "}
+          <a href="mailto:lillybsjanitorial@gmail.com">lillybsjanitorial@gmail.com</a>.
         </p>
 
         <h3 style={{ ...h, fontSize: "1.05rem" }}>4.2. Business account holders</h3>
@@ -204,6 +207,12 @@ export default function PrivacyPage() {
           rest, access controls, and authentication requirements. However, no method of
           transmission or storage is completely secure, and we cannot guarantee absolute
           security. See our Terms of Service for our service availability commitments.
+        </p>
+        <p style={p}>
+          <strong>Breach notification.</strong> In the event of a data breach affecting
+          your personal information, we will notify you without undue delay and in
+          accordance with applicable law, describing the nature of the breach and the
+          steps we are taking in response.
         </p>
       </div>
 

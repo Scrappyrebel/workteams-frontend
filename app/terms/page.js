@@ -51,12 +51,16 @@ export default function TermsPage() {
       <div style={section}>
         <h2 style={h}>4. Subscriptions and billing</h2>
         <p style={p}>
-          Paid tiers are billed through Stripe on a recurring basis. Your tier and
+          Paid tiers are billed through Stripe on a recurring basis. Subscriptions
+          automatically renew each billing period until you cancel. Your tier and
           subscription status control which features are available. If a payment
           fails or a subscription ends, the company returns to the Starter tier.
-          You can manage or cancel your subscription from the Plans page. Refunds
-          are handled case by case — contact us at{" "}
-          <a href="mailto:lillybsjanitorial@gmail.com">lillybsjanitorial@gmail.com</a>.
+          You can manage or cancel your subscription from the Plans page at any
+          time; cancellation takes effect at the end of the current billing period.
+        </p>
+        <p style={p}>
+          <strong>All fees are non-refundable.</strong> We do not provide refunds or
+          credits for partial billing periods, downgrades, or unused features.
         </p>
       </div>
 
@@ -69,6 +73,12 @@ export default function TermsPage() {
           in violation of applicable law. Time-clock and location features are for
           legitimate workforce management; comply with your local laws on employee
           notice and consent.
+        </p>
+        <p style={p}>
+          <strong>No sensitive regulated data.</strong> You agree not to upload protected
+          health information (PHI), Social Security numbers, financial account numbers,
+          or other sensitive regulated data to the service. WorkTeams is not HIPAA-compliant
+          and is not intended for handling such data.
         </p>
       </div>
 
@@ -110,10 +120,26 @@ export default function TermsPage() {
           is limited to the amounts you paid for the service in the 12 months
           before the claim.
         </p>
+        <p style={p}>
+          Any claim arising from these terms or the service must be filed within one
+          (1) year after the claim arose, or it is permanently barred.
+        </p>
       </div>
 
       <div style={section}>
-        <h2 style={h}>10. Changes to these terms</h2>
+        <h2 style={h}>10. Dispute resolution</h2>
+        <p style={p}>
+          Any dispute arising from these terms or the service will be resolved by binding
+          arbitration on an individual basis, administered in Missouri under the rules
+          of the American Arbitration Association. You and the Company waive any right
+          to a jury trial and to participate in a class action or class-wide arbitration.
+          Notwithstanding the above, either party may seek injunctive relief in court
+          to protect intellectual property or confidential information.
+        </p>
+      </div>
+
+      <div style={section}>
+        <h2 style={h}>11. Changes to these terms</h2>
         <p style={p}>
           We may update these terms; the date above will change and, where
           appropriate, we will notify account owners. Continued use of the service
@@ -122,7 +148,7 @@ export default function TermsPage() {
       </div>
 
       <div style={section}>
-        <h2 style={h}>11. Contact</h2>
+        <h2 style={h}>12. Contact</h2>
         <p style={p}>
           That&apos;s A Wrap and More LLC<br />
           29108 State Highway Y, Cabin A<br />
