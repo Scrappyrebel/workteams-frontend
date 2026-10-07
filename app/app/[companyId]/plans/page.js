@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { supabase } from "../../../../lib/supabase";
 import { useCompany } from "../../../../lib/company-context";
 import { TIERS } from "../../../../lib/tiers";
@@ -141,6 +142,20 @@ export default function PlansPage() {
           ? `Subscription status: ${status}. Manage or change your plan through billing.`
           : "Pick a tier to subscribe. You'll check out securely with Stripe."}
       </p>
+      {!hasSubscription && (
+        <p style={{
+          background: "var(--primary-bg)",
+          border: "1px solid var(--primary)",
+          borderRadius: 8,
+          padding: "10px 14px",
+          marginTop: 8,
+          fontSize: "0.92rem",
+        }}>
+          🎁 <strong>7-day free trial</strong> included with every tier. Your card is required
+          at checkout but you won&apos;t be charged until the trial ends. Cancel anytime
+          before then and pay nothing. See our <Link href="/terms">Terms</Link> for details.
+        </p>
+      )}
       {isOwner && hasSubscription && (
         <button onClick={manageBilling} disabled={busy} style={{ ...button, width: "auto", padding: "12px 28px", marginTop: 8 }}>
           {busy ? "Opening…" : "Manage billing"}
