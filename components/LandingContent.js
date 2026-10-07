@@ -44,7 +44,7 @@ function SiteNav() {
       </nav>
       <div className="wt-nav-cta">
         <Link href="/login" className="wt-btn wt-btn-ghost">Sign in</Link>
-        <Link href="/login" className="wt-btn wt-btn-primary">Get started free</Link>
+        <Link href="/login" className="wt-btn wt-btn-primary">Start 7-day free trial</Link>
       </div>
     </header>
   );
@@ -64,7 +64,7 @@ function Hero() {
           people doing the work.
         </p>
         <div className="wt-cta-row">
-          <Link href="/login" className="wt-btn wt-btn-primary wt-btn-lg">Get started free</Link>
+          <Link href="/login" className="wt-btn wt-btn-primary wt-btn-lg">Start 7-day free trial</Link>
           <a href="#pricing" className="wt-btn wt-btn-outline wt-btn-lg">See the plans</a>
         </div>
         <div className="wt-hero-proof">
@@ -198,7 +198,7 @@ function Pricing({ tierKeys, prices }) {
       <p className="wt-eyebrow">Pricing</p>
       <h2>Three simple tiers. Priced for cleaning companies.</h2>
       <p className="wt-section-sub">
-        Start free, pick the tier that fits, change it anytime as you grow.
+        7-day free trial on every tier. Card required — you're charged only when the trial ends, and you can cancel anytime before then.
       </p>
       <div className="wt-tiers">
         {tierKeys.map((key, i) => {
@@ -223,7 +223,7 @@ function Pricing({ tierKeys, prices }) {
                 href="/login"
                 className={featured ? "wt-btn wt-btn-primary wt-btn-block" : "wt-btn wt-btn-outline wt-btn-block"}
               >
-                {i === 0 ? "Start free" : `Choose ${tier.name}`}
+                {i === 0 ? "Start 7-day free trial" : `Choose ${tier.name}`}
               </Link>
             </article>
           );
@@ -277,8 +277,8 @@ function FinalCta() {
   return (
     <section className="wt-final">
       <h2>Your next walkthrough could quote itself.</h2>
-      <p>Join WorkTeams free and run your cleaning business from your pocket.</p>
-      <Link href="/login" className="wt-btn wt-btn-primary wt-btn-lg">Get started free</Link>
+      <p>Try WorkTeams free for 7 days and run your cleaning business from your pocket.</p>
+      <Link href="/login" className="wt-btn wt-btn-primary wt-btn-lg">Start 7-day free trial</Link>
     </section>
   );
 }
@@ -292,6 +292,7 @@ function SiteFooter() {
           <span>WorkTeams</span>
         </span>
         <p>Built by a cleaner, for cleaners. © 2026 WorkTeams.</p>
+        <p>Questions? <a href="mailto:lillybsjanitorial@gmail.com">lillybsjanitorial@gmail.com</a></p>
         <span style={{ display: "flex", gap: 14 }}>
           <Link href="/privacy">Privacy</Link>
           <Link href="/terms">Terms</Link>

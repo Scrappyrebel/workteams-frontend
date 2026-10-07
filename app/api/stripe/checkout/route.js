@@ -123,7 +123,11 @@ export async function POST(req) {
         mode: "subscription",
         customer: customerId,
         line_items: [{ price: priceRow.stripe_price_id, quantity: 1 }],
-        subscription_data: { metadata: { company_id: companyId, tier } },
+        subscription_data: {
+          metadata: { company_id: companyId, tier },
+          trial_period_days: 7,
+          trial_settings: { end_behavior: { missing_payment_method: "cancel" } },
+        },
         metadata: { company_id: companyId, tier },
         success_url: `${APP_URL}/app/${companyId}/plans/success?session_id={CHECKOUT_SESSION_ID}`,
         cancel_url: `${APP_URL}/app/${companyId}/plans`,
