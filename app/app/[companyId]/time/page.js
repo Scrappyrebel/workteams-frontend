@@ -1,13 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { supabase } from "../../../../lib/supabase";
 import { useCompany } from "../../../../lib/company-context";
 import { canUse } from "../../../../lib/tiers";
 import { isManagerRole, isSupervisorRole } from "../../../../lib/roles";
 import EmergencyButton from "../../../../components/EmergencyButton";
-import ShiftVideoQuick from "../../../../components/ShiftVideoQuick";
-import CommBookQuick from "../../../../components/CommBookQuick";
+import EndShiftProof from "../../../../components/EndShiftProof";
 
 function getPosition() {
   return new Promise((resolve) => {
@@ -47,6 +46,7 @@ export default function TimeClockPage() {
   // when they have more than one pay rate set.
   const [hats, setHats] = useState([]);
   const [clockInHat, setClockInHat] = useState("");
+  const proofRef = useRef(null);
 
   const isManager = isManagerRole(member?.role);
   // Supervisors and up see the team's entries and who's on the clock.
@@ -130,6 +130,19 @@ export default function TimeClockPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loading, company, member, filter]);
 
+  // Warn before leaving while proof uploads are still in flight.
+  // Once uploads finish, hasPendingUploads() is false and no warning shows.
+  useEffect(() => {
+    const handler = (e) => {
+      if (proofRef.current?.hasPendingUploads()) {
+        e.preventDefault();
+        e.returnValue = "";
+      }
+    };
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
+  }, []);
+
   async function api(path, body) {
     const { data: { session } } = await supabase().auth.getSession();
     const res = await fetch(path, {
@@ -184,12 +197,27 @@ export default function TimeClockPage() {
     setBusy(true);
     try {
       const pos = await getPosition();
+      // Phase 1: save the clock-out timestamp IMMEDIATELY (idempotent).
+      // Proof uploads finish after — the timestamp never waits on them.
       await api("/api/time/clock-out", {
         companyId: company.id,
         entryId: open.id,
         lat: pos?.lat ?? null,
         lng: pos?.lng ?? null,
       });
+      // Phase 2: wait for any in-flight proof uploads, then finalize.
+      if (proofRef.current?.hasPendingUploads()) {
+        setBusy(true);
+        try {
+          await proofRef.current.waitForUploads();
+        } catch {}
+      }
+      try {
+        await api("/api/time/clock-out/complete", {
+          companyId: company.id,
+          entryId: open.id,
+        });
+      } catch {}
       await load();
     } catch (e) {
       alert("Clock-out failed: " + e.message);
@@ -292,24 +320,16 @@ export default function TimeClockPage() {
         <section className="panel" style={{ padding: 20, margin: "18px 0" }}>
           <h3 style={{ margin: "0 0 4px" }}>📋 End of shift</h3>
           <p style={{ color: "var(--muted)", fontSize: "0.88rem", margin: "0 0 14px" }}>
-            Log your video and book entry before you clock out — no need to hunt through tabs.
+            Record your walkthrough and book photo before you clock out — no need to hunt through tabs.
           </p>
-          <div style={{ marginBottom: 16 }}>
-            <ShiftVideoQuick
-              companyId={company.id}
-              memberId={member.id}
-              locationId={open.location_id}
-              locationName={open.locations?.name}
-            />
-          </div>
-          <div style={{ borderTop: "1px solid var(--border)", paddingTop: 14 }}>
-            <CommBookQuick
-              companyId={company.id}
-              memberId={member.id}
-              locationId={open.location_id}
-              locationName={open.locations?.name}
-            />
-          </div>
+          <EndShiftProof
+            ref={proofRef}
+            companyId={company.id}
+            memberId={member.id}
+            entryId={open.id}
+            locationId={open.location_id}
+            locationName={open.locations?.name}
+          />
         </section>
       )}
 

@@ -56,7 +56,10 @@ export async function POST(req) {
       return NextResponse.json({ error: "Entry not found" }, { status: 404 });
     }
     if (entry.clock_out) {
-      return NextResponse.json({ error: "This entry is already closed." }, { status: 409 });
+      // Idempotent: a retry after a successful clock-out returns success with
+      // the SAME entry — never a second timestamp, never a failure that
+      // forces the employee to start over.
+      return NextResponse.json({ entry, alreadyClosed: true });
     }
 
     const { data: updated, error } = await sb
@@ -65,6 +68,7 @@ export async function POST(req) {
         clock_out: new Date().toISOString(), // server time, not client time
         clock_out_lat: Number.isFinite(Number(lat)) ? Number(lat) : null,
         clock_out_lng: Number.isFinite(Number(lng)) ? Number(lng) : null,
+        upload_pending: true, // proof uploads finish after the timestamp saves
       })
       .eq("id", entryId)
       .select()
