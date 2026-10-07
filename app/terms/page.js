@@ -14,13 +14,14 @@ export default function TermsPage() {
     <main className="site-shell" style={{ maxWidth: 760 }}>
       <p className="eyebrow">LEGAL</p>
       <h1 style={{ fontSize: "2rem", margin: "6px 0 4px" }}>Terms of Service</h1>
-      <p style={{ color: "var(--muted)", marginBottom: 26 }}>Last updated: October 1, 2026</p>
+      <p style={{ color: "var(--muted)", marginBottom: 26 }}>Last updated: October 7, 2026</p>
 
       <div style={section}>
         <h2 style={h}>1. The service</h2>
         <p style={p}>
-          WorkTeams provides workforce software for cleaning companies: scheduling,
-          a GPS time clock, hour and payroll reports, inspections, crew messaging,
+          WorkTeams is provided by That&apos;s A Wrap and More LLC, a Missouri limited
+          liability company. WorkTeams provides workforce software for cleaning companies:
+          scheduling, a GPS time clock, hour and payroll reports, inspections, crew messaging,
           bidding, work orders, supplies, a client portal, and training. Features
           vary by subscription tier (Starter, Plus, Pro). We may update or improve
           the service over time.
@@ -38,18 +39,31 @@ export default function TermsPage() {
       </div>
 
       <div style={section}>
-        <h2 style={h}>3. Subscriptions and billing</h2>
+        <h2 style={h}>3. Free trial</h2>
+        <p style={p}>
+          New subscriptions include a 7-day free trial. A payment card is required at
+          signup. You will not be charged during the trial. When the 7 days end, your
+          card is automatically charged for the tier you selected, and billing continues
+          on a recurring basis until you cancel. You may cancel anytime before the trial
+          ends and you will not be charged. If you cancel during the trial, access ends
+          when the trial period expires.
+        </p>
+      </div>
+
+      <div style={section}>
+        <h2 style={h}>4. Subscriptions and billing</h2>
         <p style={p}>
           Paid tiers are billed through Stripe on a recurring basis. Your tier and
           subscription status control which features are available. If a payment
           fails or a subscription ends, the company returns to the Starter tier.
           You can manage or cancel your subscription from the Plans page. Refunds
-          are handled case by case — contact us.
+          are handled case by case — contact us at{" "}
+          <a href="mailto:lillybsjanitorial@gmail.com">lillybsjanitorial@gmail.com</a>.
         </p>
       </div>
 
       <div style={section}>
-        <h2 style={h}>4. Acceptable use</h2>
+        <h2 style={h}>5. Acceptable use</h2>
         <p style={p}>
           You agree not to misuse the service: no breaking into other
           companies&apos; data, no uploading unlawful or harmful content, no
@@ -61,7 +75,7 @@ export default function TermsPage() {
       </div>
 
       <div style={section}>
-        <h2 style={h}>5. Your data</h2>
+        <h2 style={h}>6. Your data</h2>
         <p style={p}>
           You keep ownership of the company data you enter. You grant us the
           limited right to store and process it to provide the service. How we
@@ -71,7 +85,7 @@ export default function TermsPage() {
       </div>
 
       <div style={section}>
-        <h2 style={h}>6. Payroll reports, not payroll processing</h2>
+        <h2 style={h}>7. Payroll reports, not payroll processing</h2>
         <p style={p}>
           WorkTeams produces hour summaries and payroll-ready reports and exports.
           It does not process payroll, file taxes, or move money to employees.
@@ -80,7 +94,7 @@ export default function TermsPage() {
       </div>
 
       <div style={section}>
-        <h2 style={h}>7. Termination</h2>
+        <h2 style={h}>8. Termination</h2>
         <p style={p}>
           You may stop using WorkTeams at any time. We may suspend or terminate
           accounts that violate these terms or threaten the security of the
@@ -90,7 +104,7 @@ export default function TermsPage() {
       </div>
 
       <div style={section}>
-        <h2 style={h}>8. Disclaimers and liability</h2>
+        <h2 style={h}>9. Disclaimers and liability</h2>
         <p style={p}>
           The service is provided &quot;as is&quot; without warranties of any kind.
           To the maximum extent permitted by law, we are not liable for indirect,
@@ -101,11 +115,28 @@ export default function TermsPage() {
       </div>
 
       <div style={section}>
-        <h2 style={h}>9. Changes to these terms</h2>
+        <h2 style={h}>10. Changes to these terms</h2>
         <p style={p}>
           We may update these terms; the date above will change and, where
           appropriate, we will notify account owners. Continued use of the service
           after changes take effect means you accept them.
+        </p>
+      </div>
+
+      <div style={section}>
+        <h2 style={h}>11. Contact</h2>
+        <p style={p}>
+          That&apos;s A Wrap and More LLC<br />
+          29108 State Highway Y, Cabin A<br />
+          Jonesburg, MO 63351<br />
+          <a href="mailto:lillybsjanitorial@gmail.com">lillybsjanitorial@gmail.com</a>
+        </p>
+      </div>
+
+      <div style={{ ...section, borderTop: "1px solid var(--border)", paddingTop: 16 }}>
+        <p style={{ ...p, fontSize: "0.9rem", fontStyle: "italic" }}>
+          These terms are pending review by a licensed Missouri business attorney. They
+          will be updated following that review.
         </p>
       </div>
 
