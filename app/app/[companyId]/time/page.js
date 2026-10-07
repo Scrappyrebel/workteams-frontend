@@ -6,6 +6,8 @@ import { useCompany } from "../../../../lib/company-context";
 import { canUse } from "../../../../lib/tiers";
 import { isManagerRole, isSupervisorRole } from "../../../../lib/roles";
 import EmergencyButton from "../../../../components/EmergencyButton";
+import ShiftVideoQuick from "../../../../components/ShiftVideoQuick";
+import CommBookQuick from "../../../../components/CommBookQuick";
 
 function getPosition() {
   return new Promise((resolve) => {
@@ -285,6 +287,31 @@ export default function TimeClockPage() {
           </div>
         )}
       </section>
+
+      {open && (
+        <section className="panel" style={{ padding: 20, margin: "18px 0" }}>
+          <h3 style={{ margin: "0 0 4px" }}>📋 End of shift</h3>
+          <p style={{ color: "var(--muted)", fontSize: "0.88rem", margin: "0 0 14px" }}>
+            Log your video and book entry before you clock out — no need to hunt through tabs.
+          </p>
+          <div style={{ marginBottom: 16 }}>
+            <ShiftVideoQuick
+              companyId={company.id}
+              memberId={member.id}
+              locationId={open.location_id}
+              locationName={open.locations?.name}
+            />
+          </div>
+          <div style={{ borderTop: "1px solid var(--border)", paddingTop: 14 }}>
+            <CommBookQuick
+              companyId={company.id}
+              memberId={member.id}
+              locationId={open.location_id}
+              locationName={open.locations?.name}
+            />
+          </div>
+        </section>
+      )}
 
       <section className="panel" style={{ padding: 20, margin: "18px 0", textAlign: "center", border: "2px solid #b3261e" }}>
         <div style={{ fontWeight: 800, marginBottom: 10 }}>Something wrong right now?</div>
