@@ -64,18 +64,25 @@ export default function ShiftVideosPage() {
 
   // Get video duration from file metadata before uploading.
   function getDuration(file) {
-    return new Promise((resolve, reject) => {
+    // Best-effort: resolves with seconds, or null if the browser can't decode
+    // the file's metadata (e.g. HEVC from iPhones). Never rejects — an
+    // unreadable duration must not block the upload.
+    return new Promise((resolve) => {
       const url = URL.createObjectURL(file);
       const el = document.createElement("video");
       el.preload = "metadata";
-      el.onloadedmetadata = () => {
+      el.muted = true;
+      el.playsInline = true;
+      let settled = false;
+      const finish = (val) => {
+        if (settled) return;
+        settled = true;
         URL.revokeObjectURL(url);
-        resolve(el.duration);
+        resolve(val);
       };
-      el.onerror = () => {
-        URL.revokeObjectURL(url);
-        reject(new Error("Could not read video."));
-      };
+      el.onloadedmetadata = () => finish(el.duration || null);
+      el.onerror = () => finish(null);
+      setTimeout(() => finish(null), 8000);
       el.src = url;
     });
   }
@@ -87,14 +94,8 @@ export default function ShiftVideosPage() {
       setError("Please choose a video file.");
       return;
     }
-    let duration = 0;
-    try {
-      duration = await getDuration(file);
-    } catch (e) {
-      setError("Could not read that video. Try a different file.");
-      return;
-    }
-    if (duration > MAX_DURATION_SEC) {
+    const duration = await getDuration(file);
+    if (duration && duration > MAX_DURATION_SEC) {
       setError(`That video is ${fmtDuration(duration)} — the limit is 10 minutes. Please trim it first.`);
       return;
     }

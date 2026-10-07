@@ -23,12 +23,25 @@ export default function ShiftVideoQuick({ companyId, memberId, locationId, locat
   const fileRef = useRef(null);
 
   function getDuration(file) {
-    return new Promise((resolve, reject) => {
+    // Best-effort: resolves with seconds, or null if the browser can't decode
+    // the file's metadata (e.g. HEVC from iPhones). Never rejects — an
+    // unreadable duration must not block the upload.
+    return new Promise((resolve) => {
       const url = URL.createObjectURL(file);
       const el = document.createElement("video");
       el.preload = "metadata";
-      el.onloadedmetadata = () => { URL.revokeObjectURL(url); resolve(el.duration); };
-      el.onerror = () => { URL.revokeObjectURL(url); reject(new Error("Could not read video.")); };
+      el.muted = true;
+      el.playsInline = true;
+      let settled = false;
+      const finish = (val) => {
+        if (settled) return;
+        settled = true;
+        URL.revokeObjectURL(url);
+        resolve(val);
+      };
+      el.onloadedmetadata = () => finish(el.duration || null);
+      el.onerror = () => finish(null);
+      setTimeout(() => finish(null), 8000);
       el.src = url;
     });
   }
@@ -37,14 +50,12 @@ export default function ShiftVideoQuick({ companyId, memberId, locationId, locat
     setError(""); setDone(false);
     if (!file) return;
     if (!file.type.startsWith("video/")) { setError("Please choose a video file."); return; }
-    let duration = 0;
-    try { duration = await getDuration(file); }
-    catch { setError("Could not read that video."); return; }
-    if (duration > MAX_DURATION_SEC) {
+    const duration = await getDuration(file);
+    if (duration && duration > MAX_DURATION_SEC) {
       setError("That video is too long — 10 minute limit. Please trim it first.");
       return;
     }
-    startUpload(file, duration);
+    startUpload(file, duration || 0);
   }
 
   async function startUpload(file, duration) {
