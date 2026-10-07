@@ -151,9 +151,9 @@ export default function PlansPage() {
           marginTop: 8,
           fontSize: "0.92rem",
         }}>
-          🎁 <strong>7-day free trial</strong> included with every tier. Your card is required
-          at checkout but you won&apos;t be charged until the trial ends. Cancel anytime
-          before then and pay nothing. See our <Link href="/terms">Terms</Link> for details.
+          🎁 <strong>7-day free trial</strong> included with every tier. No card required
+          to start — pick your tier before the trial ends to keep your features.
+          See our <Link href="/terms">Terms</Link> for details.
         </p>
       )}
       {isOwner && hasSubscription && (

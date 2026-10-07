@@ -122,6 +122,7 @@ export async function POST(req) {
       {
         mode: "subscription",
         customer: customerId,
+        payment_method_collection: "if_required",
         line_items: [{ price: priceRow.stripe_price_id, quantity: 1 }],
         subscription_data: {
           metadata: { company_id: companyId, tier },

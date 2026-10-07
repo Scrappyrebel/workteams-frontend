@@ -41,12 +41,10 @@ export default function TermsPage() {
       <div style={section}>
         <h2 style={h}>3. Free trial</h2>
         <p style={p}>
-          New subscriptions include a 7-day free trial. A payment card is required at
-          signup. You will not be charged during the trial. When the 7 days end, your
-          card is automatically charged for the tier you selected, and billing continues
-          on a recurring basis until you cancel. You may cancel anytime before the trial
-          ends and you will not be charged. If you cancel during the trial, access ends
-          when the trial period expires.
+          New subscriptions include a 7-day free trial. No payment card is required to
+          start the trial. When the 7 days end, the trial expires automatically — to keep
+          using paid features, pick a tier and complete checkout before the trial ends.
+          If you do not subscribe, your company returns to the default Starter access.
         </p>
       </div>
 
