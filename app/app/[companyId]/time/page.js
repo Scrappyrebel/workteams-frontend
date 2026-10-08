@@ -317,7 +317,7 @@ export default function TimeClockPage() {
       </section>
 
       {open && (
-        <section className="panel" style={{ padding: 20, margin: "18px 0" }}>
+        <section id="end-shift-proof" className="panel" style={{ padding: 20, margin: "18px 0", scrollMarginTop: 90 }}>
           <h3 style={{ margin: "0 0 4px" }}>📋 End of shift</h3>
           <p style={{ color: "var(--muted)", fontSize: "0.88rem", margin: "0 0 14px" }}>
             Record your walkthrough and book photo before you clock out — no need to hunt through tabs.
