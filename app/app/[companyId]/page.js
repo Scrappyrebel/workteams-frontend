@@ -8,6 +8,7 @@ import { canUse, tierLabel } from "../../../lib/tiers";
 import { roleRank } from "../../../lib/roles";
 import { chicagoToday, formatTime12h } from "../../../lib/dates";
 import EmergencyButton from "../../../components/EmergencyButton";
+import CompanyShiftProofSettings from "../../../components/CompanyShiftProofSettings";
 
 const TOOL_CARDS = [
   { key: "scheduling", label: "Schedule", desc: "Shifts by day, who works where.", href: "schedule", roles: "all" },
@@ -94,6 +95,31 @@ export default function CompanyDashboard() {
         </div>
         <EmergencyButton compact />
       </div>
+
+      <section className="panel" style={{ padding: 20, marginBottom: 18 }}>
+        <h3 style={{ margin: "0 0 12px" }}>Quick Access · Shift Essentials</h3>
+        <div className="portal-grid" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 12 }}>
+          <Link className="portal-card" href={`/app/${company.id}/schedule`}
+                style={{ minHeight: 86, padding: 16 }}>
+            <strong>📅 Schedule</strong>
+            <p style={{ margin: "6px 0 0" }}>Sunday–Saturday calendar →</p>
+          </Link>
+          <Link className="portal-card" href={`/app/${company.id}/time#end-shift-proof`}
+                style={{ minHeight: 86, padding: 16 }}>
+            <strong>🎥 Shift Video</strong>
+            <p style={{ margin: "6px 0 0" }}>Open recorder →</p>
+          </Link>
+          <Link className="portal-card" href={`/app/${company.id}/time#end-shift-proof`}
+                style={{ minHeight: 86, padding: 16 }}>
+            <strong>📖 Communication Book</strong>
+            <p style={{ margin: "6px 0 0" }}>Take book photo →</p>
+          </Link>
+        </div>
+        <p style={{ color: "var(--muted)", fontSize: "0.86rem", marginBottom: 0 }}>
+          Video and book proof controls appear in Time Clock during an active shift.
+        </p>
+      </section>
+      {isManager && <CompanyShiftProofSettings companyId={company.id} />}
 
       <section className="panel" style={{ padding: 22, marginBottom: 22 }}>
         <p className="eyebrow">TODAY'S ALERTS</p>        {alertsLoading ? (
