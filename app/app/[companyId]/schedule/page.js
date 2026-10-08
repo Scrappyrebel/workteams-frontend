@@ -179,7 +179,7 @@ export default function SchedulePage() {
   // When editing a repeat-series shift: "one" = just this shift,
   // "series" = this and all future shifts in the series.
   const [editScope, setEditScope] = useState("one");
-  // Schedule display: "list" = upcoming list, "week" = 7-day week view.
+  // Default schedule: Sunday–Saturday weekly calendar. Optional list for deeper review.
   const [view, setView] = useState("week");
   // Sunday (ISO) of the selected Sunday-through-Saturday workweek.
   const [weekStart, setWeekStart] = useState(() => startOfWeekISO(chicagoToday()));
