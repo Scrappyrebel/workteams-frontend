@@ -180,15 +180,15 @@ export default function SchedulePage() {
   // "series" = this and all future shifts in the series.
   const [editScope, setEditScope] = useState("one");
   // Schedule display: "list" = upcoming list, "week" = 7-day week view.
-  const [view, setView] = useState("list");
-  // Monday (ISO) of the week shown in week view.
+  const [view, setView] = useState("week");
+  // Sunday (ISO) of the selected Sunday-through-Saturday workweek.
   const [weekStart, setWeekStart] = useState(() => startOfWeekISO(chicagoToday()));
   const [weekShifts, setWeekShifts] = useState([]);
 
-  // Monday of the week containing iso (weeks run Mon–Sun).
+  // Sunday of the week containing the selected date (Sun–Sat).
   function startOfWeekISO(iso) {
     const d = parseDay(iso);
-    d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+    d.setDate(d.getDate() - d.getDay());
     return toISODate(d);
   }
   function addDaysISO(iso, n) {
@@ -593,7 +593,7 @@ export default function SchedulePage() {
       </div>
     );
   }
-  // Week view: 7 day blocks (Mon–Sun) so the whole week can be checked at
+  // Week view: 7 day blocks (Sun–Sat) so the whole week can be checked at
   // a glance — empty days say so, making gaps obvious.
   function weekView() {
     const today = chicagoToday();
