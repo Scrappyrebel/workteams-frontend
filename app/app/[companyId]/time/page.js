@@ -47,6 +47,7 @@ export default function TimeClockPage() {
   const [hats, setHats] = useState([]);
   const [clockInHat, setClockInHat] = useState("");
   const proofRef = useRef(null);
+  const [lastShiftLength, setLastShiftLength] = useState(null);
 
   const isManager = isManagerRole(member?.role);
   // Supervisors and up see the team's entries and who's on the clock.
@@ -195,16 +196,27 @@ export default function TimeClockPage() {
 
   async function clockOut() {
     setBusy(true);
+    setLastShiftLength(null);
     try {
       const pos = await getPosition();
       // Phase 1: save the clock-out timestamp IMMEDIATELY (idempotent).
       // Proof uploads finish after — the timestamp never waits on them.
-      await api("/api/time/clock-out", {
+      const res1 = await api("/api/time/clock-out", {
         companyId: company.id,
         entryId: open.id,
         lat: pos?.lat ?? null,
         lng: pos?.lng ?? null,
       });
+      // Show how long the shift took, from the saved timestamps.
+      const entry = res1?.entry;
+      if (entry?.clock_in && entry?.clock_out) {
+        const ms = new Date(entry.clock_out).getTime() - new Date(entry.clock_in).getTime();
+        if (ms > 0) {
+          const h = Math.floor(ms / 3600000);
+          const m = Math.round((ms % 3600000) / 60000);
+          setLastShiftLength(h > 0 ? `${h} hr ${m} min` : `${m} min`);
+        }
+      }
       // Phase 2: wait for any in-flight proof uploads, then finalize.
       if (proofRef.current?.hasPendingUploads()) {
         setBusy(true);
@@ -269,6 +281,11 @@ export default function TimeClockPage() {
           </div>
         ) : (
           <div>
+            {lastShiftLength && (
+              <p style={{ fontWeight: 800, fontSize: "1.1rem", color: "var(--brand-deep)" }}>
+                ✅ Clocked out — that shift took {lastShiftLength}.
+              </p>
+            )}
             <select value={locationId} onChange={(e) => setLocationId(e.target.value)} style={{ ...input, maxWidth: 420, marginBottom: 14 }}>
               <option value="">Choose your work location…</option>
               {locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
@@ -329,6 +346,8 @@ export default function TimeClockPage() {
             entryId={open.id}
             locationId={open.location_id}
             locationName={open.locations?.name}
+            enableVideo={company.enable_shift_videos !== false}
+            enableBook={company.enable_comm_book !== false}
           />
         </section>
       )}

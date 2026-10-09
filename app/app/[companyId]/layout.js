@@ -33,7 +33,7 @@ export default function CompanyLayout({ children }) {
       await linkMemberOnSignIn(sb, user);
       // Stripe customer/subscription IDs are never readable from the browser
       // (column-level grants); select only the safe columns explicitly.
-      const { data: company } = await sb.from("companies").select("id,name,tier,subscription_status,is_complimentary,created_at").eq("id", companyId).single();
+      const { data: company } = await sb.from("companies").select("id,name,tier,subscription_status,is_complimentary,created_at,enable_shift_videos,enable_comm_book").eq("id", companyId).single();
       const { data: member } = await sb
         .from("company_members")
         .select("*")

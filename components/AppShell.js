@@ -18,8 +18,8 @@ const NAV = [
   { key: "locations", label: "Locations", href: (c) => `/app/${c}/locations`, minRole: "supervisor" },
   { key: "team", label: "Team", href: (c) => `/app/${c}/team`, minRole: null },
   { key: "inspections", label: "Inspections", href: (c) => `/app/${c}/inspections`, minRole: "supervisor" },
-  { key: "shiftvideos", label: "🎬 Shift Videos", href: (c) => `/app/${c}/shift-videos`, minRole: "manager" },
-  { key: "commbook", label: "📖 Comm Book", href: (c) => `/app/${c}/comm-book`, minRole: "manager" },
+  { key: "shiftvideos", label: "🎬 Shift Videos", href: (c) => `/app/${c}/shift-videos`, minRole: "manager", featureFlag: "enable_shift_videos" },
+  { key: "commbook", label: "📖 Comm Book", href: (c) => `/app/${c}/comm-book`, minRole: "manager", featureFlag: "enable_comm_book" },
   { key: "messaging", label: "Messages", href: (c) => `/app/${c}/messages`, minRole: null },
   { key: "bidding", label: "Bids", href: (c) => `/app/${c}/bids`, minRole: "manager" },
   { key: "walkthroughs", label: "Walkthroughs", href: (c) => `/app/${c}/walkthroughs`, minRole: "manager" },
@@ -114,6 +114,7 @@ export default function AppShell({ company, member, children }) {
   const links = NAV.filter((item) => {
     if (item.minRole && !roleAtLeast(role, item.minRole)) return false;
     if (item.productOwnerOnly && !isOwner) return false;
+    if (item.featureFlag && company && company[item.featureFlag] === false) return false;
     return true;
   }).map((item) => {
     const allowed = canUse(tier, item.key);

@@ -9,6 +9,7 @@ import { roleRank } from "../../../lib/roles";
 import { chicagoToday, formatTime12h } from "../../../lib/dates";
 import EmergencyButton from "../../../components/EmergencyButton";
 import CompanyShiftProofSettings from "../../../components/CompanyShiftProofSettings";
+import CompanyFeatureToggles from "../../../components/CompanyFeatureToggles";
 
 const TOOL_CARDS = [
   { key: "scheduling", label: "Schedule", desc: "Shifts by day, who works where.", href: "schedule", roles: "all" },
@@ -120,6 +121,7 @@ export default function CompanyDashboard() {
         </p>
       </section>
       {isManager && <CompanyShiftProofSettings companyId={company.id} />}
+      {isManager && <CompanyFeatureToggles companyId={company.id} />}
 
       <section className="panel" style={{ padding: 22, marginBottom: 22 }}>
         <p className="eyebrow">TODAY'S ALERTS</p>        {alertsLoading ? (

@@ -29,7 +29,7 @@ function extForMime(mime) {
 //   comm_book.time_entry_id).
 // Exposes via ref: hasPendingUploads(), waitForUploads().
 const EndShiftProof = forwardRef(function EndShiftProof(
-  { companyId, memberId, entryId, locationId, locationName },
+  { companyId, memberId, entryId, locationId, locationName, enableVideo = true, enableBook = true },
   ref
 ) {
   const isiOS = typeof navigator !== "undefined" && /iPhone|iPad|iPod/i.test(navigator.userAgent);
@@ -400,6 +400,8 @@ const EndShiftProof = forwardRef(function EndShiftProof(
 
   return (
     <div>
+      {enableVideo && (
+      <>
       {/* ---- Walkthrough video ---- */}
       <div style={{ marginBottom: 16 }}>
         <div style={{ fontWeight: 800, marginBottom: 6 }}>📹 End-of-shift walkthrough</div>
@@ -484,7 +486,11 @@ const EndShiftProof = forwardRef(function EndShiftProof(
           </p>
         )}
       </div>
+      </>
+      )}
 
+      {enableBook && (
+      <>
       {/* ---- Book photo ---- */}
       <div style={{ borderTop: "1px solid var(--border)", paddingTop: 14 }}>
         <div style={{ fontWeight: 800, marginBottom: 4 }}>📷 Communication book photo</div>
@@ -528,6 +534,8 @@ const EndShiftProof = forwardRef(function EndShiftProof(
           </div>
         )}
       </div>
+      </>
+      )}
 
       {done && !hasPendingUploads() && (
         <p style={{ color: "var(--muted)", fontSize: "0.85rem", marginTop: 10, textAlign: "center" }}>
