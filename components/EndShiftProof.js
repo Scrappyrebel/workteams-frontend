@@ -85,6 +85,19 @@ const EndShiftProof = forwardRef(function EndShiftProof(
     };
   }, []);
 
+  // Attach the live camera stream to the preview element whenever it mounts.
+  // (The preview only renders once recording starts, so this must happen in an
+  // effect — attaching it in startRecording runs before the element exists.)
+  useEffect(() => {
+    const el = previewRef.current;
+    const stream = streamRef.current;
+    if ((recState === "recording" || recState === "paused") && el && stream) {
+      el.muted = true; // property, not just attribute — required for autoplay
+      el.srcObject = stream;
+      el.play().catch(() => {});
+    }
+  }, [recState]);
+
   function notifyWaiters() {
     if (!hasPendingUploads()) {
       const ws = waitersRef.current;
@@ -122,10 +135,6 @@ const EndShiftProof = forwardRef(function EndShiftProof(
         audio: true,
       });
       streamRef.current = stream;
-      if (previewRef.current) {
-        previewRef.current.srcObject = stream;
-        previewRef.current.play().catch(() => {});
-      }
 
       const candidates = isiOS
         ? ["video/mp4", "video/webm;codecs=vp8,opus", "video/webm;codecs=vp8", "video/webm"]
