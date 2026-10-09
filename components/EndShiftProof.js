@@ -290,18 +290,9 @@ const EndShiftProof = forwardRef(function EndShiftProof(
           onSuccess: resolve,
         });
         tusUploadRef.current = upload;
-        const prevUrl = localStorage.getItem(`tus-walk-${entryId}`);
-        if (prevUrl) upload.url = prevUrl;
-        upload.on("postResponse", () => {
-          try {
-            const url = upload.url;
-            if (url) localStorage.setItem(`tus-walk-${entryId}`, url);
-          } catch {}
-        });
         upload.start();
       });
 
-      localStorage.removeItem(`tus-walk-${entryId}`);
       const { error: dbErr } = await sb.from("shift_videos").insert({
         company_id: companyId,
         member_id: memberId,
