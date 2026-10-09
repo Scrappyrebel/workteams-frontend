@@ -93,8 +93,22 @@ const EndShiftProof = forwardRef(function EndShiftProof(
     const stream = streamRef.current;
     if ((recState === "recording" || recState === "paused") && el && stream) {
       el.muted = true; // property, not just attribute — required for autoplay
+      el.setAttribute("muted", "");
+      el.setAttribute("playsinline", "");
       el.srcObject = stream;
-      el.play().catch(() => {});
+      const tryPlay = () => el.play().catch(() => {});
+      // iOS sometimes needs a beat before the stream is renderable
+      tryPlay();
+      const t = setTimeout(tryPlay, 500);
+      // Diagnostic: if the video has no dimensions after metadata loads,
+      // the stream has no usable video track.
+      const onMeta = () => {
+        if (el.videoWidth === 0) {
+          setVideoError("Camera opened but no picture is coming through. Try closing other camera apps and retry.");
+        }
+      };
+      el.addEventListener("loadedmetadata", onMeta);
+      return () => { clearTimeout(t); el.removeEventListener("loadedmetadata", onMeta); };
     }
   }, [recState]);
 
@@ -135,6 +149,13 @@ const EndShiftProof = forwardRef(function EndShiftProof(
         audio: true,
       });
       streamRef.current = stream;
+
+      // Verify the stream actually has a live video track before going further.
+      const videoTracks = stream.getVideoTracks();
+      if (!videoTracks.length || videoTracks[0].readyState !== "live") {
+        try { stream.getTracks().forEach((t) => t.stop()); } catch {}
+        throw new Error("Camera opened but no video is coming through. Check that no other app is using the camera and try again.");
+      }
 
       const candidates = isiOS
         ? ["video/mp4", "video/webm;codecs=vp8,opus", "video/webm;codecs=vp8", "video/webm"]
@@ -400,8 +421,8 @@ const EndShiftProof = forwardRef(function EndShiftProof(
 
         {(recState === "recording" || recState === "paused") && (
           <div>
-            <video ref={previewRef} muted playsInline
-              style={{ width: "100%", borderRadius: 8, background: "#000", maxHeight: 220 }} />
+            <video ref={previewRef} muted playsInline autoPlay
+              style={{ width: "100%", borderRadius: 8, background: "#000", maxHeight: 220, minHeight: 160 }} />
             <p style={{ fontWeight: 800, fontSize: "1.2rem", margin: "8px 0", textAlign: "center" }}>
               {recState === "paused" ? "⏸ Paused — " : "🔴 Recording — "}
               {fmtTime(recSeconds)} / {fmtTime(MAX_VIDEO_SECONDS)}
