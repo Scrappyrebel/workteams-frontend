@@ -190,18 +190,25 @@ export default function ShiftVideosPage() {
 
   async function getPlayUrl(video) {
     if (videoUrls[video.id]) return videoUrls[video.id];
-    const sb = supabase();
-    const { data, error } = await sb.storage.from("shift-videos").createSignedUrl(video.video_url, 3600);
-    if (error) {
-      console.error("Signed URL error:", error);
-      setError(`Couldn't load video: ${error.message}`);
+    try {
+      const sb = supabase();
+      const { data, error } = await sb.storage.from("shift-videos").createSignedUrl(video.video_url, 3600);
+      if (error) {
+        console.error("Signed URL error:", error);
+        setError(`Couldn't load video: ${error.message}`);
+        return null;
+      }
+      if (data?.signedUrl) {
+        setVideoUrls((m) => ({ ...m, [video.id]: data.signedUrl }));
+        return data.signedUrl;
+      }
+      setError("Couldn't load that video.");
+      return null;
+    } catch (err) {
+      console.error("Signed URL exception:", err);
+      setError(`Couldn't load video: ${err.message || err}`);
       return null;
     }
-    if (data?.signedUrl) {
-      setVideoUrls((m) => ({ ...m, [video.id]: data.signedUrl }));
-      return data.signedUrl;
-    }
-    return null;
   }
 
   async function toggleKeep(video) {
