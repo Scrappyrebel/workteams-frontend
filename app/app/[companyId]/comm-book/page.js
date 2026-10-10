@@ -11,6 +11,25 @@ const CATEGORIES = [
   { key: "note", label: "📝 Note", desc: "General note for the record" },
 ];
 
+function CommBookPhoto({ path }) {
+  const [url, setUrl] = useState(null);
+  useEffect(() => {
+    (async () => {
+      const sb = supabase();
+      const { data } = await sb.storage.from("inspection-photos").createSignedUrl(path, 3600);
+      if (data?.signedUrl) setUrl(data.signedUrl);
+    })();
+  }, [path]);
+  if (!url) return null;
+  return (
+    <img
+      src={url}
+      alt="Book photo"
+      style={{ width: "100%", maxWidth: 400, marginTop: 8, borderRadius: 8 }}
+    />
+  );
+}
+
 export default function CommBookPage() {
   const { company, member, loading } = useCompany();
   const [entries, setEntries] = useState([]);
@@ -203,6 +222,9 @@ export default function CommBookPage() {
                   {new Date(e.created_at).toLocaleString()}
                 </div>
                 <p style={{ margin: "6px 0", whiteSpace: "pre-wrap" }}>{e.message}</p>
+                {e.photo_url && (
+                  <CommBookPhoto path={e.photo_url} />
+                )}
                 {e.response ? (
                   <div style={{
                     background: "var(--primary-bg)",
