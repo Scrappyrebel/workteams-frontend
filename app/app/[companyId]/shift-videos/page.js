@@ -191,7 +191,12 @@ export default function ShiftVideosPage() {
   async function getPlayUrl(video) {
     if (videoUrls[video.id]) return videoUrls[video.id];
     const sb = supabase();
-    const { data } = await sb.storage.from("shift-videos").createSignedUrl(video.video_url, 3600);
+    const { data, error } = await sb.storage.from("shift-videos").createSignedUrl(video.video_url, 3600);
+    if (error) {
+      console.error("Signed URL error:", error);
+      setError(`Couldn't load video: ${error.message}`);
+      return null;
+    }
     if (data?.signedUrl) {
       setVideoUrls((m) => ({ ...m, [video.id]: data.signedUrl }));
       return data.signedUrl;
@@ -356,6 +361,11 @@ export default function ShiftVideosPage() {
                 controls
                 playsInline
                 style={{ width: "100%", maxWidth: 640, marginTop: 8, borderRadius: 8 }}
+                onError={(e) => {
+                  console.error("Video load error:", e);
+                  setError("This video file couldn't be played. It may not have finished uploading.");
+                  setPlayingId(null);
+                }}
               />
             )}
           </div>
