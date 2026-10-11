@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { checkRateLimit, clientIp } from "../../../../lib/rate-limit";
 import { entitledTier, canUse } from "../../../../lib/tiers";
+import { chooseAssignedShift } from "../../../../lib/attendance-shifts.mjs";
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -119,15 +120,10 @@ export async function POST(req) {
       console.error("Clock-in schedule authorization failed", shiftError.message);
       return NextResponse.json({ error: "Could not verify your schedule. Try again or contact your manager." }, { status: 503 });
     }
-    const currentChicagoClock = new Intl.DateTimeFormat("en-GB", {
-      timeZone: "America/Chicago", hour: "2-digit", minute: "2-digit", hourCycle: "h23",
-    }).format(now);
-    const shift = (memberShifts || []).find((s) =>
-      s.shift_date === todayStr ||
-      (s.shift_date === yesterdayStr &&
-        s.start_time > s.end_time &&
-        currentChicagoClock <= s.end_time.slice(0, 5))
-    );
+    // Choose the nearest eligible shift at THIS site and time. Previously
+    // .find() returned the first shift of the day (even a morning shift at
+    // 6 PM), causing false missing-clock-in alerts for the later shift.
+    const shift = chooseAssignedShift(memberShifts, now);
     if (!shift) {
       return NextResponse.json(
         { error: "You have no shift assigned to YOUR account at this location today. Another employee's shift does not authorize your clock-in. Ask a manager to schedule you first." },
