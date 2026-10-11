@@ -47,6 +47,7 @@ export default function TimeClockPage() {
   const [hats, setHats] = useState([]);
   const [clockInHat, setClockInHat] = useState("");
   const proofRef = useRef(null);
+  const clockedOutEntryIdRef = useRef(null);
   const [lastShiftLength, setLastShiftLength] = useState(null);
   const [proofEntry, setProofEntry] = useState(null);
   const [proofNotice, setProofNotice] = useState("");
@@ -209,6 +210,7 @@ export default function TimeClockPage() {
         lat: pos?.lat ?? null,
         lng: pos?.lng ?? null,
       });
+      clockedOutEntryIdRef.current = open.id;
       // Show how long the shift took, from the saved timestamps.
       const entry = res1?.entry;
       if (entry?.clock_in && entry?.clock_out) {
@@ -255,6 +257,9 @@ export default function TimeClockPage() {
   }
 
   async function finalizeProofUpload(entryId) {
+    // A video may upload before the worker clocks out. Do not mark the
+    // timesheet finished just because one proof file was saved.
+    if (clockedOutEntryIdRef.current !== entryId) return;
     // Video/photo can finish AFTER clock-out. Never mark the proof complete
     // while another recorded item still needs uploading or retrying.
     if (proofRef.current?.hasPendingUploads() || proofRef.current?.hasUnsavedRecording?.()) {
