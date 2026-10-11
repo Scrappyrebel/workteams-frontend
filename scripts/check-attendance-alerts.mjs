@@ -16,7 +16,7 @@ assert.equal(chooseAssignedShift(scheduled, at)?.id, evening.id,
   "6:01 PM clock-in must link to 6 PM shift, never 3:45 AM Office shift");
 assert.equal(chooseAssignedShift(scheduled, "2026-10-11T20:46:00.000Z")?.id, morning.id,
   "Existing early long Office shift may be used while still scheduled");
-assert.equal(chooseAssignedShift(scheduled, "2026-10-11T21:35:00.000Z"), null,
+assert.equal(chooseAssignedShift(scheduled, "2026-10-11T05:30:00.000Z"), null,
   "A shift outside its permitted time window must not authorize arbitrary clock-in");
 assert.equal(chooseAssignedShift(scheduled, "2026-10-11T22:15:00.000Z")?.id, short.id,
   "Shift at 5:15 PM uses its own assignment");
