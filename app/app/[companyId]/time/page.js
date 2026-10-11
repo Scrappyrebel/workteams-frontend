@@ -48,6 +48,8 @@ export default function TimeClockPage() {
   const [clockInHat, setClockInHat] = useState("");
   const proofRef = useRef(null);
   const [lastShiftLength, setLastShiftLength] = useState(null);
+  const [proofEntry, setProofEntry] = useState(null);
+  const [proofNotice, setProofNotice] = useState("");
 
   const isManager = isManagerRole(member?.role);
   // Supervisors and up see the team's entries and who's on the clock.
@@ -135,7 +137,7 @@ export default function TimeClockPage() {
   // Once uploads finish, hasPendingUploads() is false and no warning shows.
   useEffect(() => {
     const handler = (e) => {
-      if (proofRef.current?.hasPendingUploads()) {
+      if (proofRef.current?.hasPendingUploads() || proofRef.current?.hasUnsavedRecording?.()) {
         e.preventDefault();
         e.returnValue = "";
       }
@@ -217,24 +219,52 @@ export default function TimeClockPage() {
           setLastShiftLength(h > 0 ? `${h} hr ${m} min` : `${m} min`);
         }
       }
-      // Phase 2: wait for any in-flight proof uploads, then finalize.
-      if (proofRef.current?.hasPendingUploads()) {
-        setBusy(true);
-        try {
-          await proofRef.current.waitForUploads();
-        } catch {}
+      // Timestamp saved; never wait on an upload to finish clock-out.
+      // Keep the proof component mounted when there is an in-flight
+      // upload or failed local recording, so the employee can retry it.
+      const awaitingProof = proofRef.current?.hasPendingUploads() ||
+        proofRef.current?.hasUnsavedRecording?.();
+      setProofEntry(open);
+      if (awaitingProof) {
+        setProofNotice("You are clocked out. The walkthrough is still uploading or needs Retry. Keep this screen open until it says uploaded.");
+      } else {
+        setProofNotice("Clock-out time saved. Checking shift proof…");
       }
       try {
         await api("/api/time/clock-out/complete", {
           companyId: company.id,
           entryId: open.id,
         });
-      } catch {}
+        if (!awaitingProof) {
+          setProofEntry(null);
+          setProofNotice("Clock-out and required shift proof saved.");
+        }
+      } catch (err) {
+        setProofNotice(`Clocked out successfully. Shift proof is still pending: ${err.message}. Retry the recording here if necessary.`);
+      }
       await load();
     } catch (e) {
       alert("Clock-out failed: " + e.message);
     }
     setBusy(false);
+  }
+
+  async function finalizeProofUpload(entryId) {
+    // Video/photo can finish AFTER clock-out. Check requirements again.
+    try {
+      const result = await api("/api/time/clock-out/complete", {
+        companyId: company.id,
+        entryId,
+      });
+      if (result?.ok && !proofRef.current?.hasPendingUploads() &&
+          !proofRef.current?.hasUnsavedRecording?.()) {
+        setProofEntry(null);
+        setProofNotice("Clock-out and all required shift proof saved.");
+      }
+    } catch (err) {
+      // An unmet requirement can be completed in the still-mounted form.
+      setProofNotice(`Clock-out time saved. Shift proof still needs attention: ${err.message}`);
+    }
   }
 
   async function managerClock(targetMemberId, action) {
@@ -333,7 +363,9 @@ export default function TimeClockPage() {
         )}
       </section>
 
-      {open && (
+      {proofNotice && <p role="status" style={{ fontWeight: 700, padding: 12, border: "1px solid var(--border)", borderRadius: 8 }}>{proofNotice}</p>}
+
+      {(open || proofEntry) && (
         <section id="end-shift-proof" className="panel" style={{ padding: 20, margin: "18px 0", scrollMarginTop: 90 }}>
           <h3 style={{ margin: "0 0 4px" }}>📋 End of shift</h3>
           <p style={{ color: "var(--muted)", fontSize: "0.88rem", margin: "0 0 14px" }}>
@@ -343,9 +375,10 @@ export default function TimeClockPage() {
             ref={proofRef}
             companyId={company.id}
             memberId={member.id}
-            entryId={open.id}
-            locationId={open.location_id}
-            locationName={open.locations?.name}
+            entryId={(open || proofEntry).id}
+            locationId={(open || proofEntry).location_id}
+            locationName={(open || proofEntry).locations?.name}
+            onProofUploaded={finalizeProofUpload}
             enableVideo={company.enable_shift_videos !== false}
             enableBook={company.enable_comm_book !== false}
           />
