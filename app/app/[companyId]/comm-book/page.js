@@ -16,13 +16,20 @@ function CommBookPhoto({ path, canExport, label }) {
   const [exportBusy, setExportBusy] = useState(false);
   const [exportError, setExportError] = useState("");
   const [exportNote, setExportNote] = useState("");
+  const [preparedShare, setPreparedShare] = useState(null);
   async function exportPhoto(share) {
     if (!canExport || exportBusy) return;
     setExportBusy(true); setExportError(""); setExportNote("");
     try {
       const blob = await readEvidenceBlob(supabase(), "inspection-photos", path);
-      const result = await exportEvidence(blob, evidenceFilename("book-photo", path, label), share);
-      if (result === "downloaded") setExportNote("Photo copy saved. Attach the file to your email or customer dispute.");
+      const filename = evidenceFilename("book-photo", path, label);
+      if (share) {
+        setPreparedShare({ blob, filename });
+        setExportNote("Book photo ready. Tap Share prepared photo to choose Gmail, email, or another app.");
+      } else {
+        const result = await exportEvidence(blob, filename, false);
+        if (result === "downloaded") setExportNote("Photo copy saved. Attach the file to your email or customer dispute.");
+      }
     } catch (err) { setExportError(err?.message || "Photo export failed."); }
     finally { setExportBusy(false); }
   }
@@ -69,6 +76,17 @@ function CommBookPhoto({ path, canExport, label }) {
           </button>
           <button type="button" disabled={exportBusy} onClick={() => void exportPhoto(false)}>↓ Save copy</button>
         </div>
+      )}
+      {preparedShare && canExport && (
+        <button type="button" style={{ marginTop: 8, fontWeight: 700 }}
+          onClick={() => void exportEvidence(preparedShare.blob, preparedShare.filename, true)
+            .then((result) => {
+              if (result === "shared") setExportNote("Photo handed to your selected share app.");
+              else if (result === "downloaded") setExportNote("Your browser saved a photo copy; attach it to your email.");
+              setPreparedShare(null);
+            }).catch((err) => setExportError(err?.message || "Photo sharing failed."))}>
+          ↗ Share prepared photo
+        </button>
       )}
       {exportError && <p role="alert" style={{ color: "var(--danger)" }}>{exportError}</p>}
       {exportNote && <p role="status">{exportNote}</p>}
