@@ -157,15 +157,15 @@ export default function ShiftVideosPage() {
       },
     });
 
-    // Resume if we have a previous upload URL for this file.
-    const prevUrl = localStorage.getItem(`tus-${file.name}-${file.size}`);
-    if (prevUrl) upload.url = prevUrl;
-    upload.on("afterResponse", (req, res) => {
-      const url = req.getURL();
-      if (url) localStorage.setItem(`tus-${file.name}-${file.size}`, url);
-    });
-
+    // tus-js-client handles resumable upload URLs internally. Upload.on() is
+    // not a supported API and used to crash before a file could upload.
     setUploading({ file, progress: 0, upload, paused: false, failed: false, duration });
+    try {
+      const previousUploads = await upload.findPreviousUploads();
+      if (previousUploads.length) upload.resumeFromPreviousUpload(previousUploads[0]);
+    } catch (err) {
+      console.warn("Could not find previous upload; starting fresh", err);
+    }
     upload.start();
   }
 
@@ -185,12 +185,11 @@ export default function ShiftVideosPage() {
 
   function cancelUpload() {
     if (uploading?.upload) uploading.upload.abort();
-    localStorage.removeItem(`tus-${uploading.file.name}-${uploading.file.size}`);
     setUploading(null);
   }
 
   async function getPlayUrl(video) {
-    if (videoUrls[video.id]) return videoUrls[video.id];
+    // Always generate a fresh signed URL; previously cached links expired.
     try {
       const sb = supabase();
       const { data, error } = await sb.storage.from("shift-videos").createSignedUrl(video.video_url, 3600);
