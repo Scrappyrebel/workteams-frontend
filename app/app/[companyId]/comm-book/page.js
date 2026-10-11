@@ -13,20 +13,42 @@ const CATEGORIES = [
 
 function CommBookPhoto({ path }) {
   const [url, setUrl] = useState(null);
+  const [error, setError] = useState("");
   useEffect(() => {
+    let active = true;
+    setUrl(null);
+    setError("");
     (async () => {
-      const sb = supabase();
-      const { data } = await sb.storage.from("inspection-photos").createSignedUrl(path, 3600);
-      if (data?.signedUrl) setUrl(data.signedUrl);
+      try {
+        const sb = supabase();
+        const { data, error: signError } = await sb.storage
+          .from("inspection-photos")
+          .createSignedUrl(path, 3600);
+        if (signError) throw signError;
+        if (!data?.signedUrl) throw new Error("No photo access link was returned.");
+        if (active) setUrl(data.signedUrl);
+      } catch (err) {
+        console.error("Communication Book photo access error:", err);
+        if (active) setError("The photo could not be opened. Try refreshing this page or signing in again.");
+      }
     })();
+    return () => { active = false; };
   }, [path]);
-  if (!url) return null;
+  if (error) return <p role="alert" style={{ color: "var(--danger)" }}>{error}</p>;
+  if (!url) return <p style={{ color: "var(--muted)", fontSize: 13 }}>Loading book photo…</p>;
   return (
-    <img
-      src={url}
-      alt="Book photo"
-      style={{ width: "100%", maxWidth: 400, marginTop: 8, borderRadius: 8 }}
-    />
+    <div style={{ marginTop: 8 }}>
+      <img
+        src={url}
+        alt="Communication Book photo"
+        loading="lazy"
+        style={{ width: "100%", maxWidth: 400, borderRadius: 8 }}
+        onError={() => setError("The saved photo could not be displayed. Refresh and try again.")}
+      />
+      <p style={{ margin: "4px 0", fontSize: 13 }}>
+        <a href={url} target="_blank" rel="noopener noreferrer">Open original photo</a>
+      </p>
+    </div>
   );
 }
 
