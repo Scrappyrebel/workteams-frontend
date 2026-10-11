@@ -2,7 +2,7 @@
 // (real "Install app" prompt, standalone window, home-screen icon that
 // behaves like an app). Static assets are cached; API/auth always hit
 // the network and are never cached.
-const CACHE = "workteams-v2";
+const CACHE = "workteams-v3-fresh-js-20261011";
 const STATIC_RE = /\.(js|css|png|jpg|jpeg|gif|svg|ico|woff2?)$/i;
 
 self.addEventListener("install", (event) => {
@@ -27,16 +27,21 @@ self.addEventListener("fetch", (event) => {
   // Never cache Supabase API/auth or other cross-origin calls.
   if (url.origin !== self.location.origin) return;
   if (!STATIC_RE.test(url.pathname)) return;
+  // NEVER run an old recorder / uploader after a production fix. Old
+  // cache-first JavaScript made Android installed WorkTeams keep rejecting a
+  // 9m30 walkthrough with a removed "Try a shorter walkthrough" error.
+  // Network-first for scripts and styles; cached copies are OFFLINE only.
   event.respondWith(
     caches.open(CACHE).then(async (cache) => {
-      const hit = await cache.match(request);
-      if (hit) return hit;
       try {
-        const res = await fetch(request);
-        if (res && res.ok) cache.put(request, res.clone());
-        return res;
+        const res = await fetch(request, { cache: "no-store" });
+        if (res && res.ok) {
+          await cache.put(request, res.clone());
+          return res;
+        }
+        return (await cache.match(request)) || res;
       } catch (err) {
-        return hit || Response.error();
+        return (await cache.match(request)) || Response.error();
       }
     })
   );
