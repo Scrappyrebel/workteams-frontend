@@ -41,6 +41,7 @@ export default function ShiftVideosPage() {
   const [listLoading, setListLoading] = useState(false);
   const [exportingId, setExportingId] = useState(null);
   const [exportNote, setExportNote] = useState("");
+  const [preparedShare, setPreparedShare] = useState(null);
   const [playingId, setPlayingId] = useState(null);
   const [videoUrls, setVideoUrls] = useState({});
   const [playbackIssue, setPlaybackIssue] = useState(null);
@@ -250,9 +251,15 @@ export default function ShiftVideosPage() {
       const sb = supabase();
       const blob = await readEvidenceBlob(sb, "shift-videos", video.video_url);
       const label = (video.company_members?.display_name || "WorkTeams") + "-walkthrough";
-      const result = await exportEvidence(blob, evidenceFilename("video", video.video_url, label), share);
-      if (result === "downloaded") {
-        setExportNote("Video copy saved to this device. Attach it to your email or upload it to your secure customer-dispute folder.");
+      const filename = evidenceFilename("video", video.video_url, label);
+      if (share) {
+        setPreparedShare({ blob, filename, id: video.id });
+        setExportNote("Original video prepared. Tap Share prepared video to choose email, Drive, or another app.");
+      } else {
+        const result = await exportEvidence(blob, filename, false);
+        if (result === "downloaded") {
+          setExportNote("Video copy saved to this device. Attach it to email or upload it to a secure dispute folder.");
+        }
       }
     } catch (err) {
       setError(err?.message || "Video could not be shared. Check your connection and retry.");
@@ -403,6 +410,16 @@ export default function ShiftVideosPage() {
         </div>
         {listError && <p role="alert" style={{ color: "var(--danger)" }}>{listError}</p>}
         {exportNote && <p role="status">{exportNote}</p>}
+        {preparedShare && isManager && (
+          <button type="button" style={{ fontWeight: 700 }} onClick={() => void exportEvidence(preparedShare.blob, preparedShare.filename, true)
+            .then((result) => {
+              if (result === "shared") setExportNote("Video handed to your selected share app.");
+              else if (result === "downloaded") setExportNote("Your browser saved a video copy; attach it to email.");
+              setPreparedShare(null);
+            }).catch((err) => setError(err?.message || "Could not share the video."))}>
+            ↗ Share prepared video
+          </button>
+        }
         {!listLoading && !listError && videos.length === 0 && (
           <p style={{ color: "var(--muted)" }}>No saved walkthrough videos were found for this company.</p>
         )}
