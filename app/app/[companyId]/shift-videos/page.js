@@ -37,6 +37,7 @@ export default function ShiftVideosPage() {
   const [error, setError] = useState("");
   const [playingId, setPlayingId] = useState(null);
   const [videoUrls, setVideoUrls] = useState({});
+  const [playbackIssue, setPlaybackIssue] = useState(null);
   const fileRef = useRef(null);
 
   const isManager = member && (member.role === "owner" || member.role === "admin");
@@ -344,9 +345,9 @@ export default function ShiftVideosPage() {
                     if (playingId === v.id) {
                       setPlayingId(null);
                     } else {
+                      setPlaybackIssue(null);
                       const url = await getPlayUrl(v);
                       if (url) setPlayingId(v.id);
-                      else setError("Couldn't load that video.");
                     }
                   }}
                 >
@@ -363,17 +364,46 @@ export default function ShiftVideosPage() {
               </div>
             </div>
             {playingId === v.id && videoUrls[v.id] && (
-              <video
-                src={videoUrls[v.id]}
-                controls
-                playsInline
-                style={{ width: "100%", maxWidth: 640, marginTop: 8, borderRadius: 8 }}
-                onError={(e) => {
-                  console.error("Video load error:", e);
-                  setError("This video file couldn't be played. It may not have finished uploading.");
-                  setPlayingId(null);
-                }}
-              />
+              <div style={{ marginTop: 8, maxWidth: 640 }}>
+                <video
+                  key={videoUrls[v.id]}
+                  src={videoUrls[v.id]}
+                  controls
+                  playsInline
+                  preload="metadata"
+                  style={{ width: "100%", borderRadius: 8, background: "#111" }}
+                  onLoadedData={(e) => {
+                    if (e.currentTarget.videoWidth === 0) {
+                      setPlaybackIssue({ id: v.id, message: "The file loaded but contains no visible video track on this device." });
+                    } else {
+                      setPlaybackIssue(null);
+                    }
+                  }}
+                  onPlaying={() => setPlaybackIssue(null)}
+                  onError={(e) => {
+                    const code = e.currentTarget.error?.code;
+                    console.error("Shift video playback error:", code);
+                    const incompatible = code === 3 || code === 4;
+                    setPlaybackIssue({
+                      id: v.id,
+                      message: incompatible
+                        ? "This device cannot decode the recording's video format. Older WebM recordings may not play in iPhone Safari."
+                        : "Playback failed. Try opening the original recording in your browser.",
+                    });
+                  }}
+                />
+                {playbackIssue?.id === v.id && (
+                  <p role="alert" style={{ color: "var(--danger)", margin: "6px 0" }}>
+                    {playbackIssue.message}
+                  </p>
+                )}
+                <a href={videoUrls[v.id]} target="_blank" rel="noopener noreferrer">
+                  Open original recording in browser
+                </a>
+                <p style={{ color: "var(--muted)", fontSize: 12, margin: "4px 0" }}>
+                  Tap the video's play control to start. Existing recordings are never deleted or replaced.
+                </p>
+              </div>
             )}
           </div>
         ))}
