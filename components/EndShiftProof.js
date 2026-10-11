@@ -3,6 +3,7 @@
 import { forwardRef, useImperativeHandle, useRef, useState, useEffect } from "react";
 import * as tus from "tus-js-client";
 import { supabase } from "../lib/supabase";
+import { NO_COMMUNICATION_BOOK_NOTE } from "../lib/no-book-proof";
 
 const MAX_VIDEO_SECONDS = 10 * 60;
 // Supabase's free tier limits EACH stored object to 50 MB, not the
@@ -50,6 +51,9 @@ const EndShiftProof = forwardRef(function EndShiftProof(
   const [photoState, setPhotoState] = useState("idle"); // idle|ready|uploading|uploaded
   const [photoError, setPhotoError] = useState("");
   const [photoProgress, setPhotoProgress] = useState(0);
+  const [noBookAtLocation, setNoBookAtLocation] = useState(false);
+  const [noBookStatus, setNoBookStatus] = useState("idle"); // idle|saving|saved|error
+  const [noBookError, setNoBookError] = useState("");
 
   const [done, setDone] = useState(false);
 
@@ -68,6 +72,9 @@ const EndShiftProof = forwardRef(function EndShiftProof(
   const photoUploadPromiseRef = useRef(null);
   const videoSavedRef = useRef(false);
   const photoSavedRef = useRef(false);
+  const noBookSelectedRef = useRef(false);
+  const noBookSavedRef = useRef(false);
+  const noBookSavePromiseRef = useRef(null);
   const waitersRef = useRef([]); // resolve fns waiting for uploads
 
   // Live timer: active recorded seconds only (paused time excluded)
@@ -133,8 +140,11 @@ const EndShiftProof = forwardRef(function EndShiftProof(
     const videoPending = enableVideo &&
       ["recording", "paused", "recorded", "uploading"].includes(recState) &&
       !videoSavedRef.current;
-    const photoPending = enableBook && !!photoFile && !photoSavedRef.current;
-    return videoPending || photoPending;
+    const photoPending = enableBook && !!photoFile && !noBookSelectedRef.current && !photoSavedRef.current;
+    // A no-book report is a real, persisted alternative to a photo. It is
+    // never required to finish BEFORE the employee can save clock-out time.
+    const noBookPending = enableBook && noBookSelectedRef.current && !noBookSavedRef.current;
+    return videoPending || photoPending || noBookPending;
   }
 
   useImperativeHandle(ref, () => ({
@@ -476,7 +486,76 @@ const EndShiftProof = forwardRef(function EndShiftProof(
     uploadVideo(b);
   }
 
+  async function saveNoBookReport() {
+    if (noBookSavedRef.current) return;
+    if (noBookSavePromiseRef.current) return noBookSavePromiseRef.current;
+    const task = (async () => {
+      setNoBookStatus("saving");
+      setNoBookError("");
+      try {
+        const sb = supabase();
+        // Reuse a report for the same authenticated member + time entry when
+        // Retry is tapped. Never create duplicate manager notes.
+        const query = () => sb.from("comm_book").select("id")
+          .eq("company_id", companyId)
+          .eq("member_id", memberId)
+          .eq("time_entry_id", entryId)
+          .eq("category", "note")
+          .eq("message", NO_COMMUNICATION_BOOK_NOTE)
+          .is("photo_url", null).limit(1).maybeSingle();
+        const { data: existing, error: findError } = await query();
+        if (findError) throw new Error("Could not check the no-book report: " + findError.message);
+        if (!existing) {
+          const { error: insertError } = await sb.from("comm_book").insert({
+            company_id: companyId,
+            member_id: memberId,
+            time_entry_id: entryId,
+            location_id: locationId || null,
+            category: "note",
+            message: NO_COMMUNICATION_BOOK_NOTE,
+            photo_url: null,
+          });
+          if (insertError) throw new Error("Could not save the no-book report: " + insertError.message);
+        }
+        // Read-back is required; do not pretend this is saved merely because
+        // the checkbox was checked.
+        const { data: saved, error: checkError } = await query();
+        if (checkError || !saved) throw new Error("No-book report could not be verified. Tap Retry report.");
+        noBookSavedRef.current = true;
+        setNoBookStatus("saved");
+        setDone(true);
+        onProofUploaded?.(entryId);
+      } catch (err) {
+        setNoBookStatus("error");
+        setNoBookError(err instanceof Error ? err.message : "Could not report no book. Tap Retry report.");
+      } finally {
+        notifyWaiters();
+      }
+    })();
+    noBookSavePromiseRef.current = task;
+    try { await task; } finally { noBookSavePromiseRef.current = null; }
+  }
+
+  function handleNoBookChange(checked) {
+    if (!checked) {
+      if (noBookSavedRef.current || noBookSavePromiseRef.current) return;
+      noBookSelectedRef.current = false;
+      setNoBookAtLocation(false);
+      setNoBookStatus("idle");
+      setNoBookError("");
+      return;
+    }
+    if (photoState === "uploading" || photoSavedRef.current) return;
+    noBookSelectedRef.current = true;
+    setNoBookAtLocation(true);
+    setPhotoFile(null);
+    setPhotoState("idle");
+    setPhotoError("");
+    void saveNoBookReport();
+  }
+
   function handlePhotoFile(f) {
+    if (noBookSelectedRef.current) return;
     setPhotoError("");
     photoSavedRef.current = false;
     if (!f) return;
@@ -488,6 +567,7 @@ const EndShiftProof = forwardRef(function EndShiftProof(
   }
 
   async function uploadPhoto(f) {
+    if (noBookSelectedRef.current) return;
     const file = f || photoFile;
     if (!file) return;
     setPhotoState("uploading");
@@ -630,46 +710,81 @@ const EndShiftProof = forwardRef(function EndShiftProof(
 
       {enableBook && (
       <>
-      {/* ---- Book photo ---- */}
+      {/* ---- Communication Book proof ---- */}
       <div style={{ borderTop: "1px solid var(--border)", paddingTop: 14 }}>
-        <div style={{ fontWeight: 800, marginBottom: 4 }}>📷 Communication book photo</div>
+        <div style={{ fontWeight: 800, marginBottom: 4 }}>📷 Communication book</div>
         <p style={{ color: "var(--muted)", fontSize: "0.85rem", margin: "0 0 8px" }}>
-          Take a clear photo of the communication book before clocking out.
+          If this location has a communication book, take its photo. If there is no book, report it instead — no photo is needed.
         </p>
-        {photoError && <p style={{ color: "var(--danger)" }}>{photoError}</p>}
-        <input ref={photoRef} type="file" accept="image/*" capture="environment"
-          style={{ display: "none" }}
-          onChange={(e) => handlePhotoFile(e.target.files?.[0] || null)} />
-        {photoState === "idle" && (
-          <button onClick={() => photoRef.current?.click()}
-            style={{ width: "100%", padding: "14px", fontSize: "1rem", fontWeight: 700 }}>
-            📷 Take book photo
-          </button>
-        )}
-        {photoState === "ready" && (
-          <div>
-            <p style={{ fontWeight: 700 }}>✓ Book photo ready</p>
-            <div style={{ display: "flex", gap: 8 }}>
-              <button onClick={() => uploadPhoto()} style={{ flex: 1, padding: "12px", fontWeight: 700 }}>
-                🔁 Retry upload
-              </button>
-              <button onClick={() => photoRef.current?.click()} style={{ padding: "12px" }}>
-                Retake
-              </button>
-            </div>
+        <label style={{ display: "flex", gap: 10, alignItems: "center", padding: "12px 10px", border: "1px solid var(--border)", borderRadius: 8, cursor: "pointer" }}>
+          <input
+            type="checkbox"
+            checked={noBookAtLocation}
+            onChange={(e) => handleNoBookChange(e.target.checked)}
+            disabled={photoState === "uploading" || photoSavedRef.current || noBookStatus === "saving" || noBookStatus === "saved"}
+            style={{ width: 22, height: 22, flexShrink: 0 }}
+          />
+          <strong>No communication book at this location — no photo required</strong>
+        </label>
+        {noBookAtLocation ? (
+          <div style={{ marginTop: 10 }}>
+            {noBookStatus === "saving" && (
+              <p role="status">Saving no-book report for management… You may still clock out.</p>
+            )}
+            {noBookStatus === "saved" && (
+              <p role="status" style={{ color: "var(--primary)", fontWeight: 700 }}>
+                ✓ No communication book reported and saved for this shift. Photo not required.
+              </p>
+            )}
+            {noBookStatus === "error" && (
+              <div role="alert">
+                <p style={{ color: "var(--danger)" }}>{noBookError}</p>
+                <button type="button" onClick={() => void saveNoBookReport()}>
+                  🔁 Retry no-book report
+                </button>
+                <p style={{ color: "var(--muted)", fontSize: "0.85rem" }}>
+                  Clock-out time is independent. The report must be saved to finish required proof.
+                </p>
+              </div>
+            )}
           </div>
-        )}
-        {photoState === "uploading" && (
-          <p style={{ fontWeight: 700 }}>⬆ Uploading photo…</p>
-        )}
-        {photoState === "uploaded" && (
-          <div style={{ padding: "10px", background: "#e6f4ea", borderRadius: 8, textAlign: "center" }}>
-            ✅ Book photo uploaded
-            <br />
-            <button onClick={() => { setPhotoFile(null); setPhotoState("idle"); }}
-              style={{ marginTop: 8, fontSize: "0.88rem" }}>
-              Take another
-            </button>
+        ) : (
+          <div style={{ marginTop: 12 }}>
+            {photoError && <p style={{ color: "var(--danger)" }}>{photoError}</p>}
+            <input ref={photoRef} type="file" accept="image/*" capture="environment"
+              style={{ display: "none" }}
+              onChange={(e) => handlePhotoFile(e.target.files?.[0] || null)} />
+            {photoState === "idle" && (
+              <button type="button" onClick={() => photoRef.current?.click()}
+                style={{ width: "100%", padding: "14px", fontSize: "1rem", fontWeight: 700 }}>
+                📷 Take book photo
+              </button>
+            )}
+            {photoState === "ready" && (
+              <div>
+                <p style={{ fontWeight: 700 }}>✓ Book photo ready</p>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <button type="button" onClick={() => void uploadPhoto()} style={{ flex: 1, padding: "12px", fontWeight: 700 }}>
+                    🔁 Retry upload
+                  </button>
+                  <button type="button" onClick={() => photoRef.current?.click()} style={{ padding: "12px" }}>
+                    Retake
+                  </button>
+                </div>
+              </div>
+            )}
+            {photoState === "uploading" && <p style={{ fontWeight: 700 }}>⬆ Uploading photo…</p>}
+            {photoState === "uploaded" && (
+              <div style={{ padding: "10px", background: "#e6f4ea", borderRadius: 8, textAlign: "center" }}>
+                ✅ Book photo uploaded
+                <div>
+                  <button type="button" onClick={() => { setPhotoFile(null); setPhotoState("idle"); }}
+                    style={{ marginTop: 8, fontSize: "0.88rem" }}>
+                    Take another
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>
