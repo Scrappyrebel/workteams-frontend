@@ -5,6 +5,7 @@ import * as tus from "tus-js-client";
 import { supabase } from "../../../../lib/supabase";
 import { useCompany } from "../../../../lib/company-context";
 import PrivateWalkthroughPlayer from "../../../../components/PrivateWalkthroughPlayer";
+import { readEvidenceBlob, evidenceFilename, exportEvidence } from "../../../../lib/evidence-export";
 
 const MAX_DURATION_SEC = 10 * 60; // 10 minutes
 const CHUNK_SIZE = 6 * 1024 * 1024; // 6MB chunks
@@ -38,6 +39,8 @@ export default function ShiftVideosPage() {
   const [error, setError] = useState("");
   const [listError, setListError] = useState("");
   const [listLoading, setListLoading] = useState(false);
+  const [exportingId, setExportingId] = useState(null);
+  const [exportNote, setExportNote] = useState("");
   const [playingId, setPlayingId] = useState(null);
   const [videoUrls, setVideoUrls] = useState({});
   const [playbackIssue, setPlaybackIssue] = useState(null);
@@ -238,6 +241,26 @@ export default function ShiftVideosPage() {
     }
   }
 
+  async function shareVideo(video, share) {
+    if (!isManager || exportingId) return;
+    setExportingId(video.id);
+    setExportNote("");
+    setError("");
+    try {
+      const sb = supabase();
+      const blob = await readEvidenceBlob(sb, "shift-videos", video.video_url);
+      const label = (video.company_members?.display_name || "WorkTeams") + "-walkthrough";
+      const result = await exportEvidence(blob, evidenceFilename("video", video.video_url, label), share);
+      if (result === "downloaded") {
+        setExportNote("Video copy saved to this device. Attach it to your email or upload it to your secure customer-dispute folder.");
+      }
+    } catch (err) {
+      setError(err?.message || "Video could not be shared. Check your connection and retry.");
+    } finally {
+      setExportingId(null);
+    }
+  }
+
   async function toggleKeep(video) {
     const sb = supabase();
     await sb.from("shift_videos").update({ keep_video: !video.keep_video }).eq("id", video.id);
@@ -379,6 +402,7 @@ export default function ShiftVideosPage() {
           </button>
         </div>
         {listError && <p role="alert" style={{ color: "var(--danger)" }}>{listError}</p>}
+        {exportNote && <p role="status">{exportNote}</p>}
         {!listLoading && !listError && videos.length === 0 && (
           <p style={{ color: "var(--muted)" }}>No saved walkthrough videos were found for this company.</p>
         )}
@@ -416,6 +440,12 @@ export default function ShiftVideosPage() {
                 </button>
                 {isManager && (
                   <>
+                    <button type="button" disabled={exportingId === v.id} onClick={() => void shareVideo(v, true)}>
+                      {exportingId === v.id ? "Preparing…" : "↗ Share"}
+                    </button>
+                    <button type="button" disabled={exportingId === v.id} onClick={() => void shareVideo(v, false)}>
+                      ↓ Save copy
+                    </button>
                     <button onClick={() => toggleKeep(v)} title="Save as proof">
                       {v.keep_video ? "📌" : "📍"}
                     </button>
