@@ -230,17 +230,22 @@ export default function TimeClockPage() {
       } else {
         setProofNotice("Clock-out time saved. Checking shift proof…");
       }
-      try {
-        await api("/api/time/clock-out/complete", {
-          companyId: company.id,
-          entryId: open.id,
-        });
-        if (!awaitingProof) {
+      // Do not clear upload_pending while a video/photo is being uploaded
+      // or retained for retry, even if company proof requirements are off.
+      if (!awaitingProof) {
+        try {
+          await api("/api/time/clock-out/complete", {
+            companyId: company.id,
+            entryId: open.id,
+          });
+          const confirmed = proofRef.current?.hasVerifiedVideo?.();
           setProofEntry(null);
-          setProofNotice("Clock-out and required shift proof saved.");
+          setProofNotice(confirmed
+            ? "Clock-out saved. Walkthrough video uploaded and verified."
+            : "Clock-out saved. No walkthrough video was saved for this shift.");
+        } catch (err) {
+          setProofNotice(`Clocked out successfully. Shift proof is still pending: ${err.message}.`);
         }
-      } catch (err) {
-        setProofNotice(`Clocked out successfully. Shift proof is still pending: ${err.message}. Retry the recording here if necessary.`);
       }
       await load();
     } catch (e) {
@@ -250,20 +255,26 @@ export default function TimeClockPage() {
   }
 
   async function finalizeProofUpload(entryId) {
-    // Video/photo can finish AFTER clock-out. Check requirements again.
+    // Video/photo can finish AFTER clock-out. Never mark the proof complete
+    // while another recorded item still needs uploading or retrying.
+    if (proofRef.current?.hasPendingUploads() || proofRef.current?.hasUnsavedRecording?.()) {
+      setProofNotice("Clock-out saved. One or more recordings or photos are still uploading.");
+      return;
+    }
     try {
       const result = await api("/api/time/clock-out/complete", {
         companyId: company.id,
         entryId,
       });
-      if (result?.ok && !proofRef.current?.hasPendingUploads() &&
-          !proofRef.current?.hasUnsavedRecording?.()) {
+      if (result?.ok) {
+        const confirmed = proofRef.current?.hasVerifiedVideo?.();
         setProofEntry(null);
-        setProofNotice("Clock-out and all required shift proof saved.");
+        setProofNotice(confirmed
+          ? "Clock-out saved. Walkthrough video uploaded and verified."
+          : "Clock-out saved. No walkthrough video was saved for this shift.");
       }
     } catch (err) {
-      // An unmet requirement can be completed in the still-mounted form.
-      setProofNotice(`Clock-out time saved. Shift proof still needs attention: ${err.message}`);
+      setProofNotice(`Clock-out saved, but shift proof still needs attention: ${err.message}`);
     }
   }
 
