@@ -6,6 +6,7 @@ import { supabase } from "../lib/supabase";
 import { NO_COMMUNICATION_BOOK_NOTE } from "../lib/no-book-proof";
 
 const MAX_VIDEO_SECONDS = 10 * 60;
+const MAX_ACTIVE_VIDEO_MS = MAX_VIDEO_SECONDS * 1000;
 // Supabase's free tier limits EACH stored object to 50 MB, not the
 // total recording duration. Split large files without changing 10-minute rule.
 const MAX_VIDEO_BYTES = 500 * 1024 * 1024;
@@ -64,6 +65,8 @@ const EndShiftProof = forwardRef(function EndShiftProof(
   const segStartRef = useRef(0); // when the current active segment started
   const activeMsRef = useRef(0); // accumulated active ms (excludes paused time)
   const timerRef = useRef(null);
+  const deadlineTimerRef = useRef(null);
+  const stopRequestedRef = useRef(false);
   const previewRef = useRef(null);
   const photoRef = useRef(null);
   const tusUploadRef = useRef(null);
@@ -77,14 +80,17 @@ const EndShiftProof = forwardRef(function EndShiftProof(
   const noBookSavePromiseRef = useRef(null);
   const waitersRef = useRef([]); // resolve fns waiting for uploads
 
-  // Live timer: active recorded seconds only (paused time excluded)
+  // Clock shows ACTIVE recording time only. The independent one-shot deadline
+  // below stops MediaRecorder exactly at the ten-minute active-time limit,
+  // without relying on React renders or a delayed display interval.
   useEffect(() => {
     if (recState === "recording") {
       timerRef.current = setInterval(() => {
         const active = activeMsRef.current + (Date.now() - segStartRef.current);
-        const sec = Math.floor(active / 1000);
-        setRecSeconds(sec);
-        if (sec >= MAX_VIDEO_SECONDS) finishRecording();
+        setRecSeconds(Math.min(MAX_VIDEO_SECONDS, Math.floor(active / 1000)));
+        // Backup to the one-shot deadline, in case timers race or a mobile
+        // browser delays one of them.
+        if (active >= MAX_ACTIVE_VIDEO_MS) finishRecording(true);
       }, 250);
     } else {
       clearInterval(timerRef.current);
@@ -93,9 +99,18 @@ const EndShiftProof = forwardRef(function EndShiftProof(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [recState]);
 
+  function armAutoStopDeadline() {
+    clearTimeout(deadlineTimerRef.current);
+    const active = activeMsRef.current + (Date.now() - segStartRef.current);
+    const remaining = Math.max(0, MAX_ACTIVE_VIDEO_MS - active);
+    deadlineTimerRef.current = setTimeout(() => finishRecording(true), remaining);
+  }
+
   // Stop camera tracks on unmount
   useEffect(() => {
     return () => {
+      clearInterval(timerRef.current);
+      clearTimeout(deadlineTimerRef.current);
       try { streamRef.current?.getTracks().forEach((t) => t.stop()); } catch {}
     };
   }, []);
@@ -138,7 +153,7 @@ const EndShiftProof = forwardRef(function EndShiftProof(
   function hasPendingUploads() {
     // A FAILED upload needs an explicit Retry; never wait forever on it.
     const videoPending = enableVideo &&
-      ["recording", "paused", "recorded", "uploading"].includes(recState) &&
+      ["recording", "paused", "finishing", "recorded", "uploading"].includes(recState) &&
       !videoSavedRef.current;
     const photoPending = enableBook && !!photoFile && !noBookSelectedRef.current && !photoSavedRef.current;
     // A no-book report is a real, persisted alternative to a photo. It is
@@ -167,6 +182,8 @@ const EndShiftProof = forwardRef(function EndShiftProof(
   }));
 
   async function startRecording() {
+    clearTimeout(deadlineTimerRef.current);
+    stopRequestedRef.current = false;
     setVideoError("");
     setUploadFailed(false);
     setVideoSaved(false);
@@ -215,12 +232,15 @@ const EndShiftProof = forwardRef(function EndShiftProof(
       mimeRef.current = recorder.mimeType || mimeType || "";
       chunksRef.current = [];
       activeMsRef.current = 0;
+      stopRequestedRef.current = false;
       setRecSeconds(0);
 
       recorder.ondataavailable = (e) => {
         if (e.data && e.data.size > 0) chunksRef.current.push(e.data);
       };
       recorder.onstop = () => {
+        clearTimeout(deadlineTimerRef.current);
+        clearInterval(timerRef.current);
         const actualMime = recorder.mimeType || chunksRef.current[0]?.type || mimeRef.current || "video/webm";
         mimeRef.current = actualMime;
         const blob = new Blob(chunksRef.current, { type: actualMime });
@@ -248,6 +268,7 @@ const EndShiftProof = forwardRef(function EndShiftProof(
       else recorder.start(3000);
 
       segStartRef.current = Date.now();
+      armAutoStopDeadline();
       setRecState("recording");
     } catch (e) {
       setVideoError(
@@ -260,40 +281,70 @@ const EndShiftProof = forwardRef(function EndShiftProof(
 
   function pauseRecording() {
     const r = recorderRef.current;
-    if (!r || r.state !== "recording") return;
+    if (!r || r.state !== "recording" || stopRequestedRef.current) return;
+    // If a callback is late and the limit has already been reached, finish
+    // instead of letting Pause avoid the ten-minute stop.
     const pauseAt = Date.now();
+    if (activeMsRef.current + (pauseAt - segStartRef.current) >= MAX_ACTIVE_VIDEO_MS) {
+      finishRecording(true);
+      return;
+    }
     try { r.pause(); } catch (e) {
       setVideoError(e instanceof Error ? e.message : "The recorder could not pause.");
       return;
     }
-    // Accumulate time only when pause succeeds.
+    clearTimeout(deadlineTimerRef.current);
+    clearInterval(timerRef.current);
     activeMsRef.current += pauseAt - segStartRef.current;
+    setRecSeconds(Math.min(MAX_VIDEO_SECONDS, Math.floor(activeMsRef.current / 1000)));
     setRecState("paused");
   }
 
   function resumeRecording() {
     const r = recorderRef.current;
-    if (!r || r.state !== "paused") return;
+    if (!r || r.state !== "paused" || stopRequestedRef.current) return;
+    if (activeMsRef.current >= MAX_ACTIVE_VIDEO_MS) {
+      finishRecording(true);
+      return;
+    }
     // Do NOT call requestData() before resume — especially on iPhone.
     try { r.resume(); } catch (e) {
       setVideoError(e instanceof Error ? e.message : "The recorder could not resume.");
       return;
     }
     segStartRef.current = Date.now();
+    armAutoStopDeadline();
     setRecState("recording");
   }
 
-  function finishRecording() {
+  function finishRecording(autoStop = false) {
     const r = recorderRef.current;
-    if (!r || !["recording", "paused"].includes(r.state)) return;
+    if (!r || !["recording", "paused"].includes(r.state) || stopRequestedRef.current) return;
+    stopRequestedRef.current = true;
+    clearTimeout(deadlineTimerRef.current);
+    clearInterval(timerRef.current);
     if (r.state === "recording") activeMsRef.current += Date.now() - segStartRef.current;
+    if (autoStop || activeMsRef.current >= MAX_ACTIVE_VIDEO_MS) {
+      setRecSeconds(MAX_VIDEO_SECONDS);
+    } else {
+      setRecSeconds(Math.min(MAX_VIDEO_SECONDS, Math.floor(activeMsRef.current / 1000)));
+    }
+    setRecState("finishing");
+    setVideoError("");
+    // onstop assembles the original Blob and AUTOMATICALLY calls uploadVideo.
     // Do NOT call requestData() before stop — especially on iPhone.
     try { r.stop(); } catch (e) {
-      setVideoError(e instanceof Error ? e.message : "Could not finish the recording.");
+      stopRequestedRef.current = false;
+      setRecState(r.state === "paused" ? "paused" : "recording");
+      setVideoError(e instanceof Error ? e.message : "Could not finish the recording. Tap Finish & save again.");
+      if (r.state === "recording") armAutoStopDeadline();
     }
   }
 
   function discardRecording() {
+    clearTimeout(deadlineTimerRef.current);
+    clearInterval(timerRef.current);
+    stopRequestedRef.current = false;
     window.__endShiftVideoBlob = null;
     videoPathRef.current = "";
     videoSavedRef.current = false;
@@ -639,11 +690,14 @@ const EndShiftProof = forwardRef(function EndShiftProof(
               {recState === "paused" ? "⏸ Paused — " : "🔴 Recording — "}
               {fmtTime(recSeconds)} / {fmtTime(MAX_VIDEO_SECONDS)}
             </p>
+            <p style={{ color: "var(--muted)", fontSize: "0.85rem" }}>
+              Automatically stops and starts uploading at 10 minutes of recording. Paused time does not count.
+            </p>
             <div style={{ display: "flex", gap: 8 }}>
               {recState === "recording"
                 ? <button onClick={pauseRecording} style={{ flex: 1, padding: "12px" }}>⏸ Pause</button>
                 : <button onClick={resumeRecording} style={{ flex: 1, padding: "12px" }}>▶ Resume</button>}
-              <button onClick={finishRecording}
+              <button onClick={() => finishRecording(false)}
                 style={{ flex: 2, padding: "12px", fontWeight: 700, background: "#28704a", color: "#fff" }}>
                 ✅ Finish &amp; save
               </button>
@@ -651,9 +705,15 @@ const EndShiftProof = forwardRef(function EndShiftProof(
           </div>
         )}
 
+        {recState === "finishing" && (
+          <p role="status" style={{ fontWeight: 700 }}>
+            Ten-minute limit reached or Finish pressed — stopping recording and starting upload automatically…
+          </p>
+        )}
+
         {recState === "recorded" && (
           <div>
-            <p style={{ fontWeight: 700 }}>✅ Walkthrough saved ({fmtTime(recSeconds)})</p>
+            <p style={{ fontWeight: 700 }}>Walkthrough captured ({fmtTime(recSeconds)}) — not uploaded yet</p>
             {uploadFailed ? (
               <div>
                 {videoError && <p style={{ color: "var(--danger)" }}>{videoError}</p>}
@@ -681,7 +741,7 @@ const EndShiftProof = forwardRef(function EndShiftProof(
               <div style={{ width: `${Math.round(uploadProgress * 100)}%`, height: "100%", background: "var(--primary)" }} />
             </div>
             <p style={{ color: "var(--muted)", fontSize: "0.85rem" }}>
-              You can clock out — the upload keeps going.
+              Recording stopped automatically at 10 minutes, or when you pressed Finish. Keep this screen open until upload is verified. Your clock-out time can still be saved.
             </p>
           </div>
         )}
