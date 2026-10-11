@@ -47,10 +47,10 @@ const checks = [
    page.includes('Authorization: `Bearer ${session.access_token}`') &&
    page.includes("Why are you authorizing this unscheduled clock-in?"),
    "Owner/manager must deliberately and securely authorize exceptional clock-in."],
-  [server.includes('s.shift_date === yesterdayStr') &&
-   page.includes('shift.shift_date === yesterday') &&
-   server.includes("s.start_time > s.end_time"),
-   "Overnight shifts remain eligible past midnight without admitting others' shifts."],
+  [server.includes('chooseAssignedShift(memberShifts, now)') &&
+   server.includes('.in("shift_date", [yesterdayStr, todayStr])') &&
+   !server.includes("const shift = (memberShifts || []).find("),
+   "Clock-in uses the nearest eligible shift and handles overnight shifts without selecting the first shift of the day."],
 ];
 const failures = checks.filter(([ok]) => !ok).map(([, msg]) => msg);
 if (failures.length) {
