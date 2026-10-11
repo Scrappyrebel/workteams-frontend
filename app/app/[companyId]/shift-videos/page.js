@@ -37,6 +37,7 @@ export default function ShiftVideosPage() {
   const [error, setError] = useState("");
   const [playingId, setPlayingId] = useState(null);
   const [videoUrls, setVideoUrls] = useState({});
+  const [playbackIssue, setPlaybackIssue] = useState(null);
   const fileRef = useRef(null);
 
   const isManager = member && (member.role === "owner" || member.role === "admin");
@@ -156,15 +157,15 @@ export default function ShiftVideosPage() {
       },
     });
 
-    // Resume if we have a previous upload URL for this file.
-    const prevUrl = localStorage.getItem(`tus-${file.name}-${file.size}`);
-    if (prevUrl) upload.url = prevUrl;
-    upload.on("afterResponse", (req, res) => {
-      const url = req.getURL();
-      if (url) localStorage.setItem(`tus-${file.name}-${file.size}`, url);
-    });
-
+    // tus-js-client handles resumable upload URLs internally. Upload.on() is
+    // not a supported API and used to crash before a file could upload.
     setUploading({ file, progress: 0, upload, paused: false, failed: false, duration });
+    try {
+      const previousUploads = await upload.findPreviousUploads();
+      if (previousUploads.length) upload.resumeFromPreviousUpload(previousUploads[0]);
+    } catch (err) {
+      console.warn("Could not find previous upload; starting fresh", err);
+    }
     upload.start();
   }
 
@@ -184,12 +185,11 @@ export default function ShiftVideosPage() {
 
   function cancelUpload() {
     if (uploading?.upload) uploading.upload.abort();
-    localStorage.removeItem(`tus-${uploading.file.name}-${uploading.file.size}`);
     setUploading(null);
   }
 
   async function getPlayUrl(video) {
-    if (videoUrls[video.id]) return videoUrls[video.id];
+    // Always generate a fresh signed URL; previously cached links expired.
     try {
       const sb = supabase();
       const { data, error } = await sb.storage.from("shift-videos").createSignedUrl(video.video_url, 3600);
@@ -344,9 +344,9 @@ export default function ShiftVideosPage() {
                     if (playingId === v.id) {
                       setPlayingId(null);
                     } else {
+                      setPlaybackIssue(null);
                       const url = await getPlayUrl(v);
                       if (url) setPlayingId(v.id);
-                      else setError("Couldn't load that video.");
                     }
                   }}
                 >
@@ -363,17 +363,46 @@ export default function ShiftVideosPage() {
               </div>
             </div>
             {playingId === v.id && videoUrls[v.id] && (
-              <video
-                src={videoUrls[v.id]}
-                controls
-                playsInline
-                style={{ width: "100%", maxWidth: 640, marginTop: 8, borderRadius: 8 }}
-                onError={(e) => {
-                  console.error("Video load error:", e);
-                  setError("This video file couldn't be played. It may not have finished uploading.");
-                  setPlayingId(null);
-                }}
-              />
+              <div style={{ marginTop: 8, maxWidth: 640 }}>
+                <video
+                  key={videoUrls[v.id]}
+                  src={videoUrls[v.id]}
+                  controls
+                  playsInline
+                  preload="metadata"
+                  style={{ width: "100%", borderRadius: 8, background: "#111" }}
+                  onLoadedData={(e) => {
+                    if (e.currentTarget.videoWidth === 0) {
+                      setPlaybackIssue({ id: v.id, message: "The file loaded but contains no visible video track on this device." });
+                    } else {
+                      setPlaybackIssue(null);
+                    }
+                  }}
+                  onPlaying={() => setPlaybackIssue(null)}
+                  onError={(e) => {
+                    const code = e.currentTarget.error?.code;
+                    console.error("Shift video playback error:", code);
+                    const incompatible = code === 3 || code === 4;
+                    setPlaybackIssue({
+                      id: v.id,
+                      message: incompatible
+                        ? "This device cannot decode the recording's video format. Older WebM recordings may not play in iPhone Safari."
+                        : "Playback failed. Try opening the original recording in your browser.",
+                    });
+                  }}
+                />
+                {playbackIssue?.id === v.id && (
+                  <p role="alert" style={{ color: "var(--danger)", margin: "6px 0" }}>
+                    {playbackIssue.message}
+                  </p>
+                )}
+                <a href={videoUrls[v.id]} target="_blank" rel="noopener noreferrer">
+                  Open original recording in browser
+                </a>
+                <p style={{ color: "var(--muted)", fontSize: 12, margin: "4px 0" }}>
+                  Tap the video's play control to start. Existing recordings are never deleted or replaced.
+                </p>
+              </div>
             )}
           </div>
         ))}

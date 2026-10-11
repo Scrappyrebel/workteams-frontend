@@ -139,6 +139,7 @@ const EndShiftProof = forwardRef(function EndShiftProof(
   async function startRecording() {
     setVideoError("");
     setUploadFailed(false);
+    setVideoSaved(false);
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         video: {
@@ -157,20 +158,29 @@ const EndShiftProof = forwardRef(function EndShiftProof(
         throw new Error("Camera opened but no video is coming through. Check that no other app is using the camera and try again.");
       }
 
-      const candidates = isiOS
-        ? ["video/mp4", "video/webm;codecs=vp8,opus", "video/webm;codecs=vp8", "video/webm"]
-        : ["video/webm;codecs=vp8,opus", "video/webm;codecs=vp8", "video/webm", "video/mp4"];
+      // Prefer interoperable H.264 MP4 on every platform when the recorder
+      // supports it. Older Android recordings may still be WebM; playback
+      // must retain a native-open fallback for those existing files.
+      const candidates = [
+        'video/mp4;codecs="avc1.42E01E,mp4a.40.2"',
+        'video/mp4;codecs="avc1.42E01E"',
+        "video/mp4",
+        "video/webm;codecs=vp8,opus",
+        "video/webm;codecs=vp8",
+        "video/webm",
+      ];
       const mimeType = candidates.find((t) => {
         try { return window.MediaRecorder.isTypeSupported(t); } catch { return false; }
       });
-      mimeRef.current = mimeType || "";
-
       const recorder = new MediaRecorder(stream, {
         ...(mimeType ? { mimeType } : {}),
         videoBitsPerSecond: 320000,
         audioBitsPerSecond: 24000,
       });
       recorderRef.current = recorder;
+      // Store the format actually selected by MediaRecorder, not only the
+      // requested one; incorrect content types can yield black playback.
+      mimeRef.current = recorder.mimeType || mimeType || "";
       chunksRef.current = [];
       activeMsRef.current = 0;
       setRecSeconds(0);
@@ -179,7 +189,9 @@ const EndShiftProof = forwardRef(function EndShiftProof(
         if (e.data && e.data.size > 0) chunksRef.current.push(e.data);
       };
       recorder.onstop = () => {
-        const blob = new Blob(chunksRef.current, { type: mimeRef.current || "video/mp4" });
+        const actualMime = recorder.mimeType || chunksRef.current[0]?.type || mimeRef.current || "video/webm";
+        mimeRef.current = actualMime;
+        const blob = new Blob(chunksRef.current, { type: actualMime });
         chunksRef.current = [];
         try { streamRef.current?.getTracks().forEach((t) => t.stop()); } catch {}
         if (previewRef.current) previewRef.current.srcObject = null;
@@ -216,12 +228,13 @@ const EndShiftProof = forwardRef(function EndShiftProof(
   function pauseRecording() {
     const r = recorderRef.current;
     if (!r || r.state !== "recording") return;
-    // Accumulate active time; paused time does NOT count toward the 10-min max.
-    activeMsRef.current += Date.now() - segStartRef.current;
+    const pauseAt = Date.now();
     try { r.pause(); } catch (e) {
       setVideoError(e instanceof Error ? e.message : "The recorder could not pause.");
       return;
     }
+    // Accumulate time only when pause succeeds.
+    activeMsRef.current += pauseAt - segStartRef.current;
     setRecState("paused");
   }
 
@@ -229,11 +242,11 @@ const EndShiftProof = forwardRef(function EndShiftProof(
     const r = recorderRef.current;
     if (!r || r.state !== "paused") return;
     // Do NOT call requestData() before resume — especially on iPhone.
-    segStartRef.current = Date.now();
     try { r.resume(); } catch (e) {
       setVideoError(e instanceof Error ? e.message : "The recorder could not resume.");
       return;
     }
+    segStartRef.current = Date.now();
     setRecState("recording");
   }
 
