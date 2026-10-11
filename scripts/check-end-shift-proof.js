@@ -81,6 +81,20 @@ check("book photo control", C, (s) =>
 // 15. Full workflow reachable from Time Clock.
 check("time page integration", T, (s) => s.includes("EndShiftProof"));
 
+// Verified proof receipts: an uploaded-looking progress bar isn't proof.
+check("verified video receipt", C, (src) =>
+  src.includes("verifiedObject") && src.includes("verifiedRow") &&
+  src.includes("Walkthrough uploaded and verified"));
+check("clock-out isn't video receipt", T, (src) =>
+  src.includes("No walkthrough video was saved for this shift") &&
+  src.includes("Walkthrough video uploaded and verified"));
+check("clock-out keeps proof pending", T, (src) =>
+  src.includes("if (!awaitingProof)") &&
+  src.includes("clockedOutEntryIdRef.current !== entryId"));
+check("video listing errors visible", "app/app/[companyId]/shift-videos/page.js", (src) =>
+  src.includes("Refresh videos") && src.includes("setListError") &&
+  src.includes("if (plain.error) throw plain.error"));
+
 if (failures.length) {
   console.error("\nREGRESSION FAILURES:");
   failures.forEach((f) => console.error("  x " + f));

@@ -36,6 +36,8 @@ export default function ShiftVideosPage() {
   const [uploading, setUploading] = useState(null); // { file, progress, upload, paused }
   const [form, setForm] = useState({ location_id: "", notes: "" });
   const [error, setError] = useState("");
+  const [listError, setListError] = useState("");
+  const [listLoading, setListLoading] = useState(false);
   const [playingId, setPlayingId] = useState(null);
   const [videoUrls, setVideoUrls] = useState({});
   const [playbackIssue, setPlaybackIssue] = useState(null);
@@ -44,20 +46,44 @@ export default function ShiftVideosPage() {
   const isManager = member && (member.role === "owner" || member.role === "admin");
 
   async function load() {
-    const sb = supabase();
-    const { data: vids } = await sb
-      .from("shift_videos")
-      .select("id, video_url, duration_seconds, file_size_bytes, notes, keep_video, video_expires_at, created_at, location_id, member_id, company_members!shift_videos_member_id_fkey(display_name)")
-      .eq("company_id", company.id)
-      .order("created_at", { ascending: false })
-      .limit(100);
-    setVideos(vids || []);
-    const { data: locs } = await sb
-      .from("locations")
-      .select("id, name")
-      .eq("company_id", company.id)
-      .order("name");
-    setLocations(locs || []);
+    if (!company?.id) return;
+    setListLoading(true);
+    setListError("");
+    try {
+      const sb = supabase();
+      const cols = "id, video_url, duration_seconds, file_size_bytes, notes, keep_video, video_expires_at, created_at, location_id, member_id";
+      let { data: vids, error: videosError } = await sb
+        .from("shift_videos")
+        .select(cols + ", company_members!shift_videos_member_id_fkey(display_name)")
+        .eq("company_id", company.id)
+        .order("created_at", { ascending: false })
+        .limit(100);
+      if (videosError) {
+        // An optional employee-name relationship error must not hide the
+        // recordings themselves. Retry the main records without the join.
+        const plain = await sb.from("shift_videos").select(cols)
+          .eq("company_id", company.id)
+          .order("created_at", { ascending: false })
+          .limit(100);
+        if (plain.error) throw plain.error;
+        vids = plain.data;
+        setListError("Employee names could not be loaded, but saved recordings are shown.");
+      }
+      setVideos(vids || []);
+      const { data: locs, error: locationsError } = await sb
+        .from("locations")
+        .select("id, name")
+        .eq("company_id", company.id)
+        .order("name");
+      if (locationsError) console.warn("Shift video location names unavailable:", locationsError.message);
+      setLocations(locs || []);
+    } catch (err) {
+      // Never show 'No videos yet' as though a failed query returned zero.
+      setListError("Could not load the saved walkthrough list: " + (err?.message || "Unknown error") +
+        ". Tap Refresh videos or sign in again.");
+    } finally {
+      setListLoading(false);
+    }
   }
 
   useEffect(() => {
@@ -346,8 +372,16 @@ export default function ShiftVideosPage() {
 
       {/* Video list */}
       <section className="panel">
-        <h2>Recent videos</h2>
-        {videos.length === 0 && <p style={{ color: "var(--muted)" }}>No videos yet.</p>}
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+          <h2>Recent videos</h2>
+          <button type="button" disabled={listLoading} onClick={() => void load()}>
+            {listLoading ? "Refreshing…" : "↻ Refresh videos"}
+          </button>
+        </div>
+        {listError && <p role="alert" style={{ color: "var(--danger)" }}>{listError}</p>}
+        {!listLoading && !listError && videos.length === 0 && (
+          <p style={{ color: "var(--muted)" }}>No saved walkthrough videos were found for this company.</p>
+        )}
         {videos.map((v) => (
           <div key={v.id} style={{ borderBottom: "1px solid var(--border)", padding: "12px 0" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "start", gap: 8 }}>
