@@ -67,6 +67,7 @@ const EndShiftProof = forwardRef(function EndShiftProof(
   const videoUploadPromiseRef = useRef(null);
   const photoUploadPromiseRef = useRef(null);
   const videoSavedRef = useRef(false);
+  const photoSavedRef = useRef(false);
   const waitersRef = useRef([]); // resolve fns waiting for uploads
 
   // Live timer: active recorded seconds only (paused time excluded)
@@ -132,7 +133,7 @@ const EndShiftProof = forwardRef(function EndShiftProof(
     const videoPending = enableVideo &&
       ["recording", "paused", "recorded", "uploading"].includes(recState) &&
       !videoSavedRef.current;
-    const photoPending = enableBook && !!photoFile && photoState !== "uploaded";
+    const photoPending = enableBook && !!photoFile && !photoSavedRef.current;
     return videoPending || photoPending;
   }
 
@@ -404,6 +405,26 @@ const EndShiftProof = forwardRef(function EndShiftProof(
           if (dbErr) throw new Error("The video uploaded but couldn't be listed: " + dbErr.message);
         }
 
+        // An upload progress bar reaching 100% is NOT proof that the recording
+        // is saved. Confirm both the private storage object and the linked
+        // database row before showing the green Uploaded message.
+        const [{ data: verifiedObject, error: objectError }, { data: verifiedRow, error: rowError }] =
+          await Promise.all([
+            sb.storage.from("shift-videos").info(path),
+            sb.from("shift_videos").select("id,video_url,time_entry_id,file_size_bytes")
+              .eq("company_id", companyId)
+              .eq("member_id", memberId)
+              .eq("time_entry_id", entryId)
+              .eq("video_url", path)
+              .limit(1).maybeSingle(),
+          ]);
+        if (objectError || !verifiedObject) {
+          throw new Error("The video upload could not be verified in storage. Please tap Retry.");
+        }
+        if (rowError || !verifiedRow || Number(verifiedRow.file_size_bytes) !== b.size) {
+          throw new Error("The video is in storage, but it is missing from your shift's saved videos. Tap Retry.");
+        }
+
         try {
           await fetch("/api/time/clock-out/proof", {
             method: "POST",
@@ -451,6 +472,7 @@ const EndShiftProof = forwardRef(function EndShiftProof(
 
   function handlePhotoFile(f) {
     setPhotoError("");
+    photoSavedRef.current = false;
     if (!f) return;
     if (!f.type.startsWith("image/")) { setPhotoError("Please choose a photo."); return; }
     setPhotoFile(f);
@@ -497,6 +519,7 @@ const EndShiftProof = forwardRef(function EndShiftProof(
         });
       } catch {}
 
+      photoSavedRef.current = true;
       setPhotoState("uploaded");
       setDone(true);
       onProofUploaded?.(entryId);
@@ -579,7 +602,7 @@ const EndShiftProof = forwardRef(function EndShiftProof(
 
         {recState === "uploaded" && (
           <div style={{ padding: "10px", background: "#e6f4ea", borderRadius: 8, textAlign: "center" }}>
-            ✅ Walkthrough uploaded{locationName ? ` — ${locationName}` : ""}
+            ✅ Walkthrough uploaded and verified{locationName ? ` — ${locationName}` : ""}
             <br />
             <button onClick={discardRecording} style={{ marginTop: 8, fontSize: "0.88rem" }}>
               Record another
