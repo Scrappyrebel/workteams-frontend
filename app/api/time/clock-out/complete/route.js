@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { checkRateLimit, clientIp } from "../../../../../lib/rate-limit";
+import { NO_COMMUNICATION_BOOK_NOTE } from "../../../../../lib/no-book-proof";
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -84,18 +85,38 @@ export async function POST(req) {
     }
 
     if (requirePhoto) {
-      const { data: book } = await sb
+      // Accept a real photo OR an authenticated no-communication-book report,
+      // tied to this company, worker and time entry. Never trust a bare
+      // checkbox/body flag as a substitute for persisted proof.
+      const { data: book, error: bookError } = await sb
         .from("comm_book")
         .select("id")
+        .eq("company_id", companyId)
+        .eq("member_id", member.id)
         .eq("time_entry_id", entryId)
         .not("photo_url", "is", null)
         .limit(1)
         .maybeSingle();
+      if (bookError) throw bookError;
       if (!book) {
-        return NextResponse.json(
-          { error: "Required book photo has not finished uploading.", pending: "book" },
-          { status: 409 }
-        );
+        const { data: noBook, error: noBookError } = await sb
+          .from("comm_book")
+          .select("id")
+          .eq("company_id", companyId)
+          .eq("member_id", member.id)
+          .eq("time_entry_id", entryId)
+          .eq("category", "note")
+          .eq("message", NO_COMMUNICATION_BOOK_NOTE)
+          .is("photo_url", null)
+          .limit(1)
+          .maybeSingle();
+        if (noBookError) throw noBookError;
+        if (!noBook) {
+          return NextResponse.json(
+            { error: "Required book proof is pending: upload a book photo or save the No communication book report.", pending: "book" },
+            { status: 409 }
+          );
+        }
       }
     }
 
