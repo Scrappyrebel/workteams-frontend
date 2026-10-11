@@ -32,11 +32,22 @@ function haversineMeters(lat1, lon1, lat2, lon2) {
   return 2 * R * Math.asin(Math.sqrt(a));
 }
 
+function chicagoDate(value) {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/Chicago", year: "numeric", month: "2-digit", day: "2-digit",
+  }).formatToParts(value);
+  const p = (part) => parts.find((x) => x.type === part)?.value;
+  return `${p("year")}-${p("month")}-${p("day")}`;
+}
+
 export default function TimeClockPage() {
   const { company, member, loading } = useCompany();
   const [open, setOpen] = useState(null);
   const [entries, setEntries] = useState([]);
   const [locations, setLocations] = useState([]);
+  const [myShifts, setMyShifts] = useState([]);
+  const [shiftLoading, setShiftLoading] = useState(true);
+  const [shiftError, setShiftError] = useState("");
   const [locationId, setLocationId] = useState("");
   const [filter, setFilter] = useState("everyone");
   const [onClock, setOnClock] = useState([]);
@@ -102,6 +113,37 @@ export default function TimeClockPage() {
     const { data: locs } = await sb.from("locations").select("id, name, lat, lng, geofence_radius_m").eq("company_id", company.id).order("name");
     setLocations(locs || []);
 
+    // Show ONLY this signed-in member's assigned locations. The clock-in API
+    // repeats this check server-side, so a stale phone or edited request
+    // cannot use Kristin's schedule for another person.
+    setShiftLoading(true);
+    const now = new Date();
+    const today = chicagoDate(now);
+    const yesterday = chicagoDate(new Date(now.getTime() - 24 * 60 * 60 * 1000));
+    const { data: assigned, error: scheduleError } = await sb.from("shifts")
+      .select("id,location_id,shift_date,start_time,end_time")
+      .eq("company_id", company.id)
+      .eq("member_id", member.id)
+      .in("shift_date", [yesterday, today]);
+    if (scheduleError) {
+      setShiftError("Could not check your assigned shifts. Tap Refresh my shifts.");
+      setMyShifts([]);
+      setLocationId("");
+    } else {
+      const localTime = new Intl.DateTimeFormat("en-GB", {
+        timeZone: "America/Chicago", hour: "2-digit", minute: "2-digit", hourCycle: "h23",
+      }).format(now);
+      const valid = (assigned || []).filter((shift) =>
+        shift.shift_date === today ||
+        (shift.shift_date === yesterday && shift.start_time > shift.end_time &&
+          localTime <= shift.end_time.slice(0, 5))
+      );
+      setShiftError("");
+      setMyShifts(valid);
+      setLocationId((id) => valid.some((shift) => shift.location_id === id) ? id : "");
+    }
+    setShiftLoading(false);
+
     // Supervisors and up see who's on the clock right now.
     if (canViewTeam) {
       const { data: openTeam } = await sb
@@ -163,6 +205,10 @@ export default function TimeClockPage() {
   }
 
   async function clockIn() {
+    if (shiftLoading || shiftError || !myShifts.some((s) => s.location_id === locationId)) {
+      alert("You must have your own assigned shift at this location today. Tap Refresh my shifts or contact management.");
+      return;
+    }
     if (!locationId) {
       alert("Pick the location you're working at first.");
       return;
@@ -284,17 +330,29 @@ export default function TimeClockPage() {
   }
 
   async function managerClock(targetMemberId, action) {
-    if (!confirm(action === "in" ? "Clock this person in?" : "Clock this person out?")) return;
+    if (!confirm(action === "in"
+      ? "MANAGER OVERRIDE: Clock this person in without their own scheduled shift?"
+      : "MANAGER OVERRIDE: Clock this person out?")) return;
+    const reason = action === "in"
+      ? window.prompt("Required: Why are you authorizing this unscheduled clock-in?")
+      : "Manager requested clock-out";
+    if (reason === null) return;
+    if (action === "in" && !reason.trim()) {
+      alert("Enter a reason for the unscheduled clock-in.");
+      return;
+    }
     setBusy(true);
     try {
+      const { data: { session } } = await supabase().auth.getSession();
+      if (!session?.access_token) throw new Error("Sign in as a manager before using overrides.");
       const res = await fetch("/api/time/manager-clock", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
         body: JSON.stringify({
           company_id: company.id,
           target_member_id: targetMemberId,
           action,
-          actor_member_id: member.id,
+          reason: String(reason || "").trim(),
         }),
       });
       const data = await res.json();
@@ -332,10 +390,23 @@ export default function TimeClockPage() {
                 ✅ Clocked out — that shift took {lastShiftLength}.
               </p>
             )}
-            <select value={locationId} onChange={(e) => setLocationId(e.target.value)} style={{ ...input, maxWidth: 420, marginBottom: 14 }}>
-              <option value="">Choose your work location…</option>
-              {locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
+            <select value={locationId} onChange={(e) => setLocationId(e.target.value)}
+              disabled={shiftLoading || !!shiftError || !myShifts.length}
+              style={{ ...input, maxWidth: 420, marginBottom: 14 }}>
+              <option value="">Choose your scheduled work location…</option>
+              {locations.filter((l) => myShifts.some((sh) => sh.location_id === l.id))
+                .map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
             </select>
+            {shiftLoading && <p role="status">Checking your assigned shifts…</p>}
+            {shiftError && <p role="alert" style={{ color: "var(--danger)" }}>{shiftError}</p>}
+            {!shiftLoading && !shiftError && myShifts.length === 0 && (
+              <p role="status" style={{ fontWeight: 700 }}>
+                No shift assigned to your account today. Clock-in is unavailable.
+                Another employee's shifts do not count.
+              </p>
+            )}
+            <button type="button" onClick={() => void load()} disabled={busy || shiftLoading}
+              style={{ marginBottom: 12 }}>↻ Refresh my shifts</button>
             {(() => {
               const sel = locations.find((l) => l.id === locationId);
               const fenced = geoEnforced && sel && sel.lat != null && sel.lng != null;
@@ -369,7 +440,7 @@ export default function TimeClockPage() {
                 </div>
               </div>
             )}
-            <button onClick={clockIn} disabled={busy} style={bigButton}>
+            <button onClick={clockIn} disabled={busy || shiftLoading || !!shiftError || !locationId || !myShifts.some((s) => s.location_id === locationId)} style={bigButton}>
               {busy ? "Working…" : "Clock in"}
             </button>
             <p style={{ color: "var(--muted)", fontSize: "0.88rem", marginTop: 10 }}>
