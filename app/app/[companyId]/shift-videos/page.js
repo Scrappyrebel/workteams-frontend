@@ -419,7 +419,7 @@ export default function ShiftVideosPage() {
             }).catch((err) => setError(err?.message || "Could not share the video."))}>
             ↗ Share prepared video
           </button>
-        }
+        )}
         {!listLoading && !listError && videos.length === 0 && (
           <p style={{ color: "var(--muted)" }}>No saved walkthrough videos were found for this company.</p>
         )}
