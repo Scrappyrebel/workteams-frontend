@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import * as tus from "tus-js-client";
+import { uploadShiftVideoSafely, MAX_VIDEO_BYTES } from "../../../../lib/safe-shift-video-upload";
 import { supabase } from "../../../../lib/supabase";
 import { useCompany } from "../../../../lib/company-context";
 import PrivateWalkthroughPlayer from "../../../../components/PrivateWalkthroughPlayer";
@@ -42,6 +42,7 @@ export default function ShiftVideosPage() {
   const [exportingId, setExportingId] = useState(null);
   const [exportNote, setExportNote] = useState("");
   const [preparedShare, setPreparedShare] = useState(null);
+  const [shareStatusVideoId, setShareStatusVideoId] = useState(null);
   const [playingId, setPlayingId] = useState(null);
   const [videoUrls, setVideoUrls] = useState({});
   const [playbackIssue, setPlaybackIssue] = useState(null);
@@ -135,69 +136,48 @@ export default function ShiftVideosPage() {
   }
 
   async function startUpload(file, duration) {
-    const sb = supabase();
-    const { data: { session } } = await sb.auth.getSession();
-    if (!session) {
-      setError("You're signed out. Sign back in and try again.");
+    if (file.size > MAX_VIDEO_BYTES) {
+      setError("This recording exceeds 500 MB. The original file remains on your phone; ask management for help.");
       return;
     }
-    const ext = (file.name.split(".").pop() || "mp4").toLowerCase();
-    const path = `${company.id}/${member.id}/${Date.now()}.${ext}`;
-    const endpoint = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/upload/resumable`;
-
-    const upload = new tus.Upload(file, {
-      endpoint,
-      chunkSize: CHUNK_SIZE,
-      retryDelays: [0, 1000, 3000, 5000, 10000, 20000],
-      metadata: {
-        bucketName: "shift-videos",
-        objectName: path,
-        contentType: file.type || "video/mp4",
-      },
-      headers: {
-        authorization: `Bearer ${session.access_token}`,
-        apikey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
-      },
-      onError: (err) => {
-        console.error("upload failed", err);
-        setError("Upload failed. Check your connection and tap Retry — it picks up where it stopped.");
-        setUploading((u) => (u ? { ...u, failed: true } : u));
-      },
-      onProgress: (bytesUploaded, bytesTotal) => {
-        setUploading((u) => (u ? { ...u, progress: bytesUploaded / bytesTotal } : u));
-      },
-      onSuccess: async () => {
-        // Save the DB record.
-        const { error: dbErr } = await sb.from("shift_videos").insert({
+    const sb = supabase();
+    const { data: { session } } = await sb.auth.getSession();
+    if (!session) { setError("You're signed out. Sign back in and retry with the same video."); return; }
+    setUploading({ file, progress: 0, upload: null, paused: false, failed: false, duration });
+    setError("");
+    try {
+      const path = await uploadShiftVideoSafely({
+        sb, file, session,
+        companyId: company.id,
+        memberId: member.id,
+        onProgress: progress => setUploading(old => old ? { ...old, progress } : old),
+        onUpload: upload => setUploading(old => old ? { ...old, upload } : old),
+      });
+      // On a retry after an upload succeeded but the DB request failed,
+      // first check the exact private path to avoid duplicate proof rows.
+      const { data: prior, error: priorError } = await sb.from("shift_videos")
+        .select("id").eq("company_id", company.id)
+        .eq("video_url", path).limit(1).maybeSingle();
+      if (priorError) throw priorError;
+      if (!prior) {
+        const { error } = await sb.from("shift_videos").insert({
           company_id: company.id,
           member_id: member.id,
           location_id: form.location_id || null,
           video_url: path,
-          duration_seconds: Math.round(duration),
+          duration_seconds: Math.round(duration || 0),
           file_size_bytes: file.size,
           notes: form.notes.trim() || null,
         });
-        if (dbErr) {
-          console.error("video record failed", dbErr);
-          setError("Video uploaded but couldn't be saved. Tell your manager.");
-        } else {
-          setForm({ location_id: "", notes: "" });
-          load();
-        }
-        setUploading(null);
-      },
-    });
-
-    // tus-js-client handles resumable upload URLs internally. Upload.on() is
-    // not a supported API and used to crash before a file could upload.
-    setUploading({ file, progress: 0, upload, paused: false, failed: false, duration });
-    try {
-      const previousUploads = await upload.findPreviousUploads();
-      if (previousUploads.length) upload.resumeFromPreviousUpload(previousUploads[0]);
+        if (error) throw error;
+      }
+      setForm({ location_id: "", notes: "" });
+      void load();
+      setUploading(null);
     } catch (err) {
-      console.warn("Could not find previous upload; starting fresh", err);
+      setError((err?.message || "Video upload failed.") + " Keep this screen open and tap Retry upload; the original video stays available.");
+      setUploading(old => old ? { ...old, failed: true } : old);
     }
-    upload.start();
   }
 
   function pauseUpload() {
@@ -208,7 +188,13 @@ export default function ShiftVideosPage() {
   }
 
   function resumeUpload() {
-    if (uploading?.upload) {
+    if (!uploading) return;
+    if (uploading.failed) {
+      const { file, duration } = uploading;
+      void startUpload(file, duration);
+      return;
+    }
+    if (uploading.upload) {
       setUploading({ ...uploading, paused: false, failed: false });
       uploading.upload.start();
     }
@@ -245,6 +231,8 @@ export default function ShiftVideosPage() {
   async function shareVideo(video, share) {
     if (!isManager || exportingId) return;
     setExportingId(video.id);
+    setShareStatusVideoId(video.id);
+    setPreparedShare(null);
     setExportNote("");
     setError("");
     try {
@@ -254,7 +242,7 @@ export default function ShiftVideosPage() {
       const filename = evidenceFilename("video", video.video_url, label);
       if (share) {
         setPreparedShare({ blob, filename, id: video.id });
-        setExportNote("Original video prepared. Tap Share prepared video to choose email, Drive, or another app.");
+        setExportNote("Video ready. Tap Open phone sharing options below this video, then choose Gmail, email, Drive, or another app.");
       } else {
         const result = await exportEvidence(blob, filename, false);
         if (result === "downloaded") {
@@ -265,6 +253,29 @@ export default function ShiftVideosPage() {
       setError(err?.message || "Video could not be shared. Check your connection and retry.");
     } finally {
       setExportingId(null);
+    }
+  }
+
+  async function openPreparedVideoShare() {
+    // Keep the web share operation in a DIRECT tap. Large private files take
+    // time to download, so the first tap prepares them and this one opens
+    // Android/iOS native sharing without losing the user gesture.
+    const prepared = preparedShare;
+    if (!prepared) return;
+    setExportNote("Opening phone sharing options…");
+    try {
+      const result = await exportEvidence(prepared.blob, prepared.filename, true);
+      if (result === "shared") {
+        setExportNote("Your phone handed the video to the selected app. Confirm sending in that app.");
+        setPreparedShare(null);
+      } else if (result === "cancelled") {
+        setExportNote("Sharing was cancelled or the phone closed the share menu. The video is still ready; try Open phone sharing options again, or Save copy.");
+      } else {
+        setExportNote("The phone could not open a file-sharing menu. A download was requested instead; check Files > Downloads. The video remains ready to retry.");
+      }
+    } catch (err) {
+      setExportNote("The phone did not open the sharing menu. Try again or tap Save copy.");
+      setError(err?.message || "Phone sharing failed.");
     }
   }
 
@@ -409,17 +420,7 @@ export default function ShiftVideosPage() {
           </button>
         </div>
         {listError && <p role="alert" style={{ color: "var(--danger)" }}>{listError}</p>}
-        {exportNote && <p role="status">{exportNote}</p>}
-        {preparedShare && isManager && (
-          <button type="button" style={{ fontWeight: 700 }} onClick={() => void exportEvidence(preparedShare.blob, preparedShare.filename, true)
-            .then((result) => {
-              if (result === "shared") setExportNote("Video handed to your selected share app.");
-              else if (result === "downloaded") setExportNote("Your browser saved a video copy; attach it to email.");
-              setPreparedShare(null);
-            }).catch((err) => setError(err?.message || "Could not share the video."))}>
-            ↗ Share prepared video
-          </button>
-        )}
+
         {!listLoading && !listError && videos.length === 0 && (
           <p style={{ color: "var(--muted)" }}>No saved walkthrough videos were found for this company.</p>
         )}
@@ -458,7 +459,7 @@ export default function ShiftVideosPage() {
                 {isManager && (
                   <>
                     <button type="button" disabled={exportingId === v.id} onClick={() => void shareVideo(v, true)}>
-                      {exportingId === v.id ? "Preparing…" : "↗ Share"}
+                      {exportingId === v.id ? "Preparing…" : "↗ Share (prepare video)"}
                     </button>
                     <button type="button" disabled={exportingId === v.id} onClick={() => void shareVideo(v, false)}>
                       ↓ Save copy
@@ -471,6 +472,29 @@ export default function ShiftVideosPage() {
                 )}
               </div>
             </div>
+            {isManager && shareStatusVideoId === v.id && (exportingId === v.id || !!exportNote) && (
+              <div role="status" style={{ marginTop: 10, padding: 12, border: "2px solid var(--primary)", borderRadius: 10 }}>
+                <p style={{ fontWeight: 700, margin: "0 0 8px" }}>
+                  {exportingId === v.id ? "Preparing the full private video for sharing…" : exportNote}
+                </p>
+                {preparedShare?.id === v.id && (
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                    <button type="button" onClick={() => void openPreparedVideoShare()}
+                      style={{ padding: "12px 16px", fontWeight: 800, background: "var(--primary)", color: "#fff", borderRadius: 8 }}>
+                      ↗ Open phone sharing options
+                    </button>
+                    <button type="button" onClick={() => void exportEvidence(preparedShare.blob, preparedShare.filename, false)
+                      .then(() => setExportNote("Download requested. Check your phone's Downloads folder."))
+                      .catch((err) => setError(err?.message || "Could not save the video."))}>
+                      ↓ Save copy instead
+                    </button>
+                    <button type="button" onClick={() => { setPreparedShare(null); setExportNote(""); setShareStatusVideoId(null); }}>
+                      Cancel
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
             {playingId === v.id && videoUrls[v.id] && (
               <div style={{ marginTop: 8, maxWidth: 640 }}>
                 <PrivateWalkthroughPlayer url={videoUrls[v.id]} storagePath={v.video_url} />

@@ -138,7 +138,7 @@ check("owner-only communication book photo share", CB, src =>
   src.includes('canExport={isManager}') &&
   src.includes('Share book photo') &&
   src.includes('Save copy') &&
-  src.includes('Share prepared photo'));
+  src.includes('Open phone sharing options'));
 check("browser native file share and download fallback", EX, src =>
   src.includes('navigator.share({ files: [file]') &&
   src.includes('navigator.canShare({ files: [file]') &&
@@ -177,6 +177,18 @@ check("ten minute auto-upload explained on recorder", C, src =>
   src.includes("stopping recording and starting upload automatically") &&
   src.includes("Paused time does not count"));
 
+const SAFE = "lib/safe-shift-video-upload.js";
+check("every alternate video upload uses the safe multipart path", SAFE, src =>
+  src.includes("40 * 1024 * 1024") &&
+  src.includes('kind: "workteams-walkthrough-parts"') &&
+  src.includes('from("shift-videos").info(objectPath)') &&
+  src.includes('return destination'));
+check("shift video page never uploads an oversized single object", SV, src =>
+  src.includes("uploadShiftVideoSafely({") && src.includes("MAX_VIDEO_BYTES") &&
+  !src.includes("new tus.Upload(file, {"));
+check("quick video picker never uploads an oversized single object", "components/ShiftVideoQuick.js", src =>
+  src.includes("uploadShiftVideoSafely({") &&
+  !src.includes("new tus.Upload(file, {"));
 if (failures.length) {
   console.error("\nREGRESSION FAILURES:");
   failures.forEach((f) => console.error("  x " + f));

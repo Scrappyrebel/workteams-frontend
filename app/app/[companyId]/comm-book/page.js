@@ -19,13 +19,13 @@ function CommBookPhoto({ path, canExport, label }) {
   const [preparedShare, setPreparedShare] = useState(null);
   async function exportPhoto(share) {
     if (!canExport || exportBusy) return;
-    setExportBusy(true); setExportError(""); setExportNote("");
+    setExportBusy(true); setExportError(""); setExportNote(""); setPreparedShare(null);
     try {
       const blob = await readEvidenceBlob(supabase(), "inspection-photos", path);
       const filename = evidenceFilename("book-photo", path, label);
       if (share) {
         setPreparedShare({ blob, filename });
-        setExportNote("Book photo ready. Tap Share prepared photo to choose Gmail, email, or another app.");
+        setExportNote("Book photo ready. Tap Open phone sharing options below to choose Gmail, email, or another app.");
       } else {
         const result = await exportEvidence(blob, filename, false);
         if (result === "downloaded") setExportNote("Photo copy saved. Attach the file to your email or customer dispute.");
@@ -78,15 +78,29 @@ function CommBookPhoto({ path, canExport, label }) {
         </div>
       )}
       {preparedShare && canExport && (
-        <button type="button" style={{ marginTop: 8, fontWeight: 700 }}
-          onClick={() => void exportEvidence(preparedShare.blob, preparedShare.filename, true)
-            .then((result) => {
-              if (result === "shared") setExportNote("Photo handed to your selected share app.");
-              else if (result === "downloaded") setExportNote("Your browser saved a photo copy; attach it to your email.");
-              setPreparedShare(null);
-            }).catch((err) => setExportError(err?.message || "Photo sharing failed."))}>
-          ↗ Share prepared photo
-        </button>
+        <div role="group" aria-label="Share prepared book photo" style={{ marginTop: 10, padding: 12, border: "2px solid var(--primary)", borderRadius: 10 }}>
+          <strong>Photo ready — choose where to send it</strong>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 8 }}>
+            <button type="button" style={{ padding: "12px 16px", background: "var(--primary)", color: "#fff", fontWeight: 800, borderRadius: 8 }}
+              onClick={() => void exportEvidence(preparedShare.blob, preparedShare.filename, true)
+                .then((result) => {
+                  if (result === "shared") {
+                    setExportNote("Photo handed to your selected app. Complete sending from that app.");
+                    setPreparedShare(null);
+                  } else if (result === "cancelled") {
+                    setExportNote("Phone sharing was cancelled or closed. Tap Open phone sharing options again or Save copy.");
+                  } else {
+                    setExportNote("The share menu could not open. A download was requested; check Files > Downloads, or try again.");
+                  }
+                }).catch((err) => setExportError(err?.message || "Phone sharing failed. Try Save copy."))}>
+              ↗ Open phone sharing options
+            </button>
+            <button type="button" onClick={() => void exportEvidence(preparedShare.blob, preparedShare.filename, false)
+              .then(() => setExportNote("Photo download requested. Check Downloads."))
+              .catch((err) => setExportError(err?.message || "Could not save photo."))}>↓ Save copy instead</button>
+            <button type="button" onClick={() => { setPreparedShare(null); setExportNote(""); }}>Cancel</button>
+          </div>
+        </div>
       )}
       {exportError && <p role="alert" style={{ color: "var(--danger)" }}>{exportError}</p>}
       {exportNote && <p role="status">{exportNote}</p>}

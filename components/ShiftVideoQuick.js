@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
-import * as tus from "tus-js-client";
+import { uploadShiftVideoSafely, MAX_VIDEO_BYTES } from "../lib/safe-shift-video-upload";
 import { supabase } from "../lib/supabase";
 
 const MAX_DURATION_SEC = 10 * 60;
@@ -59,49 +59,47 @@ export default function ShiftVideoQuick({ companyId, memberId, locationId, locat
   }
 
   async function startUpload(file, duration) {
+    if (file.size > MAX_VIDEO_BYTES) {
+      setError("This recording exceeds 500 MB. The original file remains on your phone; ask management for help.");
+      return;
+    }
     const sb = supabase();
     const { data: { session } } = await sb.auth.getSession();
-    if (!session) { setError("You're signed out. Sign back in and try again."); return; }
-    const ext = (file.name.split(".").pop() || "mp4").toLowerCase();
-    const path = `${companyId}/${memberId}/${Date.now()}.${ext}`;
-    const endpoint = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/upload/resumable`;
-
-    const upload = new tus.Upload(file, {
-      endpoint,
-      chunkSize: CHUNK_SIZE,
-      retryDelays: [0, 1000, 3000, 5000, 10000, 20000],
-      metadata: { bucketName: "shift-videos", objectName: path, contentType: file.type || "video/mp4" },
-      headers: {
-        authorization: `Bearer ${session.access_token}`,
-        apikey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
-      },
-      onError: () => {
-        setError("Upload interrupted. Tap Resume — it picks up where it stopped.");
-        setUploading((u) => (u ? { ...u, failed: true } : u));
-      },
-      onProgress: (bytesUploaded, bytesTotal) => {
-        setUploading((u) => (u ? { ...u, progress: bytesUploaded / bytesTotal } : u));
-      },
-      onSuccess: async () => {
-        const { error: dbErr } = await sb.from("shift_videos").insert({
+    if (!session) { setError("You're signed out. Sign back in and retry with the same video."); return; }
+    setUploading({ file, progress: 0, upload: null, paused: false, failed: false, duration });
+    setError("");
+    try {
+      const path = await uploadShiftVideoSafely({
+        sb, file, session,
+        companyId: companyId,
+        memberId: memberId,
+        onProgress: progress => setUploading(old => old ? { ...old, progress } : old),
+        onUpload: upload => setUploading(old => old ? { ...old, upload } : old),
+      });
+      // On a retry after an upload succeeded but the DB request failed,
+      // first check the exact private path to avoid duplicate proof rows.
+      const { data: prior, error: priorError } = await sb.from("shift_videos")
+        .select("id").eq("company_id", companyId)
+        .eq("video_url", path).limit(1).maybeSingle();
+      if (priorError) throw priorError;
+      if (!prior) {
+        const { error } = await sb.from("shift_videos").insert({
           company_id: companyId,
           member_id: memberId,
           location_id: locationId || null,
           video_url: path,
-          duration_seconds: Math.round(duration),
+          duration_seconds: Math.round(duration || 0),
           file_size_bytes: file.size,
         });
-        if (dbErr) setError("Video uploaded but couldn't be saved. Tell your manager.");
-        else { setDone(true); onDone && onDone(); }
-        setUploading(null);
-      },
-    });
-
-    const prevUrl = localStorage.getItem(`tus-${file.name}-${file.size}`);
-    if (prevUrl) upload.url = prevUrl;
-
-    setUploading({ file, progress: 0, upload, paused: false, failed: false });
-    upload.start();
+        if (error) throw error;
+      }
+      setDone(true);
+      onDone?.();
+      setUploading(null);
+    } catch (err) {
+      setError((err?.message || "Video upload failed.") + " Keep this screen open and tap Retry upload; the original video stays available.");
+      setUploading(old => old ? { ...old, failed: true } : old);
+    }
   }
 
   if (done) {
@@ -143,7 +141,9 @@ export default function ShiftVideoQuick({ companyId, memberId, locationId, locat
           </div>
           <div style={{ display: "flex", gap: 8 }}>
             {uploading.paused || uploading.failed
-              ? <button onClick={() => { setUploading({ ...uploading, paused: false, failed: false }); uploading.upload.start(); }}>▶ Resume</button>
+              ? <button onClick={() => uploading.failed
+                  ? void startUpload(uploading.file, uploading.duration)
+                  : (setUploading({ ...uploading, paused: false, failed: false }), uploading.upload?.start())}>▶ Retry / Resume</button>
               : <button onClick={() => { uploading.upload.abort(); setUploading({ ...uploading, paused: true }); }}>⏸ Pause</button>}
             <button onClick={() => { uploading.upload.abort(); setUploading(null); }} style={{ color: "var(--danger)" }}>✕ Cancel</button>
           </div>
