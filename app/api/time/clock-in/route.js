@@ -34,6 +34,15 @@ function haversineMeters(lat1, lon1, lat2, lon2) {
   return 2 * R * Math.asin(Math.sqrt(a));
 }
 
+function chicagoDate(value) {
+  // Match the work site's calendar day, not the employee device time zone.
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/Chicago", year: "numeric", month: "2-digit", day: "2-digit",
+  }).formatToParts(value);
+  const p = (part) => parts.find((x) => x.type === part)?.value;
+  return `${p("year")}-${p("month")}-${p("day")}`;
+}
+
 // POST { companyId, locationId, lat, lng } -> { entry }
 // Server-issued timestamp; geofence enforced server-side.
 export async function POST(req) {
@@ -90,6 +99,42 @@ export async function POST(req) {
       return NextResponse.json({ error: "Location not found in this company" }, { status: 400 });
     }
 
+    // SECURITY: a shift scheduled for Kristin (or anyone else) must NEVER
+    // authorize the signed-in member. Only this member's own dated shift at
+    // this exact company + location permits an ordinary clock-in. Read the
+    // schedule BEFORE inserting any time entry. Management exceptions use the
+    // separately authenticated manager-clock endpoint and audit notes.
+    const now = new Date();
+    const todayStr = chicagoDate(now);
+    const yesterdayStr = chicagoDate(new Date(now.getTime() - 24 * 60 * 60 * 1000));
+    const { data: memberShifts, error: shiftError } = await sb
+      .from("shifts")
+      .select("id, shift_date, start_time, end_time")
+      .eq("company_id", companyId)
+      .eq("member_id", member.id)
+      .eq("location_id", locationId)
+      .in("shift_date", [yesterdayStr, todayStr])
+      .order("start_time", { ascending: true });
+    if (shiftError) {
+      console.error("Clock-in schedule authorization failed", shiftError.message);
+      return NextResponse.json({ error: "Could not verify your schedule. Try again or contact your manager." }, { status: 503 });
+    }
+    const currentChicagoClock = new Intl.DateTimeFormat("en-GB", {
+      timeZone: "America/Chicago", hour: "2-digit", minute: "2-digit", hourCycle: "h23",
+    }).format(now);
+    const shift = (memberShifts || []).find((s) =>
+      s.shift_date === todayStr ||
+      (s.shift_date === yesterdayStr &&
+        s.start_time > s.end_time &&
+        currentChicagoClock <= s.end_time.slice(0, 5))
+    );
+    if (!shift) {
+      return NextResponse.json(
+        { error: "You have no shift assigned to YOUR account at this location today. Another employee's shift does not authorize your clock-in. Ask a manager to schedule you first." },
+        { status: 403 }
+      );
+    }
+
     // Server-side geofence check (Plus/Pro feature).
     const geoEnforced =
       canUse(entitledTier(company), "geofencing") && location.lat != null && location.lng != null;
@@ -134,6 +179,7 @@ export async function POST(req) {
         company_id: companyId,
         member_id: member.id,
         location_id: locationId,
+        shift_id: shift.id,
         clock_in: new Date().toISOString(), // server time, not client time
         clock_in_lat: Number.isFinite(Number(lat)) ? Number(lat) : null,
         clock_in_lng: Number.isFinite(Number(lng)) ? Number(lng) : null,
@@ -145,28 +191,6 @@ export async function POST(req) {
     if (error) {
       console.error("clock-in insert failed", error.message);
       return NextResponse.json({ error: "Clock-in failed. Try again." }, { status: 500 });
-    }
-    // Auto-link to today's shift at this location (so attendance tracking works
-    // even though the user just picked the location, not the shift).
-    try {
-      const todayStr = new Intl.DateTimeFormat("en-CA", {
-        timeZone: "America/Chicago", year: "numeric", month: "2-digit", day: "2-digit",
-      }).format(new Date());
-      const { data: shift } = await sb
-        .from("shifts")
-        .select("id")
-        .eq("company_id", companyId)
-        .eq("member_id", member.id)
-        .eq("location_id", locationId)
-        .eq("shift_date", todayStr)
-        .limit(1)
-        .maybeSingle();
-      if (shift) {
-        await sb.from("time_entries").update({ shift_id: shift.id }).eq("id", entry.id);
-        entry.shift_id = shift.id;
-      }
-    } catch (e) {
-      console.error("shift auto-link failed", e.message);
     }
     return NextResponse.json({ entry });
   } catch (e) {
