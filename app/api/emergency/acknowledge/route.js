@@ -50,24 +50,12 @@ export async function POST(req) {
       .eq("company_id", companyId)
       .is("acknowledged_at", null);
     if (error) throw error;
-    // Auto clock-in the responder if they're not already clocked in (emergency = on the clock).
-    const { data: open } = await sb
-      .from("time_entries")
-      .select("id")
-      .eq("company_id", companyId)
-      .eq("member_id", member.id)
-      .is("clock_out", null)
-      .limit(1)
-      .maybeSingle();
-    if (!open) {
-      await sb.from("time_entries").insert({
-        company_id: companyId,
-        member_id: member.id,
-        clock_in: new Date().toISOString(),
-        notes: "Auto clock-in: emergency response",
-      });
-    }
-    return NextResponse.json({ ok: true, autoClockedIn: !open });
+    // Acknowledging an alert means "I have seen / am handling this alert".
+    // It is NOT authorization to start a paid shift. Never create or modify
+    // time_entries from alerts (including proof upload and scheduling alerts).
+    // Normal clock-in checks the authenticated member's own schedule and site;
+    // genuine unscheduled work uses the separate owner/manager override.
+    return NextResponse.json({ ok: true, acknowledged: true });
   } catch (e) {
     console.error("emergency ack error", e);
     return NextResponse.json({ error: "Could not acknowledge." }, { status: 500 });
