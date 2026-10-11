@@ -56,7 +56,7 @@ check("failed uploads preserve retry", C, (s) =>
   s.includes("hasUnsavedRecording()") &&
   s.includes("setUploadFailed(true)"));
 check("multipart playback protected", "components/PrivateWalkthroughPlayer.js", (s) =>
-  s.includes('kind !== "workteams-walkthrough-parts"') &&
+  s.includes('info?.kind !== "workteams-walkthrough-parts"') &&
   s.includes('storage.from("shift-videos").download(part)') &&
   s.includes('new Blob(chunks'));
 check("multipart deletion removes all parts", "app/app/[companyId]/shift-videos/page.js", (s) =>
