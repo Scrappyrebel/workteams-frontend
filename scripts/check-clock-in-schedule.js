@@ -5,8 +5,18 @@ const read = (p) => fs.readFileSync(p, "utf8");
 const server = read("app/api/time/clock-in/route.js");
 const page = read("app/app/[companyId]/time/page.js");
 const manager = read("app/api/time/manager-clock/route.js");
+const acknowledge = read("app/api/emergency/acknowledge/route.js");
 
 const checks = [
+  [acknowledge.includes('return NextResponse.json({ ok: true, acknowledged: true })') &&
+   !acknowledge.includes('.from("time_entries")') &&
+   !acknowledge.includes("Auto clock-in: emergency response") &&
+   !acknowledge.includes("autoClockedIn:"),
+   "Acknowledging any alert must never create an unscheduled time entry."],
+  [acknowledge.includes('const user = await authedUser(req)') &&
+   acknowledge.includes('.eq("company_id", companyId)') &&
+   acknowledge.includes('.eq("user_id", user.id)'),
+   "Acknowledgement must remain scoped to the authenticated member and company."],
   [server.includes('.eq("member_id", member.id)') && server.includes('.eq("company_id", companyId)') &&
    server.includes('.eq("location_id", locationId)') && server.includes('.in("shift_date", [yesterdayStr, todayStr])'),
    "Normal clock-in must match the signed-in member, company, location, and workday."],
