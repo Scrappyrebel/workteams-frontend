@@ -95,6 +95,33 @@ check("video listing errors visible", "app/app/[companyId]/shift-videos/page.js"
   src.includes("Refresh videos") && src.includes("setListError") &&
   src.includes("if (plain.error) throw plain.error"));
 
+// No-book path: the employee can check a box instead of taking a fake photo.
+// Persist a manager-visible note, validate it on the server, and keep
+// timestamp saving independent from optional proof upload completion.
+check("no-book checkbox visible", C, (src) =>
+  src.includes('type="checkbox"') &&
+  src.includes('No communication book at this location') &&
+  src.includes('checked={noBookAtLocation}'));
+check("no-book photo exemption", C, (src) =>
+  src.includes('noBookAtLocation ? (') &&
+  src.includes('onChange={(e) => handleNoBookChange(e.target.checked)}') &&
+  src.includes('noBookSelectedRef.current'));
+check("no-book manager report and retry", C, (src) =>
+  src.includes('from("comm_book").insert') &&
+  src.includes('message: NO_COMMUNICATION_BOOK_NOTE') &&
+  src.includes('Retry no-book report') &&
+  src.includes('noBookSavedRef.current = true'));
+check("no-book persisted policy exception", CC, (src) =>
+  src.includes('NO_COMMUNICATION_BOOK_NOTE') &&
+  src.includes('.eq("member_id", member.id)') &&
+  src.includes('.eq("time_entry_id", entryId)') &&
+  src.includes('.is("photo_url", null)') &&
+  src.includes('if (!noBook)'));
+check("clock-out never waits for book report", T, (src) =>
+  src.includes('await api("/api/time/clock-out"') &&
+  !src.includes('await proofRef.current.waitForUploads()') &&
+  src.includes('setProofEntry(open)'));
+
 if (failures.length) {
   console.error("\nREGRESSION FAILURES:");
   failures.forEach((f) => console.error("  x " + f));
