@@ -42,6 +42,7 @@ export default function ShiftVideosPage() {
   const [exportingId, setExportingId] = useState(null);
   const [exportNote, setExportNote] = useState("");
   const [preparedShare, setPreparedShare] = useState(null);
+  const [shareStatusVideoId, setShareStatusVideoId] = useState(null);
   const [playingId, setPlayingId] = useState(null);
   const [videoUrls, setVideoUrls] = useState({});
   const [playbackIssue, setPlaybackIssue] = useState(null);
@@ -245,6 +246,8 @@ export default function ShiftVideosPage() {
   async function shareVideo(video, share) {
     if (!isManager || exportingId) return;
     setExportingId(video.id);
+    setShareStatusVideoId(video.id);
+    setPreparedShare(null);
     setExportNote("");
     setError("");
     try {
@@ -254,7 +257,7 @@ export default function ShiftVideosPage() {
       const filename = evidenceFilename("video", video.video_url, label);
       if (share) {
         setPreparedShare({ blob, filename, id: video.id });
-        setExportNote("Original video prepared. Tap Share prepared video to choose email, Drive, or another app.");
+        setExportNote("Video ready. Tap Open phone sharing options below this video, then choose Gmail, email, Drive, or another app.");
       } else {
         const result = await exportEvidence(blob, filename, false);
         if (result === "downloaded") {
@@ -265,6 +268,29 @@ export default function ShiftVideosPage() {
       setError(err?.message || "Video could not be shared. Check your connection and retry.");
     } finally {
       setExportingId(null);
+    }
+  }
+
+  async function openPreparedVideoShare() {
+    // Keep the web share operation in a DIRECT tap. Large private files take
+    // time to download, so the first tap prepares them and this one opens
+    // Android/iOS native sharing without losing the user gesture.
+    const prepared = preparedShare;
+    if (!prepared) return;
+    setExportNote("Opening phone sharing options…");
+    try {
+      const result = await exportEvidence(prepared.blob, prepared.filename, true);
+      if (result === "shared") {
+        setExportNote("Your phone handed the video to the selected app. Confirm sending in that app.");
+        setPreparedShare(null);
+      } else if (result === "cancelled") {
+        setExportNote("Sharing was cancelled or the phone closed the share menu. The video is still ready; try Open phone sharing options again, or Save copy.");
+      } else {
+        setExportNote("The phone could not open a file-sharing menu. A download was requested instead; check Files > Downloads. The video remains ready to retry.");
+      }
+    } catch (err) {
+      setExportNote("The phone did not open the sharing menu. Try again or tap Save copy.");
+      setError(err?.message || "Phone sharing failed.");
     }
   }
 
@@ -409,17 +435,7 @@ export default function ShiftVideosPage() {
           </button>
         </div>
         {listError && <p role="alert" style={{ color: "var(--danger)" }}>{listError}</p>}
-        {exportNote && <p role="status">{exportNote}</p>}
-        {preparedShare && isManager && (
-          <button type="button" style={{ fontWeight: 700 }} onClick={() => void exportEvidence(preparedShare.blob, preparedShare.filename, true)
-            .then((result) => {
-              if (result === "shared") setExportNote("Video handed to your selected share app.");
-              else if (result === "downloaded") setExportNote("Your browser saved a video copy; attach it to email.");
-              setPreparedShare(null);
-            }).catch((err) => setError(err?.message || "Could not share the video."))}>
-            ↗ Share prepared video
-          </button>
-        )}
+
         {!listLoading && !listError && videos.length === 0 && (
           <p style={{ color: "var(--muted)" }}>No saved walkthrough videos were found for this company.</p>
         )}
@@ -458,7 +474,7 @@ export default function ShiftVideosPage() {
                 {isManager && (
                   <>
                     <button type="button" disabled={exportingId === v.id} onClick={() => void shareVideo(v, true)}>
-                      {exportingId === v.id ? "Preparing…" : "↗ Share"}
+                      {exportingId === v.id ? "Preparing…" : "↗ Share (prepare video)"}
                     </button>
                     <button type="button" disabled={exportingId === v.id} onClick={() => void shareVideo(v, false)}>
                       ↓ Save copy
@@ -471,6 +487,29 @@ export default function ShiftVideosPage() {
                 )}
               </div>
             </div>
+            {isManager && shareStatusVideoId === v.id && (exportingId === v.id || !!exportNote) && (
+              <div role="status" style={{ marginTop: 10, padding: 12, border: "2px solid var(--primary)", borderRadius: 10 }}>
+                <p style={{ fontWeight: 700, margin: "0 0 8px" }}>
+                  {exportingId === v.id ? "Preparing the full private video for sharing…" : exportNote}
+                </p>
+                {preparedShare?.id === v.id && (
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                    <button type="button" onClick={() => void openPreparedVideoShare()}
+                      style={{ padding: "12px 16px", fontWeight: 800, background: "var(--primary)", color: "#fff", borderRadius: 8 }}>
+                      ↗ Open phone sharing options
+                    </button>
+                    <button type="button" onClick={() => void exportEvidence(preparedShare.blob, preparedShare.filename, false)
+                      .then(() => setExportNote("Download requested. Check your phone's Downloads folder."))
+                      .catch((err) => setError(err?.message || "Could not save the video."))}>
+                      ↓ Save copy instead
+                    </button>
+                    <button type="button" onClick={() => { setPreparedShare(null); setExportNote(""); setShareStatusVideoId(null); }}>
+                      Cancel
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
             {playingId === v.id && videoUrls[v.id] && (
               <div style={{ marginTop: 8, maxWidth: 640 }}>
                 <PrivateWalkthroughPlayer url={videoUrls[v.id]} storagePath={v.video_url} />
