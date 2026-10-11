@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { supabase } from "../../../../lib/supabase";
 import { useCompany } from "../../../../lib/company-context";
+import { readEvidenceBlob, evidenceFilename, exportEvidence } from "../../../../lib/evidence-export";
 
 const CATEGORIES = [
   { key: "arrival", label: "📍 Arrival", desc: "Clocked in / arrived at location" },
@@ -11,7 +12,27 @@ const CATEGORIES = [
   { key: "note", label: "📝 Note", desc: "General note for the record" },
 ];
 
-function CommBookPhoto({ path }) {
+function CommBookPhoto({ path, canExport, label }) {
+  const [exportBusy, setExportBusy] = useState(false);
+  const [exportError, setExportError] = useState("");
+  const [exportNote, setExportNote] = useState("");
+  const [preparedShare, setPreparedShare] = useState(null);
+  async function exportPhoto(share) {
+    if (!canExport || exportBusy) return;
+    setExportBusy(true); setExportError(""); setExportNote("");
+    try {
+      const blob = await readEvidenceBlob(supabase(), "inspection-photos", path);
+      const filename = evidenceFilename("book-photo", path, label);
+      if (share) {
+        setPreparedShare({ blob, filename });
+        setExportNote("Book photo ready. Tap Share prepared photo to choose Gmail, email, or another app.");
+      } else {
+        const result = await exportEvidence(blob, filename, false);
+        if (result === "downloaded") setExportNote("Photo copy saved. Attach the file to your email or customer dispute.");
+      }
+    } catch (err) { setExportError(err?.message || "Photo export failed."); }
+    finally { setExportBusy(false); }
+  }
   const [url, setUrl] = useState(null);
   const [error, setError] = useState("");
   useEffect(() => {
@@ -48,6 +69,27 @@ function CommBookPhoto({ path }) {
       <p style={{ margin: "4px 0", fontSize: 13 }}>
         <a href={url} target="_blank" rel="noopener noreferrer">Open original photo</a>
       </p>
+      {canExport && (
+        <div style={{ marginTop: 8, display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <button type="button" disabled={exportBusy} onClick={() => void exportPhoto(true)}>
+            {exportBusy ? "Preparing photo…" : "↗ Share book photo"}
+          </button>
+          <button type="button" disabled={exportBusy} onClick={() => void exportPhoto(false)}>↓ Save copy</button>
+        </div>
+      )}
+      {preparedShare && canExport && (
+        <button type="button" style={{ marginTop: 8, fontWeight: 700 }}
+          onClick={() => void exportEvidence(preparedShare.blob, preparedShare.filename, true)
+            .then((result) => {
+              if (result === "shared") setExportNote("Photo handed to your selected share app.");
+              else if (result === "downloaded") setExportNote("Your browser saved a photo copy; attach it to your email.");
+              setPreparedShare(null);
+            }).catch((err) => setExportError(err?.message || "Photo sharing failed."))}>
+          ↗ Share prepared photo
+        </button>
+      )}
+      {exportError && <p role="alert" style={{ color: "var(--danger)" }}>{exportError}</p>}
+      {exportNote && <p role="status">{exportNote}</p>}
     </div>
   );
 }
@@ -245,7 +287,7 @@ export default function CommBookPage() {
                 </div>
                 <p style={{ margin: "6px 0", whiteSpace: "pre-wrap" }}>{e.message}</p>
                 {e.photo_url && (
-                  <CommBookPhoto path={e.photo_url} />
+                  <CommBookPhoto path={e.photo_url} canExport={isManager} label={e.locations?.name || "Communication-Book"} />
                 )}
                 {e.response ? (
                   <div style={{

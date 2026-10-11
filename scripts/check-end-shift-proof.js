@@ -122,6 +122,33 @@ check("clock-out never waits for book report", T, (src) =>
   !src.includes('await proofRef.current.waitForUploads()') &&
   src.includes('setProofEntry(open)'));
 
+const SV = "app/app/[companyId]/shift-videos/page.js";
+const CB = "app/app/[companyId]/comm-book/page.js";
+const EX = "lib/evidence-export.js";
+check("private evidence export reconstructs large video", EX, src =>
+  src.includes('kind !== "workteams-walkthrough-parts"') &&
+  src.includes('new Blob(chunks') &&
+  src.includes('.storage.from(bucket).download('));
+check("owner-only video share and saved copy", SV, src =>
+  src.includes('if (!isManager || exportingId) return') &&
+  src.includes('↗ Share') &&
+  src.includes('↓ Save copy') &&
+  src.includes('preparedShare'));
+check("owner-only communication book photo share", CB, src =>
+  src.includes('canExport={isManager}') &&
+  src.includes('Share book photo') &&
+  src.includes('Save copy') &&
+  src.includes('Share prepared photo'));
+check("browser native file share and download fallback", EX, src =>
+  src.includes('navigator.share({ files: [file]') &&
+  src.includes('navigator.canShare({ files: [file]') &&
+  src.includes('link.download = filename') &&
+  !src.includes('getPublicUrl('));
+
+check("installed WorkTeams never keeps an old recorder script", "public/sw.js", src =>
+  src.includes("workteams-v3-fresh-js-20261011") &&
+  src.includes('fetch(request, { cache: "no-store" })') &&
+  !src.includes("if (hit) return hit"));
 if (failures.length) {
   console.error("\nREGRESSION FAILURES:");
   failures.forEach((f) => console.error("  x " + f));
