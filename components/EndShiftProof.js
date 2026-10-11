@@ -139,6 +139,12 @@ const EndShiftProof = forwardRef(function EndShiftProof(
 
   useImperativeHandle(ref, () => ({
     hasPendingUploads,
+    hasVerifiedVideo() {
+      return videoSavedRef.current;
+    },
+    hasStartedVideo() {
+      return recState !== "idle" || !!window.__endShiftVideoBlob;
+    },
     hasUnsavedRecording() {
       // A failed upload should not block clock-out, but leaving this screen
       // can lose its unsaved camera Blob; keep it available for Retry.
