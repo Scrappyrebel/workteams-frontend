@@ -145,6 +145,10 @@ check("browser native file share and download fallback", EX, src =>
   src.includes('link.download = filename') &&
   !src.includes('getPublicUrl('));
 
+check("installed WorkTeams never keeps an old recorder script", "public/sw.js", src =>
+  src.includes("workteams-v3-fresh-js-20261011") &&
+  src.includes('fetch(request, { cache: "no-store" })') &&
+  !src.includes("if (hit) return hit"));
 if (failures.length) {
   console.error("\nREGRESSION FAILURES:");
   failures.forEach((f) => console.error("  x " + f));
