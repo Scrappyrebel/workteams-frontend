@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    "prebuild": "node scripts/check-end-shift-proof.js",
     "start": "next start"
   },
   "dependencies": {

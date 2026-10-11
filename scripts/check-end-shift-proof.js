@@ -42,7 +42,25 @@ check("TUS resumable chunked upload", C, (s) =>
   s.includes("new tus.Upload") && s.includes("chunkSize") && s.includes("retryDelays"));
 // 8. Clock-out timestamp saves before proof upload completes.
 check("phase-1 clock-out first", T, (s) =>
-  s.includes("/api/time/clock-out") && s.includes("waitForUploads"));
+  s.includes('await api("/api/time/clock-out"') && s.includes('setProofEntry(open)') &&
+  !s.includes('await proofRef.current.waitForUploads()'));
+check("recording retained after clock-out", T, (s) =>
+  s.includes('(open || proofEntry) &&') && s.includes("hasUnsavedRecording") &&
+  s.includes("onProofUploaded={finalizeProofUpload}"));
+check("multipart 10-minute upload", C, (s) =>
+  s.includes("VIDEO_PART_BYTES = 40 * 1024 * 1024") &&
+  s.includes("workteams-walkthrough-parts") && s.includes("uploadTusFile(") &&
+  !s.includes('Try a shorter walkthrough'));
+check("failed uploads preserve retry", C, (s) =>
+  s.includes("window.__endShiftVideoBlob = blob") &&
+  s.includes("hasUnsavedRecording()") &&
+  s.includes("setUploadFailed(true)"));
+check("multipart playback protected", "components/PrivateWalkthroughPlayer.js", (s) =>
+  s.includes('info?.kind !== "workteams-walkthrough-parts"') &&
+  s.includes('storage.from("shift-videos").download(part)') &&
+  s.includes('new Blob(chunks'));
+check("multipart deletion removes all parts", "app/app/[companyId]/shift-videos/page.js", (s) =>
+  s.includes("paths = [...manifest.parts, video.video_url]"));
 // 9. Retry does not create a new timestamp (idempotent clock-out).
 check("idempotent clock-out", CO, (s) =>
   s.includes("alreadyClosed") && !s.includes('status: 409') || s.includes("alreadyClosed"));

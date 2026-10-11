@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import * as tus from "tus-js-client";
 import { supabase } from "../../../../lib/supabase";
 import { useCompany } from "../../../../lib/company-context";
+import PrivateWalkthroughPlayer from "../../../../components/PrivateWalkthroughPlayer";
 
 const MAX_DURATION_SEC = 10 * 60; // 10 minutes
 const CHUNK_SIZE = 6 * 1024 * 1024; // 6MB chunks
@@ -220,7 +221,34 @@ export default function ShiftVideosPage() {
   async function deleteVideo(video) {
     if (!confirm("Delete this video? This can't be undone.")) return;
     const sb = supabase();
-    await sb.storage.from("shift-videos").remove([video.video_url]);
+    let paths = [video.video_url];
+    if (video.video_url?.endsWith(".parts.json")) {
+      const { data: raw, error: readError } = await sb.storage.from("shift-videos").download(video.video_url);
+      if (readError || !raw) {
+        setError("Couldn't verify all parts of this recording. Nothing was deleted.");
+        return;
+      }
+      try {
+        const manifest = JSON.parse(await raw.text());
+        const base = video.video_url.slice(0, -".parts.json".length);
+        if (manifest.kind !== "workteams-walkthrough-parts" ||
+            !Array.isArray(manifest.parts) ||
+            manifest.parts.length < 2 || manifest.parts.length > 20 ||
+            !manifest.parts.every((part, i) => part === `${base}.part-${String(i).padStart(3, "0")}.bin`)) {
+          setError("Invalid part list; nothing was deleted.");
+          return;
+        }
+        paths = [...manifest.parts, video.video_url];
+      } catch {
+        setError("Invalid recording manifest; nothing was deleted.");
+        return;
+      }
+    }
+    const { error: deleteError } = await sb.storage.from("shift-videos").remove(paths);
+    if (deleteError) {
+      setError("Could not delete all recording pieces: " + deleteError.message);
+      return;
+    }
     await sb.from("shift_videos").delete().eq("id", video.id);
     load();
   }
@@ -364,43 +392,9 @@ export default function ShiftVideosPage() {
             </div>
             {playingId === v.id && videoUrls[v.id] && (
               <div style={{ marginTop: 8, maxWidth: 640 }}>
-                <video
-                  key={videoUrls[v.id]}
-                  src={videoUrls[v.id]}
-                  controls
-                  playsInline
-                  preload="metadata"
-                  style={{ width: "100%", borderRadius: 8, background: "#111" }}
-                  onLoadedData={(e) => {
-                    if (e.currentTarget.videoWidth === 0) {
-                      setPlaybackIssue({ id: v.id, message: "The file loaded but contains no visible video track on this device." });
-                    } else {
-                      setPlaybackIssue(null);
-                    }
-                  }}
-                  onPlaying={() => setPlaybackIssue(null)}
-                  onError={(e) => {
-                    const code = e.currentTarget.error?.code;
-                    console.error("Shift video playback error:", code);
-                    const incompatible = code === 3 || code === 4;
-                    setPlaybackIssue({
-                      id: v.id,
-                      message: incompatible
-                        ? "This device cannot decode the recording's video format. Older WebM recordings may not play in iPhone Safari."
-                        : "Playback failed. Try opening the original recording in your browser.",
-                    });
-                  }}
-                />
-                {playbackIssue?.id === v.id && (
-                  <p role="alert" style={{ color: "var(--danger)", margin: "6px 0" }}>
-                    {playbackIssue.message}
-                  </p>
-                )}
-                <a href={videoUrls[v.id]} target="_blank" rel="noopener noreferrer">
-                  Open original recording in browser
-                </a>
+                <PrivateWalkthroughPlayer url={videoUrls[v.id]} storagePath={v.video_url} />
                 <p style={{ color: "var(--muted)", fontSize: 12, margin: "4px 0" }}>
-                  Tap the video's play control to start. Existing recordings are never deleted or replaced.
+                  Tap Play to start. Large protected walkthroughs load their video parts on demand.
                 </p>
               </div>
             )}

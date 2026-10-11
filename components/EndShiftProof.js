@@ -5,7 +5,10 @@ import * as tus from "tus-js-client";
 import { supabase } from "../lib/supabase";
 
 const MAX_VIDEO_SECONDS = 10 * 60;
-const MAX_VIDEO_BYTES = 50 * 1024 * 1024;
+// Supabase's free tier limits EACH stored object to 50 MB, not the
+// total recording duration. Split large files without changing 10-minute rule.
+const MAX_VIDEO_BYTES = 500 * 1024 * 1024;
+const VIDEO_PART_BYTES = 40 * 1024 * 1024;
 const TUS_CHUNK_BYTES = 6 * 1024 * 1024;
 
 function fmtTime(sec) {
@@ -29,7 +32,7 @@ function extForMime(mime) {
 //   comm_book.time_entry_id).
 // Exposes via ref: hasPendingUploads(), waitForUploads().
 const EndShiftProof = forwardRef(function EndShiftProof(
-  { companyId, memberId, entryId, locationId, locationName, enableVideo = true, enableBook = true },
+  { companyId, memberId, entryId, locationId, locationName, enableVideo = true, enableBook = true, onProofUploaded },
   ref
 ) {
   const isiOS = typeof navigator !== "undefined" && /iPhone|iPad|iPod/i.test(navigator.userAgent);
@@ -60,6 +63,10 @@ const EndShiftProof = forwardRef(function EndShiftProof(
   const previewRef = useRef(null);
   const photoRef = useRef(null);
   const tusUploadRef = useRef(null);
+  const videoPathRef = useRef("");
+  const videoUploadPromiseRef = useRef(null);
+  const photoUploadPromiseRef = useRef(null);
+  const videoSavedRef = useRef(false);
   const waitersRef = useRef([]); // resolve fns waiting for uploads
 
   // Live timer: active recorded seconds only (paused time excluded)
@@ -121,15 +128,21 @@ const EndShiftProof = forwardRef(function EndShiftProof(
   }
 
   function hasPendingUploads() {
-    const videoPending =
-      (recState === "recorded" || recState === "uploading") && !videoSaved;
-    const photoPending =
-      (photoState === "ready" || photoState === "uploading") && photoFile;
+    // A FAILED upload needs an explicit Retry; never wait forever on it.
+    const videoPending = enableVideo &&
+      ["recording", "paused", "recorded", "uploading"].includes(recState) &&
+      !videoSavedRef.current;
+    const photoPending = enableBook && !!photoFile && photoState !== "uploaded";
     return videoPending || photoPending;
   }
 
   useImperativeHandle(ref, () => ({
     hasPendingUploads,
+    hasUnsavedRecording() {
+      // A failed upload should not block clock-out, but leaving this screen
+      // can lose its unsaved camera Blob; keep it available for Retry.
+      return !!window.__endShiftVideoBlob && !videoSavedRef.current;
+    },
     waitForUploads() {
       if (!hasPendingUploads()) return Promise.resolve();
       return new Promise((resolve) => waitersRef.current.push(resolve));
@@ -140,6 +153,8 @@ const EndShiftProof = forwardRef(function EndShiftProof(
     setVideoError("");
     setUploadFailed(false);
     setVideoSaved(false);
+    videoSavedRef.current = false;
+    videoPathRef.current = "";
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         video: {
@@ -195,12 +210,13 @@ const EndShiftProof = forwardRef(function EndShiftProof(
         chunksRef.current = [];
         try { streamRef.current?.getTracks().forEach((t) => t.stop()); } catch {}
         if (previewRef.current) previewRef.current.srcObject = null;
+        window.__endShiftVideoBlob = blob;
         if (blob.size > MAX_VIDEO_BYTES) {
-          setVideoError("That recording is too large. Try a shorter walkthrough.");
-          setRecState("idle");
+          setVideoError("Recording exceeds the 500 MB device upload safety limit. Your recording remains on this page; please contact a manager.");
+          setRecState("recorded");
+          setUploadFailed(true);
           return;
-        }
-        window.__endShiftVideoBlob = blob; // kept for upload; never cleared on failure
+        } // kept for upload; never cleared on failure
         setRecState("recorded");
         // Auto-start upload right away so the crew doesn't wait
         uploadVideo(blob);
@@ -262,6 +278,8 @@ const EndShiftProof = forwardRef(function EndShiftProof(
 
   function discardRecording() {
     window.__endShiftVideoBlob = null;
+    videoPathRef.current = "";
+    videoSavedRef.current = false;
     setRecState("idle");
     setRecSeconds(0);
     setUploadProgress(0);
@@ -269,77 +287,155 @@ const EndShiftProof = forwardRef(function EndShiftProof(
     setVideoError("");
   }
 
-  async function uploadVideo(blob) {
-    const b = blob || window.__endShiftVideoBlob;
-    if (!b) return;
-    setRecState("uploading");
-    setUploadProgress(0);
-    setUploadFailed(false);
-    setVideoError("");
-    try {
-      const sb = supabase();
-      const { data: { session } } = await sb.auth.getSession();
-      if (!session) throw new Error("You're signed out. Sign back in and retry the upload.");
-      const ext = extForMime(mimeRef.current || b.type);
-      const path = `${companyId}/${entryId}/walkthrough-${Date.now()}.${ext}`;
-      const endpoint = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/upload/resumable`;
-
-      await new Promise((resolve, reject) => {
-        const upload = new tus.Upload(b, {
-          endpoint,
-          chunkSize: TUS_CHUNK_BYTES,
-          retryDelays: [0, 1000, 3000, 5000, 10000, 20000],
-          metadata: {
-            bucketName: "shift-videos",
-            objectName: path,
-            contentType: b.type || "video/mp4",
-          },
-          headers: {
-            authorization: `Bearer ${session.access_token}`,
-            apikey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
-          },
-          onError: reject,
-          onProgress: (up, total) => setUploadProgress(total ? up / total : 0),
-          onSuccess: resolve,
-        });
-        tusUploadRef.current = upload;
-        upload.start();
+  async function uploadTusFile(file, path, session, onPercent) {
+    // Per-object TUS resumable transfer; each part is < 50 MB.
+    const endpoint = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/upload/resumable`;
+    await new Promise(async (resolve, reject) => {
+      const upload = new tus.Upload(file, {
+        endpoint,
+        chunkSize: TUS_CHUNK_BYTES,
+        retryDelays: [0, 1000, 3000, 5000, 10000, 20000],
+        removeFingerprintOnSuccess: true,
+        metadata: {
+          bucketName: "shift-videos",
+          objectName: path,
+          contentType: file.type || "application/octet-stream",
+        },
+        headers: {
+          authorization: `Bearer ${session.access_token}`,
+          apikey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+        },
+        onError: reject,
+        onProgress: (up, total) => onPercent(total ? up / total : 0),
+        onSuccess: resolve,
       });
-
-      const { error: dbErr } = await sb.from("shift_videos").insert({
-        company_id: companyId,
-        member_id: memberId,
-        location_id: locationId || null,
-        time_entry_id: entryId,
-        video_url: path,
-        duration_seconds: Math.round(activeMsRef.current / 1000),
-        file_size_bytes: b.size,
-      });
-      if (dbErr) throw dbErr;
-
-      // Attach proof to the time entry (best-effort; row above is the record)
+      tusUploadRef.current = upload;
       try {
-        await fetch("/api/time/clock-out/proof", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${session.access_token}`,
-          },
-          body: JSON.stringify({ companyId, entryId, kind: "walkthrough", storagePath: path }),
-        });
-      } catch {}
+        const previous = await upload.findPreviousUploads();
+        if (previous.length) upload.resumeFromPreviousUpload(previous[0]);
+      } catch (err) {
+        console.warn("Upload resume lookup unavailable", err);
+      }
+      upload.start();
+    });
+  }
 
-      window.__endShiftVideoBlob = null; // upload succeeded — safe to clear
-      setVideoSaved(true);
-      setRecState("uploaded");
-      setDone(true);
-      notifyWaiters();
-    } catch (e) {
-      // Keep the local blob so Retry never forces a re-record.
-      setUploadFailed(true);
-      setRecState("recorded");
-      setVideoError(e instanceof Error ? e.message : "Upload failed. Tap Retry — your recording is safe.");
-      notifyWaiters();
+  async function uploadVideo(blob) {
+    // Guard against double clicks causing duplicate rows or uploads.
+    if (videoUploadPromiseRef.current || videoSavedRef.current) return;
+    const b = blob || window.__endShiftVideoBlob;
+    if (!b) {
+      setVideoError("No saved recording is available on this page.");
+      return;
+    }
+    const task = (async () => {
+      setRecState("uploading");
+      setUploadProgress(0);
+      setUploadFailed(false);
+      setVideoError("");
+      try {
+        const sb = supabase();
+        const { data: { session } } = await sb.auth.getSession();
+        if (!session) throw new Error("You're signed out. Sign back in and retry the upload.");
+        if (b.size > MAX_VIDEO_BYTES) throw new Error("This recording exceeds the device upload safety limit. Ask your manager for help.");
+
+        const ext = extForMime(mimeRef.current || b.type);
+        const multipart = b.size > VIDEO_PART_BYTES;
+        if (!videoPathRef.current) {
+          videoPathRef.current = `${companyId}/${entryId}/walkthrough-${Date.now()}.${ext}${multipart ? ".parts.json" : ""}`;
+        }
+        const path = videoPathRef.current;
+
+        if (multipart) {
+          const base = path.slice(0, -".parts.json".length);
+          const count = Math.ceil(b.size / VIDEO_PART_BYTES);
+          const parts = [];
+          for (let index = 0; index < count; index++) {
+            const start = index * VIDEO_PART_BYTES;
+            const end = Math.min(b.size, start + VIDEO_PART_BYTES);
+            const objectPath = `${base}.part-${String(index).padStart(3, "0")}.bin`;
+            const piece = b.slice(start, end, "application/octet-stream");
+            // Safe retry after the part has completed but a later step failed.
+            const { data: existing } = await sb.storage.from("shift-videos").info(objectPath);
+            if (Number(existing?.size) !== piece.size) {
+              await uploadTusFile(piece, objectPath, session, (p) =>
+                setUploadProgress(Math.min(0.98, ((start + piece.size * p) / b.size) * 0.98))
+              );
+            }
+            parts.push(objectPath);
+            setUploadProgress(Math.min(0.98, (end / b.size) * 0.98));
+          }
+          const manifest = JSON.stringify({
+            kind: "workteams-walkthrough-parts", version: 1,
+            mimeType: (mimeRef.current || b.type || "video/mp4").toLowerCase().includes("mp4") ? "video/mp4" : "video/webm",
+            bytes: b.size, parts,
+          });
+          const { error: manifestError } = await sb.storage.from("shift-videos").upload(
+            path, new Blob([manifest], { type: "application/json" }),
+            { contentType: "application/json", upsert: false }
+          );
+          if (manifestError) {
+            const { data: oldManifest, error: readError } = await sb.storage.from("shift-videos").download(path);
+            if (readError || !oldManifest || (await oldManifest.text()) !== manifest) {
+              throw new Error("Couldn't finalize walkthrough upload: " + manifestError.message);
+            }
+          }
+        } else {
+          const { data: existing } = await sb.storage.from("shift-videos").info(path);
+          if (Number(existing?.size) !== b.size) {
+            await uploadTusFile(b, path, session, setUploadProgress);
+          }
+        }
+
+        const { data: existingRow, error: existingError } = await sb.from("shift_videos")
+          .select("id").eq("company_id", companyId).eq("time_entry_id", entryId)
+          .eq("video_url", path).limit(1).maybeSingle();
+        if (existingError) throw new Error("Could not verify the video record: " + existingError.message);
+        if (!existingRow) {
+          const { error: dbErr } = await sb.from("shift_videos").insert({
+            company_id: companyId,
+            member_id: memberId,
+            location_id: locationId || null,
+            time_entry_id: entryId,
+            video_url: path,
+            duration_seconds: Math.min(MAX_VIDEO_SECONDS, Math.round(activeMsRef.current / 1000)),
+            file_size_bytes: b.size,
+          });
+          if (dbErr) throw new Error("The video uploaded but couldn't be listed: " + dbErr.message);
+        }
+
+        try {
+          await fetch("/api/time/clock-out/proof", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${session.access_token}`,
+            },
+            body: JSON.stringify({ companyId, entryId, kind: "walkthrough", storagePath: path }),
+          });
+        } catch (err) {
+          console.warn("Proof attachment retry may be needed", err);
+        }
+
+        window.__endShiftVideoBlob = null;
+        videoSavedRef.current = true;
+        setVideoSaved(true);
+        setRecState("uploaded");
+        setUploadProgress(1);
+        setDone(true);
+        onProofUploaded?.(entryId);
+      } catch (err) {
+        // A local video remains available for Retry as long as this page stays open.
+        setUploadFailed(true);
+        setRecState("recorded");
+        setVideoError(err instanceof Error ? err.message : "Upload failed. Tap Retry.");
+      } finally {
+        notifyWaiters();
+      }
+    })();
+    videoUploadPromiseRef.current = task;
+    try { await task; } finally {
+      videoUploadPromiseRef.current = null;
     }
   }
 
@@ -403,6 +499,7 @@ const EndShiftProof = forwardRef(function EndShiftProof(
 
       setPhotoState("uploaded");
       setDone(true);
+      onProofUploaded?.(entryId);
       notifyWaiters();
     } catch (e) {
       setPhotoState("ready"); // keep the file so Retry never forces a retake
