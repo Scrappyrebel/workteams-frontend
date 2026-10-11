@@ -138,7 +138,7 @@ check("owner-only communication book photo share", CB, src =>
   src.includes('canExport={isManager}') &&
   src.includes('Share book photo') &&
   src.includes('Save copy') &&
-  src.includes('Share prepared photo'));
+  src.includes('Open phone sharing options'));
 check("browser native file share and download fallback", EX, src =>
   src.includes('navigator.share({ files: [file]') &&
   src.includes('navigator.canShare({ files: [file]') &&
