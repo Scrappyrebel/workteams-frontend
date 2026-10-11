@@ -149,6 +149,34 @@ check("installed WorkTeams never keeps an old recorder script", "public/sw.js", 
   src.includes("workteams-v3-fresh-js-20261011") &&
   src.includes('fetch(request, { cache: "no-store" })') &&
   !src.includes("if (hit) return hit"));
+// Automatic ten-minute recording stop. The recorder must stop itself, not
+// merely display a countdown and wait for a manual tap.
+check("one-shot automatic stop at ten active minutes", C, src =>
+  src.includes("const MAX_ACTIVE_VIDEO_MS = MAX_VIDEO_SECONDS * 1000") &&
+  src.includes("setTimeout(() => finishRecording(true), remaining)") &&
+  src.includes("if (active >= MAX_ACTIVE_VIDEO_MS) finishRecording(true)"));
+check("pause excludes time from automatic stop", C, src =>
+  src.includes("clearTimeout(deadlineTimerRef.current)") &&
+  src.includes("activeMsRef.current += pauseAt - segStartRef.current") &&
+  src.includes("function resumeRecording()") &&
+  src.includes("armAutoStopDeadline()"));
+check("automatic stop immediately triggers real upload", C, src =>
+  src.includes("recorder.onstop = () => {") &&
+  src.includes("window.__endShiftVideoBlob = blob") &&
+  src.includes("uploadVideo(blob)") &&
+  src.includes('setRecState("uploading")') &&
+  src.includes("setRecState(\"finishing\")"));
+check("automatic stop avoids duplicate stop or discarded video", C, src =>
+  src.includes("stopRequestedRef.current = true") &&
+  src.includes("if (!r || ![\"recording\", \"paused\"].includes(r.state) || stopRequestedRef.current) return") &&
+  src.includes('["recording", "paused", "finishing", "recorded", "uploading"]') &&
+  src.includes("setUploadFailed(true)") &&
+  src.includes("retryVideoUpload()"));
+check("ten minute auto-upload explained on recorder", C, src =>
+  src.includes("Automatically stops and starts uploading at 10 minutes") &&
+  src.includes("stopping recording and starting upload automatically") &&
+  src.includes("Paused time does not count"));
+
 if (failures.length) {
   console.error("\nREGRESSION FAILURES:");
   failures.forEach((f) => console.error("  x " + f));
