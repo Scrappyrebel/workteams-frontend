@@ -129,8 +129,10 @@ const EndShiftProof = forwardRef(function EndShiftProof(
 
   function hasPendingUploads() {
     // A FAILED upload needs an explicit Retry; never wait forever on it.
-    const videoPending = recState === "uploading" && !videoSaved;
-    const photoPending = photoState === "uploading" && !!photoFile;
+    const videoPending = enableVideo &&
+      ["recording", "paused", "recorded", "uploading"].includes(recState) &&
+      !videoSavedRef.current;
+    const photoPending = enableBook && !!photoFile && photoState !== "uploaded";
     return videoPending || photoPending;
   }
 
