@@ -12,6 +12,10 @@ const csp = [
   "script-src 'self' 'unsafe-inline' https://js.stripe.com",
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: https://*.supabase.co",
+  // Private shift-video signed URLs are cross-origin media resources.
+  // Without media-src, default-src 'self' blocks every Supabase recording.
+  // blob: permits safe in-browser previews of newly recorded video.
+  "media-src 'self' blob: https://*.supabase.co",
   "connect-src 'self' https://*.supabase.co https://api.stripe.com https://js.stripe.com https://nominatim.openstreetmap.org",
   "font-src 'self' data:",
   "frame-src https://js.stripe.com https://hooks.stripe.com",
