@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import * as tus from "tus-js-client";
+import { uploadShiftVideoSafely, MAX_VIDEO_BYTES } from "../../../../lib/safe-shift-video-upload";
 import { supabase } from "../../../../lib/supabase";
 import { useCompany } from "../../../../lib/company-context";
 import PrivateWalkthroughPlayer from "../../../../components/PrivateWalkthroughPlayer";
@@ -136,69 +136,48 @@ export default function ShiftVideosPage() {
   }
 
   async function startUpload(file, duration) {
-    const sb = supabase();
-    const { data: { session } } = await sb.auth.getSession();
-    if (!session) {
-      setError("You're signed out. Sign back in and try again.");
+    if (file.size > MAX_VIDEO_BYTES) {
+      setError("This recording exceeds 500 MB. The original file remains on your phone; ask management for help.");
       return;
     }
-    const ext = (file.name.split(".").pop() || "mp4").toLowerCase();
-    const path = `${company.id}/${member.id}/${Date.now()}.${ext}`;
-    const endpoint = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/upload/resumable`;
-
-    const upload = new tus.Upload(file, {
-      endpoint,
-      chunkSize: CHUNK_SIZE,
-      retryDelays: [0, 1000, 3000, 5000, 10000, 20000],
-      metadata: {
-        bucketName: "shift-videos",
-        objectName: path,
-        contentType: file.type || "video/mp4",
-      },
-      headers: {
-        authorization: `Bearer ${session.access_token}`,
-        apikey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
-      },
-      onError: (err) => {
-        console.error("upload failed", err);
-        setError("Upload failed. Check your connection and tap Retry — it picks up where it stopped.");
-        setUploading((u) => (u ? { ...u, failed: true } : u));
-      },
-      onProgress: (bytesUploaded, bytesTotal) => {
-        setUploading((u) => (u ? { ...u, progress: bytesUploaded / bytesTotal } : u));
-      },
-      onSuccess: async () => {
-        // Save the DB record.
-        const { error: dbErr } = await sb.from("shift_videos").insert({
+    const sb = supabase();
+    const { data: { session } } = await sb.auth.getSession();
+    if (!session) { setError("You're signed out. Sign back in and retry with the same video."); return; }
+    setUploading({ file, progress: 0, upload: null, paused: false, failed: false, duration });
+    setError("");
+    try {
+      const path = await uploadShiftVideoSafely({
+        sb, file, session,
+        companyId: company.id,
+        memberId: member.id,
+        onProgress: progress => setUploading(old => old ? { ...old, progress } : old),
+        onUpload: upload => setUploading(old => old ? { ...old, upload } : old),
+      });
+      // On a retry after an upload succeeded but the DB request failed,
+      // first check the exact private path to avoid duplicate proof rows.
+      const { data: prior, error: priorError } = await sb.from("shift_videos")
+        .select("id").eq("company_id", company.id)
+        .eq("video_url", path).limit(1).maybeSingle();
+      if (priorError) throw priorError;
+      if (!prior) {
+        const { error } = await sb.from("shift_videos").insert({
           company_id: company.id,
           member_id: member.id,
           location_id: form.location_id || null,
           video_url: path,
-          duration_seconds: Math.round(duration),
+          duration_seconds: Math.round(duration || 0),
           file_size_bytes: file.size,
           notes: form.notes.trim() || null,
         });
-        if (dbErr) {
-          console.error("video record failed", dbErr);
-          setError("Video uploaded but couldn't be saved. Tell your manager.");
-        } else {
-          setForm({ location_id: "", notes: "" });
-          load();
-        }
-        setUploading(null);
-      },
-    });
-
-    // tus-js-client handles resumable upload URLs internally. Upload.on() is
-    // not a supported API and used to crash before a file could upload.
-    setUploading({ file, progress: 0, upload, paused: false, failed: false, duration });
-    try {
-      const previousUploads = await upload.findPreviousUploads();
-      if (previousUploads.length) upload.resumeFromPreviousUpload(previousUploads[0]);
+        if (error) throw error;
+      }
+      setForm({ location_id: "", notes: "" });
+      void load();
+      setUploading(null);
     } catch (err) {
-      console.warn("Could not find previous upload; starting fresh", err);
+      setError((err?.message || "Video upload failed.") + " Keep this screen open and tap Retry upload; the original video stays available.");
+      setUploading(old => old ? { ...old, failed: true } : old);
     }
-    upload.start();
   }
 
   function pauseUpload() {
@@ -209,7 +188,13 @@ export default function ShiftVideosPage() {
   }
 
   function resumeUpload() {
-    if (uploading?.upload) {
+    if (!uploading) return;
+    if (uploading.failed) {
+      const { file, duration } = uploading;
+      void startUpload(file, duration);
+      return;
+    }
+    if (uploading.upload) {
       setUploading({ ...uploading, paused: false, failed: false });
       uploading.upload.start();
     }
