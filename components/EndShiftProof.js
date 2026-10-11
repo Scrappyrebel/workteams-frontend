@@ -136,6 +136,11 @@ const EndShiftProof = forwardRef(function EndShiftProof(
 
   useImperativeHandle(ref, () => ({
     hasPendingUploads,
+    hasUnsavedRecording() {
+      // A failed upload should not block clock-out, but leaving this screen
+      // can lose its unsaved camera Blob; keep it available for Retry.
+      return !!window.__endShiftVideoBlob && !videoSavedRef.current;
+    },
     waitForUploads() {
       if (!hasPendingUploads()) return Promise.resolve();
       return new Promise((resolve) => waitersRef.current.push(resolve));
@@ -416,7 +421,7 @@ const EndShiftProof = forwardRef(function EndShiftProof(
         setRecState("uploaded");
         setUploadProgress(1);
         setDone(true);
-        onProofUploaded?.();
+        onProofUploaded?.(entryId);
       } catch (err) {
         // A local video remains available for Retry as long as this page stays open.
         setUploadFailed(true);
@@ -492,6 +497,7 @@ const EndShiftProof = forwardRef(function EndShiftProof(
 
       setPhotoState("uploaded");
       setDone(true);
+      onProofUploaded?.(entryId);
       notifyWaiters();
     } catch (e) {
       setPhotoState("ready"); // keep the file so Retry never forces a retake
