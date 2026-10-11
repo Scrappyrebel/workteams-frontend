@@ -62,6 +62,7 @@ export default function EmergencyPage() {
     <div>
       <p className="eyebrow">EMERGENCY</p>
       <h2 style={{ fontSize: "1.8rem" }}>Alert log</h2>
+      <p style={{ color: "var(--muted)", fontSize: "0.88rem" }}>Acknowledging an alert does not clock you in. Only your own scheduled shift or a separate manager-approved clock-in can create a time entry.</p>
       {unacked.length > 0 && (
         <p style={{ fontWeight: 800, color: "#b3261e" }}>
           {unacked.length} needing a response right now
