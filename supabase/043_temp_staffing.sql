@@ -128,12 +128,14 @@ alter table public.temp_assignments enable row level security;
 alter table public.temp_hire_conversions enable row level security;
 
 -- Owners/managers of the temp company get full access to all five tables.
+-- Note: temp_assignments has no company_id of its own; its policy joins
+-- through temp_job_requests.
 do $$
 declare t text;
 begin
   foreach t in array array[
     'temp_agency_config', 'temp_job_requests', 'temp_applications',
-    'temp_assignments', 'temp_hire_conversions'
+    'temp_hire_conversions'
   ] loop
     execute format(
       'drop policy if exists %I on public.%I',
@@ -143,6 +145,17 @@ begin
       'temp owner full ' || t, t, t);
   end loop;
 end $$;
+
+drop policy if exists "temp owner full temp_assignments" on public.temp_assignments;
+create policy "temp owner full temp_assignments"
+  on public.temp_assignments for all
+  using (
+    exists (
+      select 1 from public.temp_job_requests jr
+      where jr.id = temp_assignments.job_request_id
+        and public.is_company_manager(jr.company_id)
+    )
+  );
 
 -- Assigned temps can read their own assignments.
 drop policy if exists "temp own assignments" on public.temp_assignments;
