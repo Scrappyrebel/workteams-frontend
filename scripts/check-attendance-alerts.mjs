@@ -60,8 +60,8 @@ assert.ok(clockIn.includes('.eq("member_id", member.id)') &&
   clockIn.includes('.eq("location_id", locationId)') &&
   clockIn.includes('shift_id: shift.id'),
   "Schedule matching must remain scoped to the authenticated employee and selected site");
-assert.ok(attendance.includes("hasShiftAttendance(shift, onSite, now)") &&
-  attendance.includes("hasShiftAttendance(shift, recent, now)") &&
+assert.ok(attendance.includes("hasShiftAttendance(shift, onSite, now, tz)") &&
+  attendance.includes("hasShiftAttendance(shift, recent, now, tz)") &&
   attendance.includes('.eq("location_id", shift.location_id)'),
   "Attendance cron must use both historical entries and a fresh site-specific check");
 assert.ok(attendance.includes('const dedupeKey = `attendance:${shift.id}`') &&
