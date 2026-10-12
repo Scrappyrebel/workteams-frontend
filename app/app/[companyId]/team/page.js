@@ -17,22 +17,62 @@ export default function TeamPage() {
   const [confirmRemoveId, setConfirmRemoveId] = useState(null);
 
   const isManager = member && (member.role === "owner" || member.role === "admin");
+  const isOwner = member && member.role === "owner";
+
+  // Department assignment: null/empty = all departments.
+  const DEPTS = [
+    { key: "hr", label: "👥 HR" },
+    { key: "sales", label: "📞 Sales" },
+    { key: "service", label: "💬 Customer Service" },
+    { key: "accounting", label: "🧾 Accounting" },
+    { key: "field", label: "🦺 Field Ops" },
+  ];
+
+  async function toggleDept(m, deptKey) {
+    const cur = m.departments || null;
+    const base = cur === null ? DEPTS.map((d) => d.key) : [...cur];
+    const next = base.includes(deptKey)
+      ? base.filter((k) => k !== deptKey)
+      : [...base, deptKey];
+    const { error } = await supabase()
+      .from("company_members")
+      .update({ departments: next })
+      .eq("id", m.id);
+    if (!error) {
+      setMembers((ms) => ms.map((x) => (x.id === m.id ? { ...x, departments: next } : x)));
+    }
+  }
 
   async function load() {
     // Managers see the full roster (email/user_id needed for invites and
     // role changes). Everyone else sees the directory: id, display name,
     // role — no emails, no user ids.
-    const { data } = isManager
-      ? await supabase()
+    let data = null;
+    if (isManager) {
+      // Try with departments; fall back if migration 045 hasn't run yet.
+      const withDepts = await supabase()
+        .from("company_members")
+        .select("id, user_id, email, display_name, role, created_at, departments")
+        .eq("company_id", company.id)
+        .order("display_name");
+      if (withDepts.error && /departments/i.test(withDepts.error.message || "")) {
+        const fallback = await supabase()
           .from("company_members")
           .select("id, user_id, email, display_name, role, created_at")
           .eq("company_id", company.id)
-          .order("display_name")
-      : await supabase()
-          .from("team_directory")
-          .select("id, display_name, role")
-          .eq("company_id", company.id)
           .order("display_name");
+        data = fallback.data;
+      } else {
+        data = withDepts.data;
+      }
+    } else {
+      const res = await supabase()
+        .from("team_directory")
+        .select("id, display_name, role")
+        .eq("company_id", company.id)
+        .order("display_name");
+      data = res.data;
+    }
     let rows = data || [];
     if (isManager) {
       // Pay rates live in member_pay, readable only by owners/admins.
@@ -265,6 +305,29 @@ export default function TeamPage() {
                     <p style={{ gridColumn: "1 / -1", fontSize: "0.78rem", color: "var(--muted)", margin: "2px 0 0" }}>
                       Set both rates and they'll pick Cleaner or Manager at clock-in.
                     </p>
+                  </div>
+                )}
+                {isOwner && m.role !== "owner" && (
+                  <div style={{ marginTop: 8 }}>
+                    <div style={{ fontSize: "0.78rem", color: "var(--muted)", marginBottom: 4 }}>
+                      Departments {(!m.departments || m.departments.length === 0) && "(all)"}
+                    </div>
+                    <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                      {DEPTS.map((d) => {
+                        const checked = !m.departments || m.departments.length === 0 || m.departments.includes(d.key);
+                        return (
+                          <label key={d.key} style={{ fontSize: "0.8rem", display: "flex", gap: 5, alignItems: "center", cursor: "pointer" }}>
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={() => toggleDept(m, d.key)}
+                              style={{ width: 18, height: 18 }}
+                            />
+                            {d.label}
+                          </label>
+                        );
+                      })}
+                    </div>
                   </div>
                 )}
               </div>

@@ -1,6 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useContext, useEffect, useState } from "react";
+import { supabase } from "../../../../lib/supabase";
+import { CompanyContext } from "../../../../lib/company-context";
 
 function useChecklist(id, count) {
   const key = `temp-playbook:${id}`;
@@ -501,8 +503,42 @@ const DEPARTMENTS = [
 ];
 
 export default function Playbook() {
+  const { company, member } = useContext(CompanyContext) || {};
   const [dept, setDept] = useState("sales");
-  const active = DEPARTMENTS.find((d) => d.key === dept);
+  const [allowedDepts, setAllowedDepts] = useState(null); // null = all
+
+  const isOwner = member?.role === "owner";
+
+  useEffect(() => {
+    if (!member?.id) return;
+    (async () => {
+      try {
+        const { data } = await supabase()
+          .from("company_members")
+          .select("departments")
+          .eq("id", member.id)
+          .maybeSingle();
+        // Column may not exist until migration 045 runs — then allow all.
+        setAllowedDepts(data && "departments" in data ? data.departments : null);
+      } catch {
+        setAllowedDepts(null);
+      }
+    })();
+  }, [member?.id]);
+
+  const visibleDepts = DEPARTMENTS.filter((d) => {
+    if (isOwner) return true;
+    if (!allowedDepts || allowedDepts.length === 0) return true;
+    return allowedDepts.includes(d.key);
+  });
+
+  useEffect(() => {
+    if (!visibleDepts.some((d) => d.key === dept) && visibleDepts.length > 0) {
+      setDept(visibleDepts[0].key);
+    }
+  }, [allowedDepts]);
+
+  const active = visibleDepts.find((d) => d.key === dept);
   return (
     <section className="panel" style={{ padding: 24, marginTop: 16 }}>
       <h2 style={{ marginTop: 0 }}>📖 Operations Playbook</h2>
@@ -518,7 +554,7 @@ export default function Playbook() {
           marginBottom: 20,
         }}
       >
-        {DEPARTMENTS.map((d) => (
+        {visibleDepts.map((d) => (
           <button
             key={d.key}
             onClick={() => setDept(d.key)}

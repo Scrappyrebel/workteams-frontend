@@ -150,7 +150,9 @@ export default function AppShell({ company, member, children }) {
     });
   }
   const linksMapped = links.map((item) => {
-    const allowed = canUse(tier, item.key);
+    // Managers and owners always have full access — tier locks apply
+    // only to cleaners (employees/supervisors).
+    const allowed = roleAtLeast(role, "manager") || canUse(tier, item.key);
     return {
       ...item,
       allowed,
