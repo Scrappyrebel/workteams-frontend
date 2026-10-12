@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
+import { clearLastPath } from "../lib/last-path";
 import { signOut } from "../lib/session";
 import { canUse, tierLabel } from "../lib/tiers";
 import { isProductOwner } from "../lib/product";
@@ -187,7 +188,11 @@ export default function AppShell({ company, member, children }) {
           </Link>
           {company && (
             <>
-              <Link href="/app" style={{ fontSize: "0.85rem", color: "var(--brand-deep)", fontWeight: 700 }}>
+              <Link
+                href="/app"
+                onClick={() => clearLastPath()}
+                style={{ fontSize: "0.85rem", color: "var(--brand-deep)", fontWeight: 700 }}
+              >
                 ← Companies
               </Link>
               <span
