@@ -7,6 +7,7 @@ import { CompanyContext } from "../../../../lib/company-context";
 const TABS = [
   { key: "requests", label: "Job Requests" },
   { key: "temps", label: "Temp Pool" },
+  { key: "hire", label: "Temp-to-Hire" },
   { key: "settings", label: "Agency Settings" },
 ];
 
@@ -42,7 +43,7 @@ export default function TempDashboard() {
       });
       const j = await r.json();
       setIsAgency(!!j.isAgency);
-      if (j.isAgency) loadAll();
+      if (j.isAgency) { loadAll(); loadConversions(); }
     })();
   }, [company?.id]);
 
@@ -64,11 +65,85 @@ export default function TempDashboard() {
     if (!error) loadAll();
   }
 
+  const [assigning, setAssigning] = useState({});
+  const [hireTrack, setHireTrack] = useState({});
+  const [conversions, setConversions] = useState([]);
+
+  async function loadConversions() {
+    const { data } = await supabase()
+      .from("temp_hire_conversions")
+      .select("*")
+      .eq("company_id", company.id)
+      .order("eligible_date", { ascending: true })
+      .limit(100);
+    setConversions(data || []);
+  }
+
+  async function markConverted(id) {
+    const { error } = await supabase()
+      .from("temp_hire_conversions")
+      .update({ status: "converted", converted_at: new Date().toISOString() })
+      .eq("id", id);
+    setMsg(error ? "Update failed: " + error.message : "Marked as hired by client.");
+    if (!error) loadConversions();
+  }
+
+  async function assignTemp(jobId, appId) {
+    const app = apps.find((a) => a.id === appId);
+    if (!app?.member_id) {
+      setMsg("Temp needs an approved team invite first.");
+      return;
+    }
+    const days = parseInt(hireTrack[jobId] || "90", 10);
+    const eligible = new Date();
+    eligible.setDate(eligible.getDate() + days);
+    const { error } = await supabase().from("temp_assignments").insert({
+      job_request_id: jobId,
+      member_id: app.member_id,
+      status: "offered",
+      hire_track_days: days,
+      hire_eligible_date: eligible.toISOString().slice(0, 10),
+    });
+    if (error) {
+      setMsg("Assign failed: " + error.message);
+    } else {
+      // Create the temp-to-hire clock.
+      await supabase().from("temp_hire_conversions").insert({
+        company_id: company.id,
+        member_id: app.member_id,
+        client_name: requests.find((r) => r.id === jobId)?.customer_name || "",
+        first_work_date: new Date().toISOString().slice(0, 10),
+        hire_track_days: days,
+        eligible_date: eligible.toISOString().slice(0, 10),
+        status: "cooling",
+      });
+      setRequestStatus(jobId, "assigned");
+      setMsg(`Assigned ${app.full_name}. Temp-to-hire eligible after ${days} days.`);
+    }
+  }
+
   async function setAppStatus(id, status, bgStatus) {
+    const app = apps.find((a) => a.id === id);
     const patch = { status };
     if (bgStatus) patch.bg_check_status = bgStatus;
+    // On approval, auto-create the pending team invite so the temp can sign
+    // up with their email and clock in. claim_invite() links them on signup.
+    if (status === "approved" && app && !app.member_id) {
+      const { data: mem, error: memErr } = await supabase()
+        .from("company_members")
+        .insert({
+          company_id: company.id,
+          user_id: null,
+          email: app.email,
+          display_name: app.full_name,
+          role: "employee",
+        })
+        .select("id")
+        .single();
+      if (!memErr && mem) patch.member_id = mem.id;
+    }
     const { error } = await supabase().from("temp_applications").update(patch).eq("id", id);
-    setMsg(error ? "Update failed: " + error.message : "Updated.");
+    setMsg(error ? "Update failed: " + error.message : status === "approved" ? "Approved — invite sent. Temp signs up with their email to join." : "Updated.");
     if (!error) loadAll();
   }
 
@@ -155,6 +230,40 @@ export default function TempDashboard() {
                 {r.quoted_cents ? <><br />Quoted: ${(r.quoted_cents / 100).toFixed(2)}</> : null}
               </div>
               {r.job_details && <p style={{ fontSize: 14 }}>{r.job_details}</p>}
+              {(r.status === "paid" || r.status === "assigned") && approvedTemps.length > 0 && (
+                <div style={{ marginTop: 10, padding: 10, background: "var(--panel-2, #f6f7fb)", borderRadius: 8 }}>
+                  <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}>Assign a temp</div>
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                    <select
+                      value={assigning[r.id] || ""}
+                      onChange={(e) => setAssigning({ ...assigning, [r.id]: e.target.value })}
+                      style={{ padding: 8, flex: 1, minWidth: 160 }}
+                    >
+                      <option value="">Choose temp…</option>
+                      {approvedTemps.map((t) => (
+                        <option key={t.id} value={t.id}>{t.full_name}</option>
+                      ))}
+                    </select>
+                    <select
+                      value={hireTrack[r.id] || "90"}
+                      onChange={(e) => setHireTrack({ ...hireTrack, [r.id]: e.target.value })}
+                      style={{ padding: 8 }}
+                      title="Temp-to-hire track"
+                    >
+                      <option value="90">Hire after 90 days</option>
+                      <option value="180">Hire after 6 months</option>
+                    </select>
+                    <button
+                      className="btn-primary"
+                      style={{ padding: "8px 16px" }}
+                      disabled={!assigning[r.id]}
+                      onClick={() => assignTemp(r.id, assigning[r.id])}
+                    >
+                      Assign
+                    </button>
+                  </div>
+                </div>
+              )}
               <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
                 {["paid", "assigned", "in_progress", "completed", "cancelled"].map((s) => (
                   <button key={s} className="btn-ghost" style={{ padding: "6px 12px", fontSize: 13 }}
@@ -196,6 +305,42 @@ export default function TempDashboard() {
               <strong>{a.full_name}</strong> · {a.email} {a.phone ? `· ${a.phone}` : ""}
             </div>
           ))}
+        </section>
+      )}
+
+      {tab === "hire" && (
+        <section className="panel" style={{ padding: 24, marginTop: 16 }}>
+          <h2 style={{ marginTop: 0 }}>Temp-to-hire tracking</h2>
+          <p style={{ color: "var(--muted)", fontSize: 14 }}>
+            Clients may hire temps directly once the track period ends. Early
+            buyouts use your conversion fee.
+          </p>
+          {conversions.length === 0 && (
+            <p style={{ color: "var(--muted)" }}>No active hire tracks yet.</p>
+          )}
+          {conversions.map((c) => {
+            const eligible = new Date(c.eligible_date) <= new Date();
+            return (
+              <div key={c.id} className="card" style={{ padding: 14, marginBottom: 10, fontSize: 14 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
+                  <strong>{c.client_name}</strong>
+                  <span className="badge">
+                    {c.status === "converted" ? "Hired" : eligible ? "Eligible now" : `Eligible ${c.eligible_date}`}
+                  </span>
+                </div>
+                <div style={{ color: "var(--muted)", marginTop: 4 }}>
+                  Track: {c.hire_track_days} days · Since {c.first_work_date}
+                  {c.conversion_fee_cents > 0 ? ` · Fee: $${(c.conversion_fee_cents / 100).toFixed(2)}` : ""}
+                </div>
+                {c.status !== "converted" && eligible && (
+                  <button className="btn-primary" style={{ padding: "6px 14px", marginTop: 8 }}
+                    onClick={() => markConverted(c.id)}>
+                    Mark hired by client
+                  </button>
+                )}
+              </div>
+            );
+          })}
         </section>
       )}
 

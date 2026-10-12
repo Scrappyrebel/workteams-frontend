@@ -124,6 +124,21 @@ export async function POST(req) {
     switch (event.type) {
       case "checkout.session.completed": {
         const session = event.data.object;
+        // Temp staffing booking (one-time payment, no subscription).
+        if (session.metadata?.temp_job_request_id) {
+          const { error: payErr } = await sb
+            .from("temp_job_requests")
+            .update({ status: "paid", updated_at: new Date().toISOString() })
+            .eq("id", session.metadata.temp_job_request_id)
+            .eq("status", "pending");
+          if (payErr) {
+            console.error(
+              `stripe webhook: failed to mark temp job ${session.metadata.temp_job_request_id} paid`,
+              payErr.message
+            );
+          }
+          break;
+        }
         if (!session.subscription) break;
         const subscription = await stripe.subscriptions.retrieve(session.subscription, {
           expand: ["items.data.price"],
