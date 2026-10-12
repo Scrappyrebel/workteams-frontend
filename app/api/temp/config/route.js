@@ -5,6 +5,21 @@ import { checkRateLimit, clientIp } from "../../../../lib/rate-limit";
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
+// Default per-service bill rates (per cleaner, per hour) used when the
+// agency hasn't set its own yet.
+export const DEFAULT_SERVICE_RATES = {
+  commercial: 25,
+  residential: 25,
+  move_in_out: 25,
+  construction_cleanup: 30,
+  day_janitorial: 26,
+  other: 26,
+};
+
+export function mergeServiceRates(stored) {
+  return { ...DEFAULT_SERVICE_RATES, ...(stored || {}) };
+}
+
 export const SERVICE_TYPES = [
   { key: "commercial", label: "Commercial Cleaning" },
   { key: "residential", label: "Residential Cleaning" },
@@ -24,7 +39,7 @@ export async function GET(req) {
     const db = createClient(SUPABASE_URL, SERVICE_KEY);
     const { data: cfg } = await db
       .from("temp_agency_config")
-      .select("company_id, base_hourly_rate, hire_track_options, conversion_fee")
+      .select("company_id, base_hourly_rate, service_rates, hire_track_options, conversion_fee")
       .eq("enabled", true)
       .limit(1)
       .maybeSingle();
@@ -40,6 +55,7 @@ export async function GET(req) {
       available: true,
       agencyName: co?.name || "Temp Staffing",
       baseHourlyRate: Number(cfg.base_hourly_rate),
+      serviceRates: mergeServiceRates(cfg.service_rates),
       hireTrackOptions: cfg.hire_track_options || [90, 180],
       conversionFee: Number(cfg.conversion_fee || 0),
       serviceTypes: SERVICE_TYPES,

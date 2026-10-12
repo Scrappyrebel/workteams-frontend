@@ -149,15 +149,27 @@ export default function TempDashboard() {
 
   async function saveCfg(e) {
     e.preventDefault();
-    const { error } = await supabase()
+    const parsedRates = {};
+    for (const [k, v] of Object.entries(cfg.service_rates || {})) {
+      if (v !== "" && v != null) parsedRates[k] = parseFloat(v) || 0;
+    }
+    const base = {
+      base_hourly_rate: parseFloat(cfg.base_hourly_rate) || 35,
+      temp_hourly_pay: parseFloat(cfg.temp_hourly_pay) || 20,
+      conversion_fee: parseFloat(cfg.conversion_fee) || 0,
+      updated_at: new Date().toISOString(),
+    };
+    // Try with per-service rates; fall back if migration 044 hasn't run yet.
+    let { error } = await supabase()
       .from("temp_agency_config")
-      .update({
-        base_hourly_rate: parseFloat(cfg.base_hourly_rate) || 35,
-        temp_hourly_pay: parseFloat(cfg.temp_hourly_pay) || 20,
-        conversion_fee: parseFloat(cfg.conversion_fee) || 0,
-        updated_at: new Date().toISOString(),
-      })
+      .update({ ...base, service_rates: parsedRates })
       .eq("company_id", company.id);
+    if (error && /service_rates/i.test(error.message)) {
+      ({ error } = await supabase()
+        .from("temp_agency_config")
+        .update(base)
+        .eq("company_id", company.id));
+    }
     setMsg(error ? "Save failed: " + error.message : "Rates saved.");
   }
 
@@ -349,11 +361,34 @@ export default function TempDashboard() {
           <h2 style={{ marginTop: 0 }}>Agency settings</h2>
           <form onSubmit={saveCfg} style={{ display: "grid", gap: 12, maxWidth: 400 }}>
             <label>
-              Customer rate — per cleaner, per hour ($)
+              Default customer rate — per cleaner, per hour ($)
               <input type="number" step="0.01" min="0" value={cfg.base_hourly_rate}
                 onChange={(e) => setCfg({ ...cfg, base_hourly_rate: e.target.value })}
                 style={{ width: "100%", padding: 10, marginTop: 4 }} />
             </label>
+            <div style={{ fontWeight: 700, marginTop: 4 }}>Rate per job type ($/hr)</div>
+            {[
+              ["commercial", "Office & Commercial"],
+              ["residential", "Residential"],
+              ["move_in_out", "Move In / Move Out"],
+              ["construction_cleanup", "Construction Cleanup"],
+              ["day_janitorial", "Warehouse & Day Janitorial"],
+              ["other", "Other / Event"],
+            ].map(([key, label]) => (
+              <label key={key}>
+                {label}
+                <input type="number" step="0.01" min="0"
+                  value={cfg.service_rates?.[key] ?? ""}
+                  placeholder="uses default"
+                  onChange={(e) =>
+                    setCfg({
+                      ...cfg,
+                      service_rates: { ...(cfg.service_rates || {}), [key]: e.target.value },
+                    })
+                  }
+                  style={{ width: "100%", padding: 10, marginTop: 4 }} />
+              </label>
+            ))}
             <label>
               Temp pay — per hour ($)
               <input type="number" step="0.01" min="0" value={cfg.temp_hourly_pay}

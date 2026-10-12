@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 const SERVICES = [
   {
@@ -108,20 +108,22 @@ const FAQS = [
   },
 ];
 
-function WorthItCalculator() {
+function WorthItCalculator({ rates }) {
   const [workers, setWorkers] = useState(2);
   const [hours, setHours] = useState(40);
   const [pay, setPay] = useState(17);
+  const [jobType, setJobType] = useState("commercial");
 
   const calc = useMemo(() => {
     const w = Math.max(1, workers || 0);
     const h = Math.max(1, hours || 0);
     const p = Math.max(15, pay || 0);
     const directWeekly = w * h * p * 1.25; // pay + ~25% employer burden
-    const tempWeekly = w * h * p * 1.5; // 50% markup bill rate
+    const billRate = Number(rates?.[jobType] ?? 25);
+    const tempWeekly = w * h * billRate;
     const premium = tempWeekly - directWeekly;
-    return { w, h, p, directWeekly, tempWeekly, premium };
-  }, [workers, hours, pay]);
+    return { w, h, p, billRate, directWeekly, tempWeekly, premium };
+  }, [workers, hours, pay, jobType, rates]);
 
   const fmt = (n) =>
     n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
@@ -141,6 +143,20 @@ function WorthItCalculator() {
           marginBottom: 18,
         }}
       >
+        <label style={{ fontSize: 14 }}>
+          Job type
+          <select
+            value={jobType}
+            onChange={(e) => setJobType(e.target.value)}
+            style={inputStyle}
+          >
+            {SERVICES.map((s) => (
+              <option key={s.key} value={s.key}>
+                {s.title} — ${Number(rates?.[s.key] ?? s.from)}/hr
+              </option>
+            ))}
+          </select>
+        </label>
         <label style={{ fontSize: 14 }}>
           Workers needed
           <input
@@ -162,7 +178,7 @@ function WorthItCalculator() {
           />
         </label>
         <label style={{ fontSize: 14 }}>
-          Hourly pay ($)
+          Hourly pay if you hired direct ($)
           <input
             type="number"
             min={15}
@@ -188,7 +204,9 @@ function WorthItCalculator() {
           </div>
         </div>
         <div style={{ ...resultBox, borderColor: "var(--brand)" }}>
-          <div style={resultLabel}>With our temps — weekly cost</div>
+          <div style={resultLabel}>
+            With our temps — weekly cost (${calc.billRate.toFixed(2)}/hr)
+          </div>
           <div style={{ ...resultValue, color: "var(--brand-deep)" }}>
             {fmt(calc.tempWeekly)}
           </div>
@@ -229,6 +247,22 @@ const resultValue = { fontSize: 30, fontWeight: 800, margin: "6px 0" };
 const resultNote = { fontSize: 13, color: "var(--muted)" };
 
 export default function TempLanding() {
+  const [rates, setRates] = useState(null);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const r = await fetch("/api/temp/config");
+        const j = await r.json();
+        if (j.available && j.serviceRates) setRates(j.serviceRates);
+      } catch {
+        /* fall back to defaults baked into SERVICES */
+      }
+    })();
+  }, []);
+
+  const rateFor = (key, fallback) => Number(rates?.[key] ?? fallback);
+
   return (
     <main className="site-shell">
       {/* HERO */}
@@ -311,7 +345,7 @@ export default function TempLanding() {
           unemployment, and workers&apos; comp are in. Then add job ads,
           interviews, turnover, and the weeks a seat sits empty.
         </p>
-        <WorthItCalculator />
+        <WorthItCalculator rates={rates} />
       </section>
 
       {/* RATE CARD */}
@@ -346,7 +380,7 @@ export default function TempLanding() {
                 {s.text}
               </p>
               <div style={{ fontWeight: 800, color: "var(--brand-deep)" }}>
-                from ${s.from}/hr
+                from ${rateFor(s.key, s.from)}/hr
               </div>
             </div>
           ))}

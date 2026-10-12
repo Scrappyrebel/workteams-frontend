@@ -35,7 +35,7 @@ export default function TempBook() {
   }, []);
 
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
-  const rate = cfg?.baseHourlyRate || 0;
+  const rate = Number(cfg?.serviceRates?.[form.serviceType] ?? cfg?.baseHourlyRate ?? 0);
   const estimate =
     Math.max(1, parseInt(form.cleanersNeeded, 10) || 0) *
     Math.max(1, parseFloat(form.hoursRequested) || 0) *

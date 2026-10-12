@@ -46,7 +46,7 @@ export async function POST(req) {
     const db = createClient(SUPABASE_URL, SERVICE_KEY);
     const { data: cfg } = await db
       .from("temp_agency_config")
-      .select("company_id, base_hourly_rate")
+      .select("company_id, base_hourly_rate, service_rates")
       .eq("enabled", true)
       .limit(1)
       .maybeSingle();
@@ -54,7 +54,13 @@ export async function POST(req) {
       return NextResponse.json({ error: "Temp staffing is not available right now." }, { status: 503 });
     }
 
-    const rate = Number(cfg.base_hourly_rate);
+    // Per-service bill rate; falls back to the base rate for unknown types.
+    const DEFAULT_RATES = {
+      commercial: 25, residential: 25, move_in_out: 25,
+      construction_cleanup: 30, day_janitorial: 26, other: 26,
+    };
+    const rates = { ...DEFAULT_RATES, ...(cfg.service_rates || {}) };
+    const rate = Number(rates[serviceType] ?? cfg.base_hourly_rate);
     // Per cleaner, per hour — never flat rate.
     const totalCents = Math.round(cleanersNeeded * hoursRequested * rate * 100);
 
