@@ -3,11 +3,13 @@
 import { useContext, useEffect, useState } from "react";
 import { supabase } from "../../../../lib/supabase";
 import { CompanyContext } from "../../../../lib/company-context";
+import Playbook from "./Playbook";
 
 const TABS = [
   { key: "requests", label: "Job Requests" },
   { key: "temps", label: "Temp Pool" },
   { key: "hire", label: "Temp-to-Hire" },
+  { key: "playbook", label: "📖 Playbook" },
   { key: "settings", label: "Agency Settings" },
 ];
 
@@ -355,6 +357,8 @@ export default function TempDashboard() {
           })}
         </section>
       )}
+
+      {tab === "playbook" && <Playbook />}
 
       {tab === "settings" && cfg && (
         <section className="panel" style={{ padding: 24, marginTop: 16 }}>
