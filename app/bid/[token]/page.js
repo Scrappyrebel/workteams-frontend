@@ -3,6 +3,14 @@
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 
+// "2026-10-20" -> "October 20, 2026".
+function formatValidUntil(d) {
+  const m = String(d || "").match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!m) return String(d || "");
+  const months = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+  return `${months[Number(m[2]) - 1]} ${Number(m[3])}, ${m[1]}`;
+}
+
 export default function BidReviewPage() {
   const { token } = useParams();
   const [data, setData] = useState(null);
@@ -55,7 +63,7 @@ export default function BidReviewPage() {
           <h2 style={{ fontSize: "1.6rem" }}>{data.bid.title}</h2>
           <p style={{ color: "var(--muted)" }}>
             From {data.bid.company_name} • Prepared for {data.bid.client_name}
-            {data.bid.valid_until ? ` • Valid until ${data.bid.valid_until}` : ""}
+            {data.bid.valid_until ? ` • Valid until ${formatValidUntil(data.bid.valid_until)}` : ""}
           </p>
           {data.bid.description && (
             <div className="panel" style={{ padding: 22, margin: "18px 0" }}>

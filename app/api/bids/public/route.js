@@ -35,8 +35,8 @@ export async function GET(req) {
       return NextResponse.json({ error: "Bid not found" }, { status: 404, headers: { "Cache-Control": "no-store" } });
     }
     // Fetch company name separately (avoids join issues)
-    const { data: company } = await client.from("companies").select("name").eq("id", bid.company_id).maybeSingle();
-    if (bid.valid_until && bid.valid_until < chicagoToday()) {
+    const { data: company } = await client.from("companies").select("name, timezone").eq("id", bid.company_id).maybeSingle();
+    if (bid.valid_until && bid.valid_until < chicagoToday(company?.timezone)) {
       return NextResponse.json({ error: "This proposal has expired." }, { status: 410 });
     }
     const { data: items } = await client

@@ -3,7 +3,6 @@
 import { useEffect, useState } from "react";
 import { supabase } from "../../../../lib/supabase";
 import { useCompany } from "../../../../lib/company-context";
-import { chicagoToday, chicagoDaysAgo } from "../../../../lib/dates";
 
 function isoDate(d) {
   // Local-timezone YYYY-MM-DD (d is already a local Date or offset).

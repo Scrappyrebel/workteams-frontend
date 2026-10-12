@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { TIERS } from "../lib/tiers";
+import { SUPPORT_EMAIL } from "../lib/app-url";
 import { getTierPrices } from "../lib/product";
 
 // Public national sales page for WorkTeams. Signed-in visitors are redirected
@@ -236,7 +237,7 @@ function Pricing({ tierKeys, prices }) {
 const FAQS = [
   [
     "Does WorkTeams do payroll?",
-    "No — and that's on purpose. You get payroll-ready hour reports and CSV exports, plus connections to Gusto, ADP, Paychex, and QuickBooks. You run payroll your way; we make sure the hours are right.",
+    "No — and that's on purpose. You get payroll-ready hour reports and CSV exports, plus links out to Gusto, ADP, Paychex, and QuickBooks. You run payroll your way; we make sure the hours are right.",
   ],
   [
     "Do my cleaners need an expensive phone?",
@@ -292,7 +293,7 @@ function SiteFooter() {
           <span>WorkTeams</span>
         </span>
         <p>Built by a cleaner, for cleaners. © 2026 WorkTeams.</p>
-        <p>Questions? <a href="mailto:lillybsjanitorial@gmail.com">lillybsjanitorial@gmail.com</a></p>
+        <p>Questions? <a href={`mailto:${SUPPORT_EMAIL}`}>{SUPPORT_EMAIL}</a></p>
         <span style={{ display: "flex", gap: 14 }}>
           <Link href="/privacy">Privacy</Link>
           <Link href="/terms">Terms</Link>

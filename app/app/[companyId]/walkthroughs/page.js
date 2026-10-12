@@ -114,7 +114,7 @@ export default function WalkthroughsPage() {
           <input
             value={form.name}
             onChange={(e) => setForm({ ...form, name: e.target.value })}
-            placeholder="Walkthrough name (e.g. St. Joseph walkthrough)"
+            placeholder="Walkthrough name (e.g. Downtown office walkthrough)"
             maxLength={120}
             style={input}
           />

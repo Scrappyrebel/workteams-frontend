@@ -30,6 +30,10 @@ export default function InspectionsPage() {
   const [locations, setLocations] = useState([]);
   const [locationId, setLocationId] = useState("");
   const [inspDate, setInspDate] = useState(chicagoToday());
+  // Recompute the default once the company's timezone is known.
+  useEffect(() => {
+    if (company?.timezone) setInspDate(chicagoToday(company.timezone));
+  }, [company?.timezone]);
   const [activeId, setActiveId] = useState(null);
   const [sections, setSections] = useState([]);
   const [newSection, setNewSection] = useState(emptySection);

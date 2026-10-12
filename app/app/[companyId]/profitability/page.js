@@ -14,7 +14,7 @@ const RANGES = [
   { key: "all", label: "All time", days: null },
 ];
 
-const emptyEntry = { location_id: "", amount: "", description: "", entry_date: chicagoToday() };
+const emptyEntry = (tz) => ({ location_id: "", amount: "", description: "", entry_date: chicagoToday(tz) });
 
 export default function ProfitabilityPage() {
   const { company, member, loading } = useCompany();
@@ -23,9 +23,17 @@ export default function ProfitabilityPage() {
   const [rows, setRows] = useState([]);
   const [range, setRange] = useState("90");
   const [computing, setComputing] = useState(false);
-  const [revForm, setRevForm] = useState(emptyEntry);
-  const [expForm, setExpForm] = useState(emptyEntry);
+  const [revForm, setRevForm] = useState(() => emptyEntry());
+  const [expForm, setExpForm] = useState(() => emptyEntry());
   const [saving, setSaving] = useState(false);
+  // Company-local date default once the company's timezone is known.
+  useEffect(() => {
+    if (company?.timezone) {
+      const d = chicagoToday(company.timezone);
+      setRevForm((f) => ({ ...f, entry_date: f.entry_date || d }));
+      setExpForm((f) => ({ ...f, entry_date: f.entry_date || d }));
+    }
+  }, [company?.timezone]);
 
   const isManager = member && (member.role === "owner" || member.role === "admin");
   const allowed = canUse(company?.effectiveTier || company?.tier, "profitability");
@@ -34,7 +42,7 @@ export default function ProfitabilityPage() {
     setComputing(true);
     const sb = supabase();
     const sel = RANGES.find((r) => r.key === range);
-    const since = sel.days ? chicagoDaysAgo(sel.days) : null;
+    const since = sel.days ? chicagoDaysAgo(sel.days, company?.timezone) : null;
 
     const { data: locs } = await sb.from("locations").select("id, name").eq("company_id", company.id).order("name");
     const locList = locs || [];
@@ -147,7 +155,7 @@ export default function ProfitabilityPage() {
     setSaving(false);
     if (error) alert("Could not save: " + error.message);
     else {
-      reset(emptyEntry);
+      reset(() => emptyEntry(company?.timezone));
       compute();
     }
   }

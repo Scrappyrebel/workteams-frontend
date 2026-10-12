@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { supabase } from "../../../../lib/supabase";
 import { useCompany } from "../../../../lib/company-context";
 import { chicagoToday, formatTime12h } from "../../../../lib/dates";
@@ -283,7 +284,7 @@ export default function SchedulePage() {
 
   async function load() {
     const sb = supabase();
-    const today = chicagoToday();
+    const today = chicagoToday(company?.timezone);
     const { data } = await sb
       .from("shifts")
       .select("*, locations(name)")
@@ -366,7 +367,8 @@ export default function SchedulePage() {
     const { error } = await sb.from("shifts").insert(rows);
     if (error) {
       if (error.message && error.message.includes("series_id")) {
-        alert("The database needs the new repeat-shift columns first — run the 031 SQL block in Supabase, then add the shift again.");
+        console.error("repeat-shift insert failed (missing 031 columns):", error.message);
+        alert("Couldn't save the repeating shift right now. Please try again — if it keeps happening, contact support.");
       } else {
         alert("Could not add shift: " + error.message);
       }
@@ -455,7 +457,7 @@ export default function SchedulePage() {
       .from("shifts")
       .delete()
       .eq("series_id", s.series_id)
-      .gte("shift_date", chicagoToday());
+      .gte("shift_date", chicagoToday(company?.timezone));
     if (error) alert("Could not delete series: " + error.message);
     else load();
   }
@@ -596,9 +598,9 @@ export default function SchedulePage() {
   // Week view: 7 day blocks (Sun–Sat) so the whole week can be checked at
   // a glance — empty days say so, making gaps obvious.
   function weekView() {
-    const today = chicagoToday();
+    const today = chicagoToday(company?.timezone);
     const goThisWeek = () => {
-      const w = startOfWeekISO(chicagoToday());
+      const w = startOfWeekISO(chicagoToday(company?.timezone));
       setWeekStart(w);
       loadWeek(w);
     };
@@ -639,8 +641,8 @@ export default function SchedulePage() {
       <p className="eyebrow">SCHEDULE</p>
       <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
         <h2 style={{ fontSize: "1.8rem", margin: 0 }}>Upcoming shifts</h2>
-        <a href={`/app/${company.id}/schedule/repeats`} style={repeatsLink}>🔁 Repeats</a>
-        <a href={`/app/${company.id}/schedule/history`} style={repeatsLink}>📜 History</a>
+        <Link href={`/app/${company.id}/schedule/repeats`} style={repeatsLink}>🔁 Repeats</Link>
+        <Link href={`/app/${company.id}/schedule/history`} style={repeatsLink}>📜 History</Link>
         <div style={{ display: "flex", gap: 4, marginLeft: "auto" }}>
           <button type="button" onClick={() => setView("list")} style={view === "list" ? toggleOn : toggleOff}>List</button>
           <button type="button" onClick={() => setView("week")} style={view === "week" ? toggleOn : toggleOff}>📅 Week</button>

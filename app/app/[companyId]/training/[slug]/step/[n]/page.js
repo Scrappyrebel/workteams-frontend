@@ -7,6 +7,7 @@ import { supabase } from "../../../../../../../lib/supabase";
 import { useCompany } from "../../../../../../../lib/company-context";
 import { getCourse, getEnrollment, completeStep, unlockNext } from "../../../../../../../lib/training";
 import { sanitizeSvg } from "../../../../../../../lib/sanitize-svg";
+import { STEP_DEFS } from "../../../../../../../lib/training";
 
 function shuffle(arr) {
   const a = [...arr];
@@ -47,7 +48,7 @@ export default function StepPage() {
   return (
     <div>
       <Link href={back} className="card-link">← {data.course.title}</Link>
-      <p className="eyebrow" style={{ marginTop: 12 }}>STEP {stepNum} OF 11</p>
+      <p className="eyebrow" style={{ marginTop: 12 }}>STEP {stepNum} OF {STEP_DEFS.length}</p>
       <h2 style={{ fontSize: "1.6rem" }}>{step.title}</h2>
       {stepNum <= 5 && (
         <LessonStep course={data.course} step={step} enrollment={enrollment} back={back} />

@@ -39,7 +39,8 @@ export async function POST(req) {
       return NextResponse.json({ error: "Could not process the decision." }, { status: 500 });
     }
     if (!bid) return NextResponse.json({ error: "Bid not found." }, { status: 404 });
-    if (bid.valid_until && bid.valid_until < chicagoToday()) {
+    const { data: bidCompany } = await client.from("companies").select("timezone").eq("id", bid.company_id).maybeSingle();
+    if (bid.valid_until && bid.valid_until < chicagoToday(bidCompany?.timezone)) {
       return NextResponse.json({ error: "This proposal has expired." }, { status: 410 });
     }
     if (bid.status === "accepted" || bid.status === "declined") {

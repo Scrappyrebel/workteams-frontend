@@ -69,7 +69,7 @@ export default function NotificationSettingsPage() {
         <section className="panel" style={{ padding: 20, marginTop: 16 }}>
           <h3>Owner-wide alert coverage</h3>
           <p style={{ color: "var(--muted)" }}>
-            Your owner account receives the widest alert coverage: missed clock-ins, possible no-shows, employee emergency/help requests, clock problems, customer/communication-book issues, schedule coverage problems, proof/upload problems, safety issues, and equipment/supply emergencies.
+            Your owner account receives the widest alert coverage: automatic missed clock-in, possible no-show, and overtime alerts, plus emergency and help requests whenever a crew member submits one through the emergency button — including clock problems, customer/communication-book issues, schedule coverage problems, proof/upload problems, safety issues, and equipment/supply emergencies.
           </p>
         </section>
       )}

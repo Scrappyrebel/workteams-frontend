@@ -32,7 +32,7 @@ export default function ContractsPage() {
   const [amendBusy, setAmendBusy] = useState(false);
 
   const isManager = member && (member.role === "owner" || member.role === "admin");
-  const allowed = canUse(company?.effectiveTier || company?.tier, "portal");
+  const allowed = canUse(company?.effectiveTier || company?.tier, "contracts");
 
   async function load() {
     const sb = supabase();
@@ -192,16 +192,22 @@ export default function ContractsPage() {
         <section className="panel" style={{ padding: 22, margin: "18px 0" }}>
           <form onSubmit={saveContract} style={{ display: "grid", gap: 10, maxWidth: 560 }}>
             {bids.length > 0 && (
-              <select value={form.bid_id} onChange={(e) => {
+              <select value={form.bid_id} onChange={async (e) => {
                 const bidId = e.target.value;
                 const b = bids.find((x) => x.id === bidId);
                 if (!b) { setForm({ ...form, bid_id: "" }); return; }
                 // Pre-fill the contract from the accepted bid.
-                const perVisit = b.pricing_mode === "hourly"
+                let perVisit = b.pricing_mode === "hourly"
                   ? (Number(b.hours) || 0) * (Number(b.hourly_rate) || 0)
                   : b.pricing_mode === "sqft"
                   ? (Number(b.square_footage) || 0) * (Number(b.rate_per_sqft) || 0)
                   : 0;
+                if (!perVisit) {
+                  // line_items (the default mode): total the bid's line items.
+                  const { data: items } = await supabase().from("bid_items")
+                    .select("quantity, unit_price").eq("bid_id", bidId);
+                  perVisit = (items || []).reduce((s, it) => s + Number(it.quantity) * Number(it.unit_price), 0);
+                }
                 const visitsPerWeek = { weekly: 1, "2x-week": 2, "3x-week": 3, "5x-week": 5, biweekly: 0.5, monthly: 0.23 }[b.frequency] || "";
                 setForm({
                   ...form,

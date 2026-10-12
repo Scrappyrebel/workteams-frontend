@@ -100,7 +100,7 @@ export default function EmergencyButton({ compact = false }) {
           >
             <h3 style={{ margin: "0 0 6px", color: "#b3261e" }}>🚨 Send emergency alert</h3>
             <p style={{ color: "var(--muted)", fontSize: "0.9rem", margin: "0 0 16px" }}>
-              This buzzes their phone immediately, even with the app closed.
+              If they&apos;ve enabled notifications, this buzzes their phone immediately, even with the app closed.
             </p>
 
             <div style={{ fontWeight: 800, fontSize: "0.9rem", marginBottom: 8 }}>Who should get it?</div>
@@ -161,7 +161,7 @@ export default function EmergencyButton({ compact = false }) {
             <textarea
               value={message}
               onChange={(e) => setMessage(e.target.value)}
-              placeholder="e.g. Pipe burst at Stages, water everywhere — need help now"
+              placeholder="e.g. Pipe burst at a client's site, water everywhere — need help now"
               rows={3}
               maxLength={500}
               style={{

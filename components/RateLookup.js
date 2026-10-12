@@ -88,7 +88,7 @@ export default function RateLookup({ companyId, defaultArea, frequency, jobType 
             setTouched(true);
             setArea(e.target.value);
           }}
-          placeholder="Area (e.g. Chesterfield, MO)"
+          placeholder="Area (e.g. City, ST)"
           aria-label="Area to look up rates for"
           style={{
             flex: 1,
@@ -123,8 +123,9 @@ export default function RateLookup({ companyId, defaultArea, frequency, jobType 
 
       {error === "not_configured" && (
         <p style={{ margin: "10px 0 0", fontSize: "0.9rem" }}>
-          ⚠️ Rate lookup isn&apos;t set up yet. Add your free Brave Search API key in
-          Vercel env vars as <code>YOUCOM_API_KEY</code> to enable it.
+          ⚠️ Rate lookup isn&apos;t set up yet. Add a search API key in
+          Vercel env vars as <code>YOUCOM_API_KEY</code> (you.com) or{" "}
+          <code>BRAVE_SEARCH_API_KEY</code> (Brave) to enable it.
         </p>
       )}
       {error && error !== "not_configured" && (

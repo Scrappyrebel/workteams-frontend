@@ -13,6 +13,8 @@ export default function TeamPage() {
   const [editForm, setEditForm] = useState({ display_name: "", email: "" });
   // Two-tap confirm when changing the email of a member who already signed in.
   const [confirmEmailId, setConfirmEmailId] = useState(null);
+  // Two-tap remove: native confirm() doesn't fire on some mobile browsers.
+  const [confirmRemoveId, setConfirmRemoveId] = useState(null);
 
   const isManager = member && (member.role === "owner" || member.role === "admin");
 
@@ -116,7 +118,11 @@ export default function TeamPage() {
       alert("You can't remove the last owner.");
       return;
     }
-    if (!confirm(`Remove ${m.display_name} from the team?`)) return;
+    if (confirmRemoveId !== m.id) {
+      setConfirmRemoveId(m.id);
+      return;
+    }
+    setConfirmRemoveId(null);
     const { error } = await supabase().from("company_members").delete().eq("id", m.id);
     if (error) alert("Could not remove: " + error.message);
     else load();
@@ -275,7 +281,9 @@ export default function TeamPage() {
                         <option value="manager">Manager</option>
                         {member.role === "owner" && <option value="owner">Owner</option>}
                       </select>
-                      <button onClick={() => removeMember(m)} style={dangerButton}>Remove</button>
+                      <button onClick={() => removeMember(m)} style={confirmRemoveId === m.id ? dangerButton : { ...dangerButton, background: "#fff", color: "#b3261e", border: "1px solid #b3261e" }}>
+                        {confirmRemoveId === m.id ? "Tap again to remove" : "Remove"}
+                      </button>
                     </>
                   )}
                 </div>

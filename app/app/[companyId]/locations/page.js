@@ -5,6 +5,7 @@ import { supabase } from "../../../../lib/supabase";
 import { useCompany } from "../../../../lib/company-context";
 import { canUse } from "../../../../lib/tiers";
 import { isManagerRole, isSupervisorRole } from "../../../../lib/roles";
+import { chicagoToday, chicagoDaysAgo } from "../../../../lib/dates";
 
 const emptyForm = { name: "", address: "", client_name: "", client_phone: "", notes: "", lat: "", lng: "", geofence_radius_m: 100, rate_area_id: "" };
 
@@ -27,8 +28,15 @@ export default function LocationsPage() {
   const [loaded, setLoaded] = useState(false);
   const [loadError, setLoadError] = useState("");
   const [confirmDelete, setConfirmDelete] = useState(null);
-  const [verifyStart, setVerifyStart] = useState("2026-10-03");
-  const [verifyEnd, setVerifyEnd] = useState("2026-10-04");
+  const [verifyStart, setVerifyStart] = useState(() => chicagoDaysAgo(7));
+  const [verifyEnd, setVerifyEnd] = useState(() => chicagoToday());
+  // Recompute the default window once the company's timezone is known.
+  useEffect(() => {
+    if (company?.timezone) {
+      setVerifyStart(chicagoDaysAgo(7, company.timezone));
+      setVerifyEnd(chicagoToday(company.timezone));
+    }
+  }, [company?.timezone]);
   const [verifyData, setVerifyData] = useState(null);
   const [verifyBusy, setVerifyBusy] = useState(false);
 
@@ -234,6 +242,9 @@ export default function LocationsPage() {
               </label>
               <p style={{ fontSize: "0.82rem", color: "var(--muted)", margin: "8px 0 0" }}>
                 Clock-ins outside this boundary are blocked.
+              </p>
+              <p style={{ fontSize: "0.75rem", color: "var(--muted)", margin: "4px 0 0" }}>
+                Address lookup by OpenStreetMap contributors.
               </p>
             </div>
           ) : (

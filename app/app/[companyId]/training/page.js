@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { supabase } from "../../../../lib/supabase";
 import { useCompany } from "../../../../lib/company-context";
+import { STEP_DEFS } from "../../../../lib/training";
 
 const CATEGORY_LABELS = { cleaning: "Cleaning courses", business: "Business & management" };
 
@@ -91,7 +92,7 @@ export default function TrainingCenterPage() {
                     <h3 style={{ margin: "6px 0" }}>{c.title}</h3>
                     <p style={{ color: "var(--muted)", fontSize: "0.9rem" }}>{c.description}</p>
                     <p style={{ fontSize: "0.85rem", color: "var(--muted)", marginTop: 8 }}>
-                      ~{c.estimated_hours} hrs • 11 steps
+                      ~{c.estimated_hours} hrs • {STEP_DEFS.length} steps
                       {cert && !expired && <span style={{ color: "green", fontWeight: 700 }}> • Certified</span>}
                       {cert && expired && <span style={{ color: "#b45309", fontWeight: 700 }}> • Recertify</span>}
                     </p>

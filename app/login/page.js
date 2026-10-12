@@ -202,6 +202,11 @@ export default function LoginPage() {
             <button type="submit" disabled={loading} style={buttonStyle}>
               {loading ? "Creating…" : "Create account"}
             </button>
+            <p style={{ marginTop: 12, fontSize: "0.85rem", color: "var(--muted)" }}>
+              Start your 7-day free trial — by signing up you agree to our{" "}
+              <Link href="/terms" style={linkButtonStyle}>Terms</Link> and{" "}
+              <Link href="/privacy" style={linkButtonStyle}>Privacy Policy</Link>.
+            </p>
             <p style={{ marginTop: 14, fontSize: "0.95rem" }}>
               Already have one?{" "}
               <button

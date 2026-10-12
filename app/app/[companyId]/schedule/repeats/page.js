@@ -29,7 +29,7 @@ export default function RepeatsPage() {
 
   async function load() {
     const sb = supabase();
-    const today = chicagoToday();
+    const today = chicagoToday(company?.timezone);
     const { data } = await sb
       .from("shifts")
       .select("*, locations(name)")
@@ -63,7 +63,7 @@ export default function RepeatsPage() {
       .from("shifts")
       .delete()
       .eq("series_id", seriesId)
-      .gte("shift_date", chicagoToday());
+      .gte("shift_date", chicagoToday(company?.timezone));
     if (error) alert("Could not delete series: " + error.message);
     else load();
   }
@@ -152,7 +152,7 @@ export default function RepeatsPage() {
                   {g.rows.map((s) => (
                     <li key={s.id}>
                       {friendlyDate(s.shift_date)}
-                      {s.startTime && s.start_time !== g.startTime ? ` · ${formatTime12h(s.start_time)}` : ""}
+                      {s.start_time && s.start_time !== g.startTime ? ` · ${formatTime12h(s.start_time)}` : ""}
                       {s.member_id && nameById[s.member_id] !== g.assignee ? ` · ${nameById[s.member_id]}` : ""}
                     </li>
                   ))}

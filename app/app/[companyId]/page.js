@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import { supabase } from "../../../lib/supabase";
 import { useCompany } from "../../../lib/company-context";
 import { canUse, tierLabel } from "../../../lib/tiers";
-import { roleRank } from "../../../lib/roles";
+import { roleRank, roleLabel } from "../../../lib/roles";
 import { chicagoToday, formatTime12h } from "../../../lib/dates";
 import EmergencyButton from "../../../components/EmergencyButton";
 import CompanyShiftProofSettings from "../../../components/CompanyShiftProofSettings";
@@ -14,12 +14,12 @@ import CompanyFeatureToggles from "../../../components/CompanyFeatureToggles";
 const TOOL_CARDS = [
   { key: "scheduling", label: "Schedule", desc: "Shifts by day, who works where.", href: "schedule", roles: "all" },
   { key: "timeclock", label: "Time Clock", desc: "Clock in and out with GPS.", href: "time", roles: "all" },
-  { key: "payroll", label: "Hours & Payroll", desc: "Payroll-ready hour reports + CSV.", href: "payroll", roles: "all" },
+  { key: "payroll", label: "My Hours / Payroll", desc: "Payroll-ready hour reports + CSV.", href: "payroll", roles: "all" },
   { key: "locations", label: "Locations", desc: "Sites, clients, and geofences.", href: "locations", roles: "supervisor" },
   { key: "team", label: "Team", desc: "Members, roles, and invites.", href: "team", roles: "all" },
   { key: "inspections", label: "Inspections", desc: "Quality checks with photos.", href: "inspections", roles: "supervisor" },
-  { key: "messaging", label: "Crew Messaging", desc: "Message your team.", href: "messages", roles: "all" },
-  { key: "bidding", label: "Bids & Proposals", desc: "Quote and win new work.", href: "bids", roles: "manager" },
+  { key: "messaging", label: "Messages", desc: "Message your team.", href: "messages", roles: "all" },
+  { key: "bidding", label: "Bids", desc: "Quote and win new work.", href: "bids", roles: "manager" },
   { key: "walkthroughs", label: "Walkthroughs", desc: "Room-by-room measurements & scope.", href: "walkthroughs", roles: "manager" },
   { key: "workorders", label: "Work Orders", desc: "One-time and extra jobs.", href: "work-orders", roles: "all" },
   { key: "supplies", label: "Supplies", desc: "Requests and inventory.", href: "supplies", roles: "manager" },
@@ -40,7 +40,7 @@ export default function CompanyDashboard() {
     if (loading || !company) return;
     (async () => {
       const sb = supabase();
-      const today = chicagoToday();
+      const today = chicagoToday(company?.timezone);
       // Employees only see alerts about their own shifts; managers see all.
       const mineOnly = !(member && (member.role === "owner" || member.role === "admin"));
       let shiftQ = sb
@@ -90,8 +90,8 @@ export default function CompanyDashboard() {
           <p className="eyebrow">DASHBOARD</p>
           <h2 style={{ fontSize: "1.8rem", margin: "4px 0" }}>{company.name}</h2>
           <p style={{ color: "var(--muted)" }}>
-            {tierLabel(tier)} tier • You are {member.role}.{" "}
-            {isManager && <Link href={`/app/${company.id}/plans`} style={{ color: "var(--brand-deep)", fontWeight: 700 }}>Change plan →</Link>}
+            {tierLabel(tier)} tier • You are {roleLabel(member.role)}.{" "}
+            {isManager && <Link href={`/app/${company.id}/plans`} style={{ color: "var(--brand-deep)", fontWeight: 700 }}>Plans →</Link>}
           </p>
         </div>
         <EmergencyButton compact />

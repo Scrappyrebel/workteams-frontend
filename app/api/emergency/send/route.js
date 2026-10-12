@@ -6,7 +6,7 @@ import { sendPush, pushConfigured } from "../../../../lib/push";
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-const APP_URL = process.env.WORKTEAMS_APP_URL || "https://app.lillybsjanitorial.com";
+import { appUrlFrom } from "../../../../lib/app-url";
 
 function admin() {
   return createClient(SUPABASE_URL, SERVICE_KEY);
@@ -94,7 +94,7 @@ export async function POST(req) {
         title: `🚨 ${categoryLabels[category] || categoryLabels.emergency} — ${sender.display_name}`,
         body: `${message.trim().slice(0, 140)}${locationName ? ` (${locationName.trim().slice(0, 60)})` : ""}`,
         tag: `emergency-${alert.id}`,
-        url: `${APP_URL}/app/${companyId}/emergency`,
+        url: `${appUrlFrom(req)}/app/${companyId}/emergency`,
       };
       const deadIds = [];
       for (const s of subs || []) {

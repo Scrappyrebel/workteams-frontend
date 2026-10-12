@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { checkRateLimit, clientIp } from "../../../../lib/rate-limit";
+import { appUrlFrom } from "../../../../lib/app-url";
 
 const sb = () =>
   createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
@@ -79,7 +80,7 @@ export async function POST(req) {
             client_name: c.client_name || name.trim(),
           });
         }
-        const appUrl = process.env.WORKTEAMS_APP_URL || "https://app.lillybsjanitorial.com";
+        const appUrl = appUrlFrom(req);
         const portalUrl = `${appUrl}/portal/${portalToken}`;
         const key = process.env.RESEND_API_KEY;
         if (key) {

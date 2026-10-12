@@ -109,15 +109,22 @@ export default function SuppliesPage() {
 
   if (loading || !company) return <p>Loading…</p>;
   if (!allowed || !isManager) {
+    const roleBlocked = allowed && !isManager;
     return (
       <div>
         <p className="eyebrow">SUPPLIES</p>
         <h2 style={{ fontSize: "1.8rem" }}>🔒 Supplies</h2>
         <section className="panel" style={{ padding: 22, marginTop: 18 }}>
-          <p>Supply tracking is a <strong>Pro</strong> feature.</p>
-          <Link href={`/app/${company.id}/plans`} style={{ color: "var(--brand-deep)", fontWeight: 700 }}>
-            See plans →
-          </Link>
+          {roleBlocked ? (
+            <p>Supply inventory is for owners and managers.</p>
+          ) : (
+            <>
+              <p>Supply tracking is a <strong>Pro</strong> feature.</p>
+              <Link href={`/app/${company.id}/plans`} style={{ color: "var(--brand-deep)", fontWeight: 700 }}>
+                See plans →
+              </Link>
+            </>
+          )}
         </section>
       </div>
     );

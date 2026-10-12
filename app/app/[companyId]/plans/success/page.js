@@ -1,7 +1,7 @@
 import Link from "next/link";
 
-export default function PlanSuccess({ params }) {
-  const { companyId } = params;
+export default async function PlanSuccess({ params }) {
+  const { companyId } = await params;
   return (
     <div style={{ maxWidth: 560, margin: "60px auto", textAlign: "center" }}>
       <p className="eyebrow">PLANS</p>

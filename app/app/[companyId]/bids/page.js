@@ -47,6 +47,16 @@ const STATUS_LABELS = {
   declined: "Declined",
 };
 
+// Billing period is always explicit (per-visit vs per-month rule).
+const VISITS_PER_MONTH = { weekly: 4.33, "2x-week": 8.67, "3x-week": 13, "5x-week": 21.67, biweekly: 2.17, monthly: 1 };
+function cardPriceLabel(b) {
+  const total = `$${Number(b.total || 0).toFixed(2)}`;
+  if (!b.frequency || b.frequency === "one-time") return `${total} total (one-time)`;
+  const vpm = VISITS_PER_MONTH[b.frequency];
+  if (!vpm) return `${total} per visit`;
+  return `${total} per visit · ~$${(Number(b.total || 0) * vpm).toFixed(2)}/mo`;
+}
+
 export default function BidsPage() {
   const { company, member, loading } = useCompany();
   const [bids, setBids] = useState([]);
@@ -161,7 +171,7 @@ export default function BidsPage() {
   async function saveRateArea(e) {
     e.preventDefault();
     if (!raForm.name.trim()) {
-      alert("Give the rate area a name (e.g. Chesterfield).");
+      alert("Give the rate area a name (e.g. Riverside Heights).");
       return;
     }
     setRaSaving(true);
@@ -456,7 +466,7 @@ export default function BidsPage() {
           <input
             value={raForm.name}
             onChange={(e) => setRaForm({ ...raForm, name: e.target.value })}
-            placeholder="Area name (e.g. Chesterfield)"
+            placeholder="Area name (e.g. Riverside Heights)"
             style={input}
           />
           <div style={{ display: "flex", gap: 8 }}>
@@ -534,7 +544,7 @@ export default function BidsPage() {
             style={{ minHeight: 0, padding: "16px 20px", textDecoration: "none", color: "inherit" }}
           >
             <span className="card-kicker">
-              {STATUS_LABELS[b.status]} • ${b.total.toFixed(2)}
+              {STATUS_LABELS[b.status]} • {cardPriceLabel(b)}
             </span>
             <p style={{ margin: "6px 0 0", fontWeight: 700 }}>{b.title}</p>
             <p style={{ margin: "4px 0 0", color: "var(--muted)", fontSize: "0.9rem" }}>

@@ -28,7 +28,7 @@ export default function HistoryPage() {
 
   async function load(n) {
     const sb = supabase();
-    const today = chicagoToday();
+    const today = chicagoToday(company?.timezone);
     const { data } = await sb
       .from("shifts")
       .select("*, locations(name)")

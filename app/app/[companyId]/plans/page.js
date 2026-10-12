@@ -151,7 +151,7 @@ export default function PlansPage() {
           marginTop: 8,
           fontSize: "0.92rem",
         }}>
-          🎁 <strong>7-day free trial</strong> included with every tier. No card required
+          🎁 <strong>7-day free trial</strong> for new customers on every tier. No card required
           to start — pick your tier before the trial ends to keep your features.
           See our <Link href="/terms">Terms</Link> for details.
         </p>
