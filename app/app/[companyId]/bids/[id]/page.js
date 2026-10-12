@@ -7,6 +7,7 @@ import { supabase } from "../../../../../lib/supabase";
 import { useCompany } from "../../../../../lib/company-context";
 import { canUse } from "../../../../../lib/tiers";
 import RateLookup from "../../../../../components/RateLookup";
+import RateGuidance from "../../../../../components/RateGuidance";
 
 const STATUS_LABELS = {
   draft: "Draft",
@@ -391,6 +392,7 @@ export default function BidDetailPage() {
               ))}
             </div>
             {pricing.mode === "hourly" && (
+              <>
               <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
                 <label style={{ flex: 1, fontSize: "0.9rem", color: "var(--muted)" }}>
                   Estimated hours
@@ -415,8 +417,11 @@ export default function BidDetailPage() {
                   />
                 </label>
               </div>
+              <RateGuidance companyId={company.id} kind="hour" />
+              </>
             )}
             {pricing.mode === "sqft" && (
+              <>
               <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
                 <label style={{ flex: 1, fontSize: "0.9rem", color: "var(--muted)" }}>
                   Square footage
@@ -441,6 +446,8 @@ export default function BidDetailPage() {
                   />
                 </label>
               </div>
+              <RateGuidance companyId={company.id} kind="sqft" />
+              </>
             )}
             <div style={{ marginBottom: 10 }}>
               <div style={{ fontSize: "0.9rem", color: "var(--muted)", marginBottom: 6 }}>Client email (for sending the bid)</div>

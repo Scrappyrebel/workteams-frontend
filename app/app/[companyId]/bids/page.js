@@ -6,6 +6,7 @@ import { supabase } from "../../../../lib/supabase";
 import { useCompany } from "../../../../lib/company-context";
 import { canUse } from "../../../../lib/tiers";
 import RateLookup from "../../../../components/RateLookup";
+import RateGuidance from "../../../../components/RateGuidance";
 
 const emptyForm = {
   client_name: "",
@@ -384,6 +385,7 @@ export default function BidsPage() {
                   />
                 </label>
               </div>
+              <RateGuidance companyId={company.id} kind="hour" />
               <p style={{ fontWeight: 800, margin: "8px 0 0" }}>
                 Estimated per visit: ${((parseFloat(form.hours) || 0) * (parseFloat(form.hourly_rate) || 0)).toFixed(2)}
                 {form.frequency && form.frequency !== "one-time" && (
@@ -422,6 +424,7 @@ export default function BidsPage() {
                   />
                 </label>
               </div>
+              <RateGuidance companyId={company.id} kind="sqft" />
               <p style={{ fontWeight: 800, margin: "8px 0 0" }}>
                 Estimated per visit: ${((parseFloat(form.square_footage) || 0) * (parseFloat(form.rate_per_sqft) || 0)).toFixed(2)}
                 {form.frequency && form.frequency !== "one-time" && (
