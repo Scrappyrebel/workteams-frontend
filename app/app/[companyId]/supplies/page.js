@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import { supabase } from "../../../../lib/supabase";
 import { useCompany } from "../../../../lib/company-context";
 import { useClockedIn, requireClockedIn } from "../../../../lib/use-clocked-in";
-import { canUse } from "../../../../lib/tiers";
+import { canUseWithRole } from "../../../../lib/tiers";
 
 const emptyForm = {
   name: "",
@@ -26,7 +26,7 @@ export default function SuppliesPage() {
   const [editing, setEditing] = useState(null);
 
   const isManager = member && (member.role === "owner" || member.role === "admin");
-  const allowed = canUse(company?.effectiveTier || company?.tier, "supplies");
+  const allowed = canUseWithRole(company?.effectiveTier || company?.tier, "supplies", member?.role);
 
   async function load() {
     const { data } = await supabase()

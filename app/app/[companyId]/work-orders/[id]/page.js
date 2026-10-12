@@ -6,7 +6,7 @@ import { useParams, useRouter } from "next/navigation";
 import { supabase } from "../../../../../lib/supabase";
 import { useCompany } from "../../../../../lib/company-context";
 import { useClockedIn, requireClockedIn } from "../../../../../lib/use-clocked-in";
-import { canUse } from "../../../../../lib/tiers";
+import { canUseWithRole } from "../../../../../lib/tiers";
 
 const STATUS_LABELS = {
   open: "Open",
@@ -35,7 +35,7 @@ export default function WorkOrderDetailPage() {
   const [commentSaving, setCommentSaving] = useState(false);
 
   const isManager = member && (member.role === "owner" || member.role === "admin");
-  const allowed = canUse(company?.effectiveTier || company?.tier, "workorders");
+  const allowed = canUseWithRole(company?.effectiveTier || company?.tier, "workorders", member?.role);
 
   async function load() {
     const sb = supabase();

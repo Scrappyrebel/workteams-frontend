@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { supabase } from "../../../../lib/supabase";
 import { useCompany } from "../../../../lib/company-context";
-import { canUse } from "../../../../lib/tiers";
+import { canUseWithRole } from "../../../../lib/tiers";
 import { buildContractText } from "../../../../lib/contracts";
 
 function makeToken() {
@@ -32,7 +32,7 @@ export default function ContractsPage() {
   const [amendBusy, setAmendBusy] = useState(false);
 
   const isManager = member && (member.role === "owner" || member.role === "admin");
-  const allowed = canUse(company?.effectiveTier || company?.tier, "contracts");
+  const allowed = canUseWithRole(company?.effectiveTier || company?.tier, "contracts", member?.role);
 
   async function load() {
     const sb = supabase();

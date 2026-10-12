@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { supabase } from "../../../../../lib/supabase";
 import { useCompany } from "../../../../../lib/company-context";
-import { canUse } from "../../../../../lib/tiers";
+import { canUseWithRole } from "../../../../../lib/tiers";
 import { STANDARD_TASKS } from "../../../../../lib/walkthrough-tasks";
 
 const emptyArea = { area_name: "", length_ft: "", width_ft: "", square_footage: "", notes: "", custom_task: "" };
@@ -49,7 +49,7 @@ export default function WalkthroughDetailPage() {
   const [loadError, setLoadError] = useState(null);
 
   const isManager = member && (member.role === "owner" || member.role === "admin");
-  const allowed = canUse(company?.effectiveTier || company?.tier, "walkthroughs");
+  const allowed = canUseWithRole(company?.effectiveTier || company?.tier, "walkthroughs", member?.role);
 
   async function load() {
     const sb = supabase();

@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { supabase } from "../../../../lib/supabase";
 import { useCompany } from "../../../../lib/company-context";
-import { canUse } from "../../../../lib/tiers";
+import { canUseWithRole } from "../../../../lib/tiers";
 import { isManagerRole, isSupervisorRole } from "../../../../lib/roles";
 import { chicagoToday, chicagoDaysAgo } from "../../../../lib/dates";
 
@@ -59,8 +59,8 @@ export default function LocationsPage() {
 
   const canManage = isManagerRole(member?.role);
   const canView = isSupervisorRole(member?.role);
-  const geoAllowed = canUse(company?.effectiveTier || company?.tier, "geofencing");
-  const ratesAllowed = canUse(company?.effectiveTier || company?.tier, "bidding");
+  const geoAllowed = canUseWithRole(company?.effectiveTier || company?.tier, "geofencing", member?.role);
+  const ratesAllowed = canUseWithRole(company?.effectiveTier || company?.tier, "bidding", member?.role);
   const [geoBusy, setGeoBusy] = useState(false);
 
   async function load() {

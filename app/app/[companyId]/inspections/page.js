@@ -6,7 +6,7 @@ import { supabase } from "../../../../lib/supabase";
 import { useCompany } from "../../../../lib/company-context";
 import { useClockedIn, requireClockedIn } from "../../../../lib/use-clocked-in";
 import { isSupervisorRole } from "../../../../lib/roles";
-import { canUse } from "../../../../lib/tiers";
+import { canUseWithRole } from "../../../../lib/tiers";
 import { chicagoToday } from "../../../../lib/dates";
 import { validatePhotoFile } from "../../../../lib/inspection-photos";
 
@@ -41,7 +41,7 @@ export default function InspectionsPage() {
   const [overallNotes, setOverallNotes] = useState("");
 
   const canInspect = isSupervisorRole(member?.role);
-  const allowed = canUse(company?.effectiveTier || company?.tier, "inspections");
+  const allowed = canUseWithRole(company?.effectiveTier || company?.tier, "inspections", member?.role);
 
   async function load() {
     const sb = supabase();

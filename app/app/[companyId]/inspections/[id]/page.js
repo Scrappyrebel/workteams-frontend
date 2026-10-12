@@ -6,7 +6,7 @@ import { useParams, useRouter } from "next/navigation";
 import { supabase } from "../../../../../lib/supabase";
 import { useCompany } from "../../../../../lib/company-context";
 import { useClockedIn, requireClockedIn } from "../../../../../lib/use-clocked-in";
-import { canUse } from "../../../../../lib/tiers";
+import { canUseWithRole } from "../../../../../lib/tiers";
 import { storagePathFromUrl, validatePhotoFile, withSignedUrls } from "../../../../../lib/inspection-photos";
 
 const SCORE_LABELS = { 1: "1 — Poor", 2: "2 — Fair", 3: "3 — Good", 4: "4 — Very good", 5: "5 — Excellent" };
@@ -33,7 +33,7 @@ export default function InspectionDetailPage() {
 
   const inspectionId = params.id;
   const isManager = member && (member.role === "owner" || member.role === "admin");
-  const allowed = canUse(company?.effectiveTier || company?.tier, "inspections");
+  const allowed = canUseWithRole(company?.effectiveTier || company?.tier, "inspections", member?.role);
   const [sections, setSections] = useState([]);
   const [newSecName, setNewSecName] = useState("");
   const [newSecScore, setNewSecScore] = useState("5");

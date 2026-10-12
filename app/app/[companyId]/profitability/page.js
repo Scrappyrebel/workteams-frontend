@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import { supabase } from "../../../../lib/supabase";
 import { useCompany } from "../../../../lib/company-context";
 import { useClockedIn } from "../../../../lib/use-clocked-in";
-import { canUse } from "../../../../lib/tiers";
+import { canUseWithRole } from "../../../../lib/tiers";
 import { chicagoToday, chicagoDaysAgo } from "../../../../lib/dates";
 
 const RANGES = [
@@ -36,7 +36,7 @@ export default function ProfitabilityPage() {
   }, [company?.timezone]);
 
   const isManager = member && (member.role === "owner" || member.role === "admin");
-  const allowed = canUse(company?.effectiveTier || company?.tier, "profitability");
+  const allowed = canUseWithRole(company?.effectiveTier || company?.tier, "profitability", member?.role);
 
   async function compute() {
     setComputing(true);

@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { supabase } from "../../../../lib/supabase";
 import { useCompany } from "../../../../lib/company-context";
-import { canUse } from "../../../../lib/tiers";
+import { canUseWithRole } from "../../../../lib/tiers";
 
 export default function MessagesPage() {
   const { company, member, loading } = useCompany();
@@ -13,7 +13,7 @@ export default function MessagesPage() {
   const [sending, setSending] = useState(false);
   const bottomRef = useRef(null);
 
-  const allowed = canUse(company?.effectiveTier || company?.tier, "messaging");
+  const allowed = canUseWithRole(company?.effectiveTier || company?.tier, "messaging", member?.role);
 
   async function load(scroll) {
     const sb = supabase();

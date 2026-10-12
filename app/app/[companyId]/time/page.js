@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { supabase } from "../../../../lib/supabase";
 import { useCompany } from "../../../../lib/company-context";
-import { canUse } from "../../../../lib/tiers";
+import { canUseWithRole } from "../../../../lib/tiers";
 import { isManagerRole, isSupervisorRole } from "../../../../lib/roles";
 import EmergencyButton from "../../../../components/EmergencyButton";
 import EndShiftProof from "../../../../components/EndShiftProof";
@@ -66,7 +66,7 @@ export default function TimeClockPage() {
   const isManager = isManagerRole(member?.role);
   // Supervisors and up see the team's entries and who's on the clock.
   const canViewTeam = isSupervisorRole(member?.role);
-  const geoEnforced = canUse(company?.effectiveTier || company?.tier, "geofencing");
+  const geoEnforced = canUseWithRole(company?.effectiveTier || company?.tier, "geofencing", member?.role);
 
   // Employees can only ever see their own entries.
   useEffect(() => {
