@@ -48,10 +48,32 @@ export default function AppShell({ company, member, children }) {
   const [isOwner, setIsOwner] = useState(false);
   const [pushStatus, setPushStatus] = useState("unknown");
   const [unacked, setUnacked] = useState(0);
+  // Temp staffing module: only the temp agency company gets the tab.
+  // Everyone else never sees it (gated second-company feature).
+  const [isTempAgency, setIsTempAgency] = useState(false);
 
   useEffect(() => {
     isProductOwner().then(setIsOwner);
   }, []);
+
+  useEffect(() => {
+    if (!company?.id) return;
+    let stop = false;
+    (async () => {
+      try {
+        const { data: session } = await supabase().auth.getSession();
+        const token = session?.session?.access_token;
+        const r = await fetch(`/api/temp/agency?companyId=${company.id}`, {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+        });
+        const j = await r.json();
+        if (!stop) setIsTempAgency(!!j.isAgency);
+      } catch {
+        if (!stop) setIsTempAgency(false);
+      }
+    })();
+    return () => { stop = true; };
+  }, [company?.id]);
 
   // Set up push notifications for emergency alerts (once per session).
   useEffect(() => {
@@ -117,7 +139,16 @@ export default function AppShell({ company, member, children }) {
     if (item.productOwnerOnly && !isOwner) return false;
     if (item.featureFlag && company && company[item.featureFlag] === false) return false;
     return true;
-  }).map((item) => {
+  });
+  // Temp staffing tab: only for the temp agency company, managers and up.
+  if (isTempAgency && roleAtLeast(role, "manager")) {
+    links.push({
+      key: "tempstaffing",
+      label: "🧹 Temp Staffing",
+      href: (c) => `/app/${c}/temp`,
+    });
+  }
+  const linksMapped = links.map((item) => {
     const allowed = canUse(tier, item.key);
     return {
       ...item,
@@ -226,7 +257,7 @@ export default function AppShell({ company, member, children }) {
               paddingBottom: 10,
             }}
           >
-            {links.map((item) => {
+            {linksMapped.map((item) => {
               const active = pathname === item.href || (item.key === "dashboard" && pathname === `/app/${companyId}`);
               return (
                 <Link

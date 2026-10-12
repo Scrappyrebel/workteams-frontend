@@ -1,0 +1,233 @@
+"use client";
+
+import { useContext, useEffect, useState } from "react";
+import { supabase } from "../../../../lib/supabase";
+import { CompanyContext } from "../../../../lib/company-context";
+
+const TABS = [
+  { key: "requests", label: "Job Requests" },
+  { key: "temps", label: "Temp Pool" },
+  { key: "settings", label: "Agency Settings" },
+];
+
+const STATUS_LABELS = {
+  pending: "New",
+  quoted: "Quoted",
+  paid: "Paid",
+  assigned: "Staffed",
+  in_progress: "In Progress",
+  completed: "Done",
+  cancelled: "Cancelled",
+};
+
+export default function TempDashboard() {
+  const { company, member } = useContext(CompanyContext) || {};
+  const [tab, setTab] = useState("requests");
+  const [isAgency, setIsAgency] = useState(null);
+  const [requests, setRequests] = useState([]);
+  const [apps, setApps] = useState([]);
+  const [cfg, setCfg] = useState(null);
+  const [msg, setMsg] = useState("");
+
+  const isManager = member && ["owner", "admin", "manager"].includes(member.role);
+
+  useEffect(() => {
+    if (!company?.id) return;
+    (async () => {
+      const sb = supabase();
+      const { data: session } = await sb.auth.getSession();
+      const token = session?.session?.access_token;
+      const r = await fetch(`/api/temp/agency?companyId=${company.id}`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      const j = await r.json();
+      setIsAgency(!!j.isAgency);
+      if (j.isAgency) loadAll();
+    })();
+  }, [company?.id]);
+
+  async function loadAll() {
+    const sb = supabase();
+    const [{ data: rq }, { data: ap }, { data: cf }] = await Promise.all([
+      sb.from("temp_job_requests").select("*").eq("company_id", company.id).order("created_at", { ascending: false }).limit(100),
+      sb.from("temp_applications").select("*").eq("company_id", company.id).order("created_at", { ascending: false }).limit(200),
+      sb.from("temp_agency_config").select("*").eq("company_id", company.id).maybeSingle(),
+    ]);
+    setRequests(rq || []);
+    setApps(ap || []);
+    setCfg(cf || null);
+  }
+
+  async function setRequestStatus(id, status) {
+    const { error } = await supabase().from("temp_job_requests").update({ status }).eq("id", id);
+    setMsg(error ? "Update failed: " + error.message : "Updated.");
+    if (!error) loadAll();
+  }
+
+  async function setAppStatus(id, status, bgStatus) {
+    const patch = { status };
+    if (bgStatus) patch.bg_check_status = bgStatus;
+    const { error } = await supabase().from("temp_applications").update(patch).eq("id", id);
+    setMsg(error ? "Update failed: " + error.message : "Updated.");
+    if (!error) loadAll();
+  }
+
+  async function saveCfg(e) {
+    e.preventDefault();
+    const { error } = await supabase()
+      .from("temp_agency_config")
+      .update({
+        base_hourly_rate: parseFloat(cfg.base_hourly_rate) || 35,
+        temp_hourly_pay: parseFloat(cfg.temp_hourly_pay) || 20,
+        conversion_fee: parseFloat(cfg.conversion_fee) || 0,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("company_id", company.id);
+    setMsg(error ? "Save failed: " + error.message : "Rates saved.");
+  }
+
+  if (isAgency === null) {
+    return (
+      <main className="site-shell"><section className="panel" style={{ padding: 30 }}>Loading…</section></main>
+    );
+  }
+  if (!isAgency) {
+    return (
+      <main className="site-shell">
+        <section className="panel" style={{ padding: 30 }}>
+          <h2>Temp staffing isn't enabled for this company</h2>
+          <p style={{ color: "var(--muted)" }}>This section is only available to temp staffing companies.</p>
+        </section>
+      </main>
+    );
+  }
+  if (!isManager) {
+    return (
+      <main className="site-shell">
+        <section className="panel" style={{ padding: 30 }}>
+          <h2>Managers only</h2>
+        </section>
+      </main>
+    );
+  }
+
+  const pendingApps = apps.filter((a) => a.status === "applied");
+  const approvedTemps = apps.filter((a) => a.status === "approved");
+
+  return (
+    <main className="site-shell">
+      <section className="panel" style={{ padding: 24 }}>
+        <p className="kicker">Temp Staffing</p>
+        <h1 style={{ marginTop: 4 }}>Agency dashboard</h1>
+        <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+          {TABS.map((t) => (
+            <button
+              key={t.key}
+              onClick={() => setTab(t.key)}
+              className={tab === t.key ? "btn-primary" : "btn-ghost"}
+              style={{ padding: "8px 16px" }}
+            >
+              {t.label}
+              {t.key === "requests" && requests.filter((r) => r.status === "pending").length > 0 && (
+                <span> ({requests.filter((r) => r.status === "pending").length})</span>
+              )}
+              {t.key === "temps" && pendingApps.length > 0 && <span> ({pendingApps.length})</span>}
+            </button>
+          ))}
+        </div>
+        {msg && <p style={{ color: "var(--muted)", fontSize: 14 }}>{msg}</p>}
+      </section>
+
+      {tab === "requests" && (
+        <section className="panel" style={{ padding: 24, marginTop: 16 }}>
+          <h2 style={{ marginTop: 0 }}>Job requests</h2>
+          {requests.length === 0 && <p style={{ color: "var(--muted)" }}>No requests yet.</p>}
+          {requests.map((r) => (
+            <div key={r.id} className="card" style={{ padding: 16, marginBottom: 12 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
+                <strong>{r.service_type.replace(/_/g, " ")}</strong>
+                <span className="badge">{STATUS_LABELS[r.status] || r.status}</span>
+              </div>
+              <div style={{ fontSize: 14, color: "var(--muted)", marginTop: 6 }}>
+                {r.cleaners_needed} cleaner(s) × {r.hours_requested} hr · {r.customer_name} · {r.customer_email}
+                <br />
+                {r.site_address} {r.job_date ? `· ${r.job_date}` : ""}
+                {r.quoted_cents ? <><br />Quoted: ${(r.quoted_cents / 100).toFixed(2)}</> : null}
+              </div>
+              {r.job_details && <p style={{ fontSize: 14 }}>{r.job_details}</p>}
+              <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
+                {["paid", "assigned", "in_progress", "completed", "cancelled"].map((s) => (
+                  <button key={s} className="btn-ghost" style={{ padding: "6px 12px", fontSize: 13 }}
+                    onClick={() => setRequestStatus(r.id, s)} disabled={r.status === s}>
+                    {STATUS_LABELS[s]}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ))}
+        </section>
+      )}
+
+      {tab === "temps" && (
+        <section className="panel" style={{ padding: 24, marginTop: 16 }}>
+          <h2 style={{ marginTop: 0 }}>Applications ({pendingApps.length} pending)</h2>
+          {pendingApps.map((a) => (
+            <div key={a.id} className="card" style={{ padding: 16, marginBottom: 12 }}>
+              <strong>{a.full_name}</strong>
+              <div style={{ fontSize: 14, color: "var(--muted)" }}>
+                {a.email} {a.phone ? `· ${a.phone}` : ""}
+                <br />
+                Background check: {a.bg_check_status}
+                {a.bg_check_consent ? " (consent on file)" : " (NO CONSENT)"}
+                {a.experience ? <><br />Experience: {a.experience.slice(0, 200)}</> : null}
+                {a.availability ? <><br />Availability: {a.availability.slice(0, 200)}</> : null}
+              </div>
+              <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+                <button className="btn-primary" style={{ padding: "6px 14px" }}
+                  onClick={() => setAppStatus(a.id, "approved", "clear")}>Approve</button>
+                <button className="btn-ghost" style={{ padding: "6px 14px" }}
+                  onClick={() => setAppStatus(a.id, "rejected")}>Reject</button>
+              </div>
+            </div>
+          ))}
+          <h2 style={{ marginTop: 24 }}>Approved temps ({approvedTemps.length})</h2>
+          {approvedTemps.map((a) => (
+            <div key={a.id} className="card" style={{ padding: 12, marginBottom: 8, fontSize: 14 }}>
+              <strong>{a.full_name}</strong> · {a.email} {a.phone ? `· ${a.phone}` : ""}
+            </div>
+          ))}
+        </section>
+      )}
+
+      {tab === "settings" && cfg && (
+        <section className="panel" style={{ padding: 24, marginTop: 16 }}>
+          <h2 style={{ marginTop: 0 }}>Agency settings</h2>
+          <form onSubmit={saveCfg} style={{ display: "grid", gap: 12, maxWidth: 400 }}>
+            <label>
+              Customer rate — per cleaner, per hour ($)
+              <input type="number" step="0.01" min="0" value={cfg.base_hourly_rate}
+                onChange={(e) => setCfg({ ...cfg, base_hourly_rate: e.target.value })}
+                style={{ width: "100%", padding: 10, marginTop: 4 }} />
+            </label>
+            <label>
+              Temp pay — per hour ($)
+              <input type="number" step="0.01" min="0" value={cfg.temp_hourly_pay}
+                onChange={(e) => setCfg({ ...cfg, temp_hourly_pay: e.target.value })}
+                style={{ width: "100%", padding: 10, marginTop: 4 }} />
+            </label>
+            <label>
+              Temp-to-hire conversion fee ($, 0 = none)
+              <input type="number" step="0.01" min="0" value={cfg.conversion_fee}
+                onChange={(e) => setCfg({ ...cfg, conversion_fee: e.target.value })}
+                style={{ width: "100%", padding: 10, marginTop: 4 }} />
+            </label>
+            <button type="submit" className="btn-primary" style={{ padding: 12 }}>Save</button>
+          </form>
+          <p style={{ fontSize: 13, color: "var(--muted)", marginTop: 12 }}>
+            Public booking: /temp/book · Temp applications: /temp/apply
+          </p>
+        </section>
+      )}
+    </main>
+  );
+}
