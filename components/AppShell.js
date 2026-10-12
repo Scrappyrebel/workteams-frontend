@@ -199,12 +199,13 @@ export default function AppShell({ company, member, children }) {
                 style={{
                   fontSize: "0.8rem",
                   fontWeight: 800,
-                  background: "var(--brand-soft)",
-                  color: "var(--brand-deep)",
+                  background: isTempAgency ? "#fef3c7" : "var(--brand-soft)",
+                  color: isTempAgency ? "#92400e" : "var(--brand-deep)",
                   borderRadius: 999,
                   padding: "4px 10px",
                 }}
               >
+                {isTempAgency ? "🧹 " : ""}
                 {tierLabel(tier)} • {company.name}
               </span>
             </>
