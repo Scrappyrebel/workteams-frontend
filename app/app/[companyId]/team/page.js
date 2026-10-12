@@ -26,6 +26,7 @@ export default function TeamPage() {
     { key: "service", label: "💬 Customer Service" },
     { key: "accounting", label: "🧾 Accounting" },
     { key: "field", label: "🦺 Field Ops" },
+    { key: "compliance", label: "⚖️ Compliance" },
   ];
 
   async function toggleDept(m, deptKey) {
