@@ -92,7 +92,7 @@ const FAQS = [
   },
   {
     q: "Who handles payroll taxes and workers' comp?",
-    a: "We do. Every temp is a W-2 employee of Lilly B's Temp Cleaning Staff. Pay, payroll taxes, unemployment insurance, and workers' comp are all on us — you just pay the hourly bill rate.",
+    a: "We do. Every temp is a W-2 employee of Lilly B's Temp Cleaning Staffing. Pay, payroll taxes, unemployment insurance, and workers' comp are all on us — you just pay the hourly bill rate.",
   },
   {
     q: "What if a temp doesn't show up or isn't a fit?",
@@ -270,7 +270,7 @@ export default function TempLanding() {
         className="panel"
         style={{ padding: "48px 32px", textAlign: "center", overflow: "hidden" }}
       >
-        <p className="kicker">Lilly B&apos;s Temp Cleaning Staff</p>
+        <p className="kicker">Lilly B&apos;s Temp Cleaning Staffing</p>
         <h1 style={{ fontSize: 40, margin: "10px 0 14px", lineHeight: 1.15 }}>
           Your next cleaner is already hired.
           <br />
