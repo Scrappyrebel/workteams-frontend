@@ -4,6 +4,7 @@ import { forwardRef, useImperativeHandle, useRef, useState, useEffect } from "re
 import * as tus from "tus-js-client";
 import { supabase } from "../lib/supabase";
 import { NO_COMMUNICATION_BOOK_NOTE } from "../lib/no-book-proof";
+import { chooseRecorderMimeType, inspectRecordedMp4 } from "../lib/recording-integrity.mjs";
 
 const MAX_VIDEO_SECONDS = 10 * 60;
 const MAX_ACTIVE_VIDEO_MS = MAX_VIDEO_SECONDS * 1000;
@@ -37,12 +38,13 @@ const EndShiftProof = forwardRef(function EndShiftProof(
   { companyId, memberId, entryId, locationId, locationName, enableVideo = true, enableBook = true, onProofUploaded },
   ref
 ) {
-  const isiOS = typeof navigator !== "undefined" && /iPhone|iPad|iPod/i.test(navigator.userAgent);
+  const isiOS = typeof navigator !== "undefined" && (/iPhone|iPad|iPod/i.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1));
 
   // --- recording state ---
   const [recState, setRecState] = useState("idle"); // idle|recording|paused|recorded|uploading|uploaded
   const [recSeconds, setRecSeconds] = useState(0); // active recorded time (excludes pauses)
   const [videoError, setVideoError] = useState("");
+  const [videoIntegrityWarning, setVideoIntegrityWarning] = useState("");
   const [uploadProgress, setUploadProgress] = useState(0);
   const [uploadFailed, setUploadFailed] = useState(false);
   const [videoSaved, setVideoSaved] = useState(false);
@@ -62,6 +64,7 @@ const EndShiftProof = forwardRef(function EndShiftProof(
   const recorderRef = useRef(null);
   const chunksRef = useRef([]);
   const mimeRef = useRef("");
+  const integrityWarningRef = useRef("");
   const segStartRef = useRef(0); // when the current active segment started
   const activeMsRef = useRef(0); // accumulated active ms (excludes paused time)
   const timerRef = useRef(null);
@@ -185,6 +188,8 @@ const EndShiftProof = forwardRef(function EndShiftProof(
     clearTimeout(deadlineTimerRef.current);
     stopRequestedRef.current = false;
     setVideoError("");
+    integrityWarningRef.current = "";
+    setVideoIntegrityWarning("");
     setUploadFailed(false);
     setVideoSaved(false);
     videoSavedRef.current = false;
@@ -207,19 +212,14 @@ const EndShiftProof = forwardRef(function EndShiftProof(
         throw new Error("Camera opened but no video is coming through. Check that no other app is using the camera and try again.");
       }
 
-      // Prefer interoperable H.264 MP4 on every platform when the recorder
-      // supports it. Older Android recordings may still be WebM; playback
-      // must retain a native-open fallback for those existing files.
-      const candidates = [
-        'video/mp4;codecs="avc1.42E01E,mp4a.40.2"',
-        'video/mp4;codecs="avc1.42E01E"',
-        "video/mp4",
-        "video/webm;codecs=vp8,opus",
-        "video/webm;codecs=vp8",
-        "video/webm",
-      ];
-      const mimeType = candidates.find((t) => {
-        try { return window.MediaRecorder.isTypeSupported(t); } catch { return false; }
+      // Safari 18.4+ can record WebM VP8/Opus. WebKit MP4 bugs
+      // can leave picture frozen while audio continues. Prefer WebM on Apple
+      // only when BOTH recording and playback are supported on this device.
+      const probeVideo = document.createElement("video");
+      const mimeType = chooseRecorderMimeType({
+        isIOS: isiOS,
+        isSupported: (type) => window.MediaRecorder.isTypeSupported(type),
+        canPlay: (type) => !!probeVideo.canPlayType(type),
       });
       const recorder = new MediaRecorder(stream, {
         ...(mimeType ? { mimeType } : {}),
@@ -255,8 +255,23 @@ const EndShiftProof = forwardRef(function EndShiftProof(
           return;
         } // kept for upload; never cleared on failure
         setRecState("recorded");
-        // Auto-start upload right away so the crew doesn't wait
-        uploadVideo(blob);
+        // Even a successful upload can have 35s of picture and 5min of
+        // audio. Check MP4 track lengths before storing/approving proof.
+        void (async () => {
+          const result = await inspectRecordedMp4(blob);
+          if (result.status === "warning") {
+            const videoTime = Math.round(result.videoSeconds || 0);
+            const audioTime = Math.round(result.audioSeconds || 0);
+            const warning = result.reason === "video-ends-before-audio"
+              ? `VIDEO PROOF NEEDS REVIEW: picture track lasts about ${videoTime}s but audio lasts ${audioTime}s. Preserve the file and tell management.`
+              : "VIDEO PROOF NEEDS REVIEW: recorded MP4 has no usable video track. Preserve the file and tell management.";
+            integrityWarningRef.current = warning;
+            setVideoIntegrityWarning(warning);
+          }
+          // Always upload original immediately after inspection, including
+          // damaged evidence, and preserve the Blob for Retry on failure.
+          await uploadVideo(blob);
+        })();
       };
       recorder.onerror = () => {
         setVideoError("The camera ran into a problem. Try again.");
@@ -353,6 +368,8 @@ const EndShiftProof = forwardRef(function EndShiftProof(
     setUploadProgress(0);
     setUploadFailed(false);
     setVideoError("");
+    integrityWarningRef.current = "";
+    setVideoIntegrityWarning("");
   }
 
   async function uploadTusFile(file, path, session, onPercent) {
@@ -468,6 +485,7 @@ const EndShiftProof = forwardRef(function EndShiftProof(
             video_url: path,
             duration_seconds: Math.min(MAX_VIDEO_SECONDS, Math.round(activeMsRef.current / 1000)),
             file_size_bytes: b.size,
+            notes: integrityWarningRef.current || null,
           });
           if (dbErr) throw new Error("The video uploaded but couldn't be listed: " + dbErr.message);
         }
@@ -492,7 +510,7 @@ const EndShiftProof = forwardRef(function EndShiftProof(
           throw new Error("The video is in storage, but it is missing from your shift's saved videos. Tap Retry.");
         }
 
-        try {
+        if (!integrityWarningRef.current) try {
           await fetch("/api/time/clock-out/proof", {
             method: "POST",
             headers: {
@@ -511,7 +529,7 @@ const EndShiftProof = forwardRef(function EndShiftProof(
         setRecState("uploaded");
         setUploadProgress(1);
         setDone(true);
-        onProofUploaded?.(entryId);
+        if (!integrityWarningRef.current) onProofUploaded?.(entryId);
       } catch (err) {
         // A local video remains available for Retry as long as this page stays open.
         setUploadFailed(true);
@@ -747,8 +765,11 @@ const EndShiftProof = forwardRef(function EndShiftProof(
         )}
 
         {recState === "uploaded" && (
-          <div style={{ padding: "10px", background: "#e6f4ea", borderRadius: 8, textAlign: "center" }}>
-            ✅ Walkthrough uploaded and verified{locationName ? ` — ${locationName}` : ""}
+          <div style={{ padding: "10px", background: videoIntegrityWarning ? "#fff4e5" : "#e6f4ea", borderRadius: 8, textAlign: "center" }}>
+            {videoIntegrityWarning ? "⚠️ Video stored but NOT approved as complete video proof." :
+              "✅ Walkthrough uploaded and verified in storage (playback still needs checking)."}
+            {locationName ? ` — ${locationName}` : ""}
+            {videoIntegrityWarning && <p role="alert" style={{ color: "#9b2d15", fontWeight: 700 }}>{videoIntegrityWarning}</p>}
             <br />
             <button onClick={discardRecording} style={{ marginTop: 8, fontSize: "0.88rem" }}>
               Record another
