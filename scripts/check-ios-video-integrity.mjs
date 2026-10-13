@@ -7,11 +7,17 @@ const iosType = chooseRecorderMimeType({isIOS:true,isSupported:supported,canPlay
 assert.equal(iosType,"video/webm;codecs=vp8,opus",
   "iPhone with playable WebM must avoid broken Safari MP4-first encoding");
 const androidType = chooseRecorderMimeType({isIOS:false,isSupported:supported,canPlay:playable});
-assert.equal(androidType,'video/mp4;codecs="avc1.42E01E,mp4a.40.2"',
-  "Android established format remains unchanged");
-const iosFallback = chooseRecorderMimeType({isIOS:true,isSupported:supported,canPlay:() => ""});
+assert.equal(androidType,"video/webm;codecs=vp8,opus",
+  "Restore the historically working Android WebM-first recorder.");
+const canPlayOnlyMp4 = (t) => t.startsWith("video/mp4") ? "probably" : "";
+const iosFallback = chooseRecorderMimeType({isIOS:true,isSupported:supported,canPlay:canPlayOnlyMp4});
 assert.equal(iosFallback,'video/mp4;codecs="avc1.42E01E,mp4a.40.2"',
-  "No unplayable WebM may be recorded when iOS lacks playback support");
+  "On older iPhones without WebM playback, use supported MP4 as fallback.");
+const androidFallback = chooseRecorderMimeType({isIOS:false,isSupported:supported,canPlay:canPlayOnlyMp4});
+assert.equal(androidFallback,'video/mp4;codecs="avc1.42E01E,mp4a.40.2"',
+  "On Android too, preserve fallback when WebM unavailable.");
+assert.equal(chooseRecorderMimeType({isIOS:true,isSupported:supported,canPlay:() => ""}), "",
+  "Do not claim an unplayable container is supported.");
 const selective = chooseRecorderMimeType({
   isIOS:true,
   isSupported:t=>t==='video/webm',
