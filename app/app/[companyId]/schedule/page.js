@@ -8,7 +8,9 @@ import { chicagoToday, formatTime12h } from "../../../../lib/dates";
 import ClockPicker from "../../../../components/ClockPicker";
 
 const WEEKDAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+const WEEKDAY_SHORT = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const MONTH_NAMES_FULL = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 
 // Parse "YYYY-MM-DD" as local noon so timezone shifts can't move the day.
 function parseDay(iso) {
@@ -185,6 +187,13 @@ export default function SchedulePage() {
   // Sunday (ISO) of the selected Sunday-through-Saturday workweek.
   const [weekStart, setWeekStart] = useState(() => startOfWeekISO(chicagoToday()));
   const [weekShifts, setWeekShifts] = useState([]);
+  // Month calendar view: which month is shown, its shifts, and the tapped day.
+  const [monthCursor, setMonthCursor] = useState(() => {
+    const d = parseDay(chicagoToday());
+    return new Date(d.getFullYear(), d.getMonth(), 1, 12);
+  });
+  const [monthShifts, setMonthShifts] = useState([]);
+  const [selectedDay, setSelectedDay] = useState(() => chicagoToday());
 
   // Sunday of the week containing the selected date (Sun–Sat).
   function startOfWeekISO(iso) {
@@ -217,6 +226,59 @@ export default function SchedulePage() {
       for (const d of dir || []) nameById[d.id] = d.display_name;
     }
     setWeekShifts(rows.map((s) => ({ ...s, assignee_name: s.member_id ? nameById[s.member_id] || null : null })));
+  }
+
+  // First/last ISO dates of the month containing `cursor`.
+  function monthRange(cursor) {
+    const y = cursor.getFullYear();
+    const m = cursor.getMonth();
+    return { startISO: toISODate(new Date(y, m, 1, 12)), endISO: toISODate(new Date(y, m + 1, 0, 12)) };
+  }
+
+  async function loadMonth(cursor) {
+    const sb = supabase();
+    const { startISO, endISO } = monthRange(cursor);
+    const { data } = await sb
+      .from("shifts")
+      .select("*, locations(name)")
+      .eq("company_id", company.id)
+      .gte("shift_date", startISO)
+      .lte("shift_date", endISO)
+      .order("shift_date", { ascending: true })
+      .order("start_time", { ascending: true });
+    const rows = data || [];
+    const memberIds = [...new Set(rows.map((s) => s.member_id).filter(Boolean))];
+    let nameById = {};
+    if (memberIds.length > 0) {
+      const { data: dir } = await sb.from("team_directory").select("id, display_name").in("id", memberIds);
+      for (const d of dir || []) nameById[d.id] = d.display_name;
+    }
+    setMonthShifts(rows.map((s) => ({ ...s, assignee_name: s.member_id ? nameById[s.member_id] || null : null })));
+  }
+
+  function changeMonth(delta) {    const c = new Date(monthCursor.getFullYear(), monthCursor.getMonth() + delta, 1, 12);
+    setMonthCursor(c);
+    const today = chicagoToday(company?.timezone);
+    const { startISO, endISO } = monthRange(c);
+    setSelectedDay(today >= startISO && today <= endISO ? today : startISO);
+    loadMonth(c);
+  }
+
+  // "Kristin Bodimer" -> "Kristin B." for the compact calendar cells.
+  function shortName(displayName) {
+    if (!displayName) return "Unassigned";
+    const parts = String(displayName).trim().split(/\s+/);
+    if (parts.length < 2) return parts[0];
+    return `${parts[0]} ${parts[parts.length - 1][0]}.`;
+  }
+
+  // After adding/editing/deleting, reload the data for whichever view is
+  // on screen — otherwise the Week view (the default) keeps showing stale
+  // data and new shifts look like they never saved.
+  function refreshVisible() {
+    load();
+    if (view === "week") loadWeek(weekStart);
+    if (view === "month") loadMonth(monthCursor);
   }
 
   function changeWeek(delta) {
@@ -325,6 +387,17 @@ export default function SchedulePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [view]);
 
+  // Load the visible month's shifts when entering month view.
+  useEffect(() => {
+    if (view === "month" && company) {
+      loadMonth(monthCursor);
+      const today = chicagoToday(company?.timezone);
+      const { startISO, endISO } = monthRange(monthCursor);
+      setSelectedDay(today >= startISO && today <= endISO ? today : startISO);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [view]);
+
   async function addShift(e) {
     e.preventDefault();
     const sb = supabase();
@@ -375,7 +448,7 @@ export default function SchedulePage() {
       return;
     }
     setForm(EMPTY_FORM);
-    load();
+    refreshVisible();
   }
 
   function startEdit(s) {
@@ -429,7 +502,7 @@ export default function SchedulePage() {
     else {
       setEditingId(null);
       setEditScope("one");
-      load();
+      refreshVisible();
     }
   }
 
@@ -443,7 +516,7 @@ export default function SchedulePage() {
     setConfirmDeleteId(null);
     const { error } = await supabase().from("shifts").delete().eq("id", id);
     if (error) alert("Could not delete: " + error.message);
-    else load();
+    else refreshVisible();
   }
 
   async function deleteSeries(s) {
@@ -459,7 +532,7 @@ export default function SchedulePage() {
       .eq("series_id", s.series_id)
       .gte("shift_date", chicagoToday(company?.timezone));
     if (error) alert("Could not delete series: " + error.message);
-    else load();
+    else refreshVisible();
   }
 
   // Renders the Pick/Type toggle for date & time entry.
@@ -636,6 +709,82 @@ export default function SchedulePage() {
     );
   }
 
+  // Month view: calendar grid with per-day shift counts and names. Tap a
+  // date to see its shifts below — same cards as list/week, so edit and
+  // delete work the same.
+  function monthView() {
+    const y = monthCursor.getFullYear();
+    const m = monthCursor.getMonth();
+    const firstDow = new Date(y, m, 1, 12).getDay();
+    const daysInMonth = new Date(y, m + 1, 0, 12).getDate();
+    const today = chicagoToday(company?.timezone);
+    const cells = [];
+    for (let i = 0; i < firstDow; i++) {
+      cells.push(<div key={`blank-${i}`} style={monthBlank} aria-hidden="true" />);
+    }
+    for (let d = 1; d <= daysInMonth; d++) {
+      const iso = toISODate(new Date(y, m, d, 12));
+      const dayShifts = monthShifts.filter((s) => s.shift_date === iso);
+      const uniqNames = [...new Set(dayShifts.map((s) => shortName(s.assignee_name)))];
+      const shown = uniqNames.slice(0, 3);
+      const extra = uniqNames.length - shown.length;
+      cells.push(
+        <button
+          key={iso}
+          type="button"
+          onClick={() => setSelectedDay(iso)}
+          style={{
+            ...monthCell,
+            ...(iso === today ? monthTodayCell : null),
+            ...(iso === selectedDay ? monthSelectedCell : null),
+          }}
+        >
+          <strong style={{ fontSize: "0.95rem" }}>{d}</strong>
+          {dayShifts.length > 0 && (
+            <span style={monthCount}>{dayShifts.length} shift{dayShifts.length === 1 ? "" : "s"}</span>
+          )}
+          {shown.map((n) => (
+            <span key={n} style={monthName}>{n}</span>
+          ))}
+          {extra > 0 && <span style={monthName}>+{extra} more</span>}
+        </button>
+      );
+    }
+    const selShifts = monthShifts.filter((s) => s.shift_date === selectedDay);
+    const selDate = parseDay(selectedDay);
+    const selLabel = `${WEEKDAY_NAMES[selDate.getDay()]}, ${MONTH_NAMES_FULL[selDate.getMonth()]} ${selDate.getDate()}, ${selDate.getFullYear()}`;
+    return (
+      <div>
+        <h3 style={{ margin: "4px 0 12px" }}>Monthly Shift Calendar — Who's Working</h3>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8, flexWrap: "wrap" }}>
+          <button type="button" onClick={() => changeMonth(-1)} style={ghostBtn}>‹ Previous</button>
+          <strong style={{ flex: 1, textAlign: "center" }}>{MONTH_NAMES_FULL[m]} {y}</strong>
+          <button type="button" onClick={() => changeMonth(1)} style={ghostBtn}>Next ›</button>
+        </div>
+        <p style={{ fontSize: "0.88rem", color: "var(--muted)", margin: "0 0 10px" }}>
+          Tap a date to see everyone assigned, their shifts and locations. Workweek: Sunday–Saturday.
+        </p>
+        <div style={monthGrid}>
+          {WEEKDAY_SHORT.map((w) => (
+            <div key={w} style={monthHeader}>{w}</div>
+          ))}
+          {cells}
+        </div>
+        <div style={{ marginTop: 18 }}>
+          <h3 style={{ margin: "0 0 2px" }}>{selLabel}</h3>
+          <p style={{ color: "var(--muted)", margin: "0 0 10px" }}>
+            {selShifts.length} scheduled shift{selShifts.length === 1 ? "" : "s"}
+          </p>
+          <div style={{ display: "grid", gap: 10 }}>
+            {selShifts.length === 0
+              ? <p style={{ color: "var(--muted)" }}>No shifts scheduled that day.</p>
+              : selShifts.map(shiftCard)}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div>
       <p className="eyebrow">SCHEDULE</p>
@@ -646,6 +795,7 @@ export default function SchedulePage() {
         <div style={{ display: "flex", gap: 4, marginLeft: "auto" }}>
           <button type="button" onClick={() => setView("list")} style={view === "list" ? toggleOn : toggleOff}>List</button>
           <button type="button" onClick={() => setView("week")} style={view === "week" ? toggleOn : toggleOff}>📅 Week</button>
+          <button type="button" onClick={() => setView("month")} style={view === "month" ? toggleOn : toggleOff}>🗓️ Month</button>
         </div>
       </div>
 
@@ -701,8 +851,10 @@ export default function SchedulePage() {
             {shifts.length === 0 && <p style={{ color: "var(--muted)" }}>No upcoming shifts yet.</p>}
             {shifts.map(shiftCard)}
           </>
-        ) : (
+        ) : view === "week" ? (
           weekView()
+        ) : (
+          monthView()
         )}
       </div>
 
@@ -849,4 +1001,63 @@ const toggleOff = {
   fontWeight: 700,
   cursor: "pointer",
   fontSize: "0.85rem",
+};
+
+const monthGrid = {
+  display: "grid",
+  gridTemplateColumns: "repeat(7, 1fr)",
+  gap: 6,
+};
+
+const monthHeader = {
+  textAlign: "center",
+  fontWeight: 800,
+  fontSize: "0.8rem",
+  color: "var(--muted)",
+  padding: "4px 0",
+};
+
+const monthBlank = {
+  minHeight: 64,
+};
+
+const monthCell = {
+  border: "1px solid var(--line)",
+  borderRadius: 12,
+  background: "#fff",
+  padding: "6px 4px",
+  minHeight: 64,
+  display: "flex",
+  flexDirection: "column",
+  alignItems: "flex-start",
+  gap: 1,
+  cursor: "pointer",
+  textAlign: "left",
+  fontSize: "0.75rem",
+  color: "inherit",
+  overflow: "hidden",
+};
+
+const monthTodayCell = {
+  border: "2px solid var(--brand)",
+};
+
+const monthSelectedCell = {
+  background: "#e6f4ea",
+  border: "2px solid #1e7e34",
+};
+
+const monthCount = {
+  color: "#1e7e34",
+  fontWeight: 800,
+  fontSize: "0.72rem",
+};
+
+const monthName = {
+  color: "var(--muted)",
+  fontSize: "0.7rem",
+  whiteSpace: "nowrap",
+  overflow: "hidden",
+  textOverflow: "ellipsis",
+  maxWidth: "100%",
 };

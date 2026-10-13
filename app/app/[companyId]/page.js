@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { supabase } from "../../../lib/supabase";
 import { useCompany } from "../../../lib/company-context";
-import { canUse, tierLabel } from "../../../lib/tiers";
+import { canUseWithRole, tierLabel } from "../../../lib/tiers";
 import { roleRank, roleLabel } from "../../../lib/roles";
 import { chicagoToday, formatTime12h } from "../../../lib/dates";
 import EmergencyButton from "../../../components/EmergencyButton";
@@ -151,7 +151,7 @@ export default function CompanyDashboard() {
 
       <div className="portal-grid" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))" }}>
         {visibleCards.map((t) => {
-          const allowed = canUse(tier, t.key);
+          const allowed = canUseWithRole(tier, t.key, member?.role);
           const href = allowed ? `/app/${company.id}/${t.href}` : `/app/${company.id}/plans`;
           return (
             <Link className="portal-card" style={{ minHeight: 150, padding: 22 }} href={href} key={t.key}>
