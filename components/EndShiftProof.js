@@ -212,9 +212,9 @@ const EndShiftProof = forwardRef(function EndShiftProof(
         throw new Error("Camera opened but no video is coming through. Check that no other app is using the camera and try again.");
       }
 
-      // Safari 18.4+ can record WebM VP8/Opus. WebKit MP4 bugs
-      // can leave picture frozen while audio continues. Prefer WebM on Apple
-      // only when BOTH recording and playback are supported on this device.
+      // Restore WebM-first on Android and prefer supported WebM on Apple:
+      // MP4-first caused video to stop after 23–35 seconds while audio ran.
+      // Require both MediaRecorder capture and native playback support.
       const probeVideo = document.createElement("video");
       const mimeType = chooseRecorderMimeType({
         isIOS: isiOS,
