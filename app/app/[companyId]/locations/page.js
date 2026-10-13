@@ -6,6 +6,7 @@ import { useCompany } from "../../../../lib/company-context";
 import { canUseWithRole } from "../../../../lib/tiers";
 import { isManagerRole, isSupervisorRole } from "../../../../lib/roles";
 import { chicagoToday, chicagoDaysAgo } from "../../../../lib/dates";
+import { validateLocationGeofence } from "../../../../lib/location-geofence-validation.mjs";
 
 const emptyForm = { name: "", address: "", client_name: "", client_phone: "", notes: "", lat: "", lng: "", geofence_radius_m: 100, rate_area_id: "" };
 
@@ -105,8 +106,14 @@ export default function LocationsPage() {
     if (busy) return; // no double-tap dupes
     setBusy(true);
     const sb = supabase();
-    const lat = form.lat === "" ? null : parseFloat(form.lat);
-    const lng = form.lng === "" ? null : parseFloat(form.lng);
+    const lat = form.lat === "" ? null : Number(form.lat);
+    const lng = form.lng === "" ? null : Number(form.lng);
+    const geofenceError = validateLocationGeofence(form.address, form.lat, form.lng);
+    if (geofenceError) {
+      setBusy(false);
+      alert(geofenceError);
+      return;
+    }
     const payload = {
       company_id: company.id,
       name: form.name.trim(),
@@ -241,7 +248,7 @@ export default function LocationsPage() {
                 <input type="number" min="10" value={form.geofence_radius_m} onChange={(e) => setForm({ ...form, geofence_radius_m: e.target.value })} style={{ ...input, marginTop: 6 }} />
               </label>
               <p style={{ fontSize: "0.82rem", color: "var(--muted)", margin: "8px 0 0" }}>
-                Clock-ins outside this boundary are blocked.
+                Clock-ins outside this boundary are blocked. For Missouri sites, longitude must be negative (west). Confirm the pin at the building.
               </p>
               <p style={{ fontSize: "0.75rem", color: "var(--muted)", margin: "4px 0 0" }}>
                 Address lookup by OpenStreetMap contributors.
