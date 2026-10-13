@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "prebuild": "node scripts/check-end-shift-proof.js && node scripts/check-clock-in-schedule.js && node scripts/check-attendance-alerts.mjs",
+    "prebuild": "node scripts/check-end-shift-proof.js && node scripts/check-clock-in-schedule.js && node scripts/check-attendance-alerts.mjs && node scripts/check-ios-video-integrity.mjs",
     "start": "next start"
   },
   "dependencies": {
