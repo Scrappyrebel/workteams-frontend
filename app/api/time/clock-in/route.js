@@ -88,7 +88,7 @@ export async function POST(req) {
 
     const { data: company } = await sb
       .from("companies")
-      .select("id, tier, subscription_status")
+      .select("id, tier, subscription_status, timezone")
       .eq("id", companyId)
       .single();
     const { data: location } = await sb
@@ -123,10 +123,13 @@ export async function POST(req) {
     // Choose the nearest eligible shift at THIS site and time. Previously
     // .find() returned the first shift of the day (even a morning shift at
     // 6 PM), causing false missing-clock-in alerts for the later shift.
-    const shift = chooseAssignedShift(memberShifts, now);
+    const shift = chooseAssignedShift(memberShifts, now, new Set(), company?.timezone || "America/Chicago");
     if (!shift) {
+      const todayAssignments = (memberShifts || []).filter((s) => s.shift_date === todayStr);
       return NextResponse.json(
-        { error: "You have no shift assigned to YOUR account at this location today. Another employee's shift does not authorize your clock-in. Ask a manager to schedule you first." },
+        { error: todayAssignments.length
+          ? "Your shift is over 30 minutes past its scheduled start. A verified manager must authorize clock-in."
+          : "You have no shift assigned to YOUR account at this location today. Ask management to check your schedule." },
         { status: 403 }
       );
     }

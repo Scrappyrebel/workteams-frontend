@@ -7,6 +7,7 @@ import { canUseWithRole } from "../../../../lib/tiers";
 import { isManagerRole, isSupervisorRole } from "../../../../lib/roles";
 import EmergencyButton from "../../../../components/EmergencyButton";
 import EndShiftProof from "../../../../components/EndShiftProof";
+import { chooseAssignedShift } from "../../../../lib/attendance-shifts.mjs";
 
 function getPosition() {
   return new Promise((resolve) => {
@@ -48,6 +49,7 @@ export default function TimeClockPage() {
   const [myShifts, setMyShifts] = useState([]);
   const [shiftLoading, setShiftLoading] = useState(true);
   const [shiftError, setShiftError] = useState("");
+  const [shiftNotice, setShiftNotice] = useState("");
   const [locationId, setLocationId] = useState("");
   const [filter, setFilter] = useState("everyone");
   const [onClock, setOnClock] = useState([]);
@@ -127,18 +129,22 @@ export default function TimeClockPage() {
       .in("shift_date", [yesterday, today]);
     if (scheduleError) {
       setShiftError("Could not check your assigned shifts. Tap Refresh my shifts.");
+      setShiftNotice("");
       setMyShifts([]);
       setLocationId("");
     } else {
-      const localTime = new Intl.DateTimeFormat("en-GB", {
-        timeZone: "America/Chicago", hour: "2-digit", minute: "2-digit", hourCycle: "h23",
-      }).format(now);
-      const valid = (assigned || []).filter((shift) =>
+      const tz = company.timezone || "America/Chicago";
+      const relevant = (assigned || []).filter((shift) =>
         shift.shift_date === today ||
-        (shift.shift_date === yesterday && shift.start_time > shift.end_time &&
-          localTime <= shift.end_time.slice(0, 5))
+        (shift.shift_date === yesterday && shift.start_time > shift.end_time)
+      );
+      const valid = relevant.filter((shift) =>
+        !!chooseAssignedShift([shift], now, new Set(), tz)
       );
       setShiftError("");
+      setShiftNotice(relevant.length > 0 && valid.length === 0
+        ? "Your scheduled shift's 30-minute clock-in window has passed. Ask management to authorize clock-in."
+        : "");
       setMyShifts(valid);
       setLocationId((id) => valid.some((shift) => shift.location_id === id) ? id : "");
     }
@@ -401,8 +407,7 @@ export default function TimeClockPage() {
             {shiftError && <p role="alert" style={{ color: "var(--danger)" }}>{shiftError}</p>}
             {!shiftLoading && !shiftError && myShifts.length === 0 && (
               <p role="status" style={{ fontWeight: 700 }}>
-                No shift assigned to your account today. Clock-in is unavailable.
-                Another employee's shifts do not count.
+                {shiftNotice || "No shift assigned to your account today. Clock-in is unavailable. Another employee's shifts do not count."}
               </p>
             )}
             <button type="button" onClick={() => void load()} disabled={busy || shiftLoading}

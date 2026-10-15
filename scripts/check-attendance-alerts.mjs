@@ -14,12 +14,38 @@ const scheduled = [morning, short, evening];
 const at = "2026-10-11T23:01:00.000Z"; // 6:01 PM Central
 assert.equal(chooseAssignedShift(scheduled, at)?.id, evening.id,
   "6:01 PM clock-in must link to 6 PM shift, never 3:45 AM Office shift");
-assert.equal(chooseAssignedShift(scheduled, "2026-10-11T20:46:00.000Z")?.id, morning.id,
-  "Existing early long Office shift may be used while still scheduled");
-assert.equal(chooseAssignedShift(scheduled, "2026-10-11T05:30:00.000Z"), null,
-  "A shift outside its permitted time window must not authorize arbitrary clock-in");
+assert.equal(chooseAssignedShift(scheduled, "2026-10-11T08:46:00.000Z")?.id, morning.id,
+  "Clock-in just after the earlier scheduled start is permitted");
+assert.equal(chooseAssignedShift(scheduled, "2026-10-11T05:30:00.000Z")?.id, morning.id,
+  "Early clock-in is permitted at any time on the scheduled workday");
 assert.equal(chooseAssignedShift(scheduled, "2026-10-11T22:15:00.000Z")?.id, short.id,
   "Shift at 5:15 PM uses its own assignment");
+// Early starts are unrestricted on the scheduled day, but more than 30
+// minutes after scheduled start requires authenticated management approval.
+const tonight = { ...evening, id: "eight-pm", shift_date: "2026-10-15", start_time: "20:00:00", end_time: "22:00:00" };
+assert.equal(chooseAssignedShift([tonight], "2026-10-15T05:00:00Z")?.id, tonight.id,
+  "Midnight Central on the assigned shift date is allowed");
+assert.equal(chooseAssignedShift([tonight], "2026-10-15T22:00:00Z")?.id, tonight.id,
+  "Three hours early is allowed");
+assert.equal(chooseAssignedShift([tonight], "2026-10-16T01:30:00Z")?.id, tonight.id,
+  "Exactly 30 minutes late is allowed");
+assert.equal(chooseAssignedShift([tonight], "2026-10-16T01:30:01Z"), null,
+  "More than 30 minutes late requires management authorization");
+assert.equal(chooseAssignedShift([tonight], "2026-10-16T02:00:00Z"), null,
+  "Late clock-in during the scheduled shift still needs approval");
+assert.equal(chooseAssignedShift([tonight], "2026-10-15T04:59:00Z"), null,
+  "The previous calendar day is not automatically authorized");
+const overnightStart = { ...tonight, id: "overnight-start", start_time: "23:50:00", end_time: "02:00:00" };
+assert.equal(chooseAssignedShift([overnightStart], "2026-10-16T05:15:00Z")?.id, overnightStart.id,
+  "An 11:50 PM shift remains eligible at 12:15 AM");
+assert.equal(chooseAssignedShift([overnightStart], "2026-10-16T05:21:00Z"), null,
+  "An overnight shift is not eligible after 30 minutes");
+// Explicitly linked, correctly scoped early attendance prevents false no-show.
+assert.equal(hasShiftAttendance(tonight, [{
+  company_id: company, member_id: member, location_id: office, shift_id: tonight.id,
+  clock_in: "2026-10-15T22:00:00Z", clock_out: "2026-10-15T22:30:00Z",
+}], "2026-10-16T02:15:00Z"), true,
+  "Employee who completed their own scheduled shift early must not get a false no-show");
 // Simulate existing wrong shift_id from old first-of-day clock-in.
 const oldWrongLink = [{
   id: "wrong-linked-entry", company_id: company, member_id: member,
@@ -53,7 +79,7 @@ const clockIn = fs.readFileSync("app/api/time/clock-in/route.js", "utf8");
 const attendance = fs.readFileSync("app/api/cron/attendance/route.js", "utf8");
 const alerts = fs.readFileSync("lib/owner-alerts.js", "utf8");
 
-assert.ok(clockIn.includes("chooseAssignedShift(memberShifts, now)") &&
+assert.ok(clockIn.includes('chooseAssignedShift(memberShifts, now, new Set(), company?.timezone || "America/Chicago")') &&
   !clockIn.includes("const shift = (memberShifts || []).find("),
   "Clock In must never pick first location shift of entire day");
 assert.ok(clockIn.includes('.eq("member_id", member.id)') &&

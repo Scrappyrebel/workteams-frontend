@@ -47,7 +47,7 @@ const checks = [
    page.includes('Authorization: `Bearer ${session.access_token}`') &&
    page.includes("Why are you authorizing this unscheduled clock-in?"),
    "Owner/manager must deliberately and securely authorize exceptional clock-in."],
-  [server.includes('chooseAssignedShift(memberShifts, now)') &&
+  [server.includes('chooseAssignedShift(memberShifts, now, new Set(), company?.timezone || "America/Chicago")') &&
    server.includes('.in("shift_date", [yesterdayStr, todayStr])') &&
    !server.includes("const shift = (memberShifts || []).find("),
    "Clock-in uses the nearest eligible shift and handles overnight shifts without selecting the first shift of the day."],
