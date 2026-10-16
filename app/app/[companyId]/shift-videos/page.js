@@ -497,7 +497,7 @@ export default function ShiftVideosPage() {
             )}
             {playingId === v.id && videoUrls[v.id] && (
               <div style={{ marginTop: 8, maxWidth: 640 }}>
-                <PrivateWalkthroughPlayer url={videoUrls[v.id]} storagePath={v.video_url} />
+                <PrivateWalkthroughPlayer url={videoUrls[v.id]} storagePath={v.video_url} durationSeconds={v.duration_seconds || 0} />
                 <p style={{ color: "var(--muted)", fontSize: 12, margin: "4px 0" }}>
                   Tap Play to start. Large protected walkthroughs load their video parts on demand.
                 </p>
