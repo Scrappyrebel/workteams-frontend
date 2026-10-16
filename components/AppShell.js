@@ -141,8 +141,9 @@ export default function AppShell({ company, member, children }) {
     if (item.featureFlag && company && company[item.featureFlag] === false) return false;
     return true;
   });
-  // Temp staffing tab: only for the temp agency company, managers and up.
-  if (isTempAgency && roleAtLeast(role, "manager")) {
+  // Temp staffing tab: managers and up, for enabled companies — plus the
+  // product owner always, so the per-company enable button is reachable.
+  if ((isTempAgency || isOwner) && roleAtLeast(role, "manager")) {
     links.push({
       key: "tempstaffing",
       label: "🧹 Temp Staffing",
