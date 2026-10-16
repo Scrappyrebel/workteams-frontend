@@ -59,6 +59,21 @@ export default function TempDashboard() {
     setRequests(rq || []);
     setApps(ap || []);
     setCfg(cf || null);
+    // Skill tags (tolerant: table arrives with migration 046).
+    try {
+      const { data: sk, error: skErr } = await sb.from("temp_member_skills").select("*").eq("company_id", company.id).limit(500);
+      setSkills(skErr ? [] : (sk || []));
+    } catch {
+      setSkills([]);
+    }
+    // Assignments for this company's requests (profiles + dispatch view).
+    const ids = (rq || []).map((r) => r.id);
+    if (ids.length > 0) {
+      const { data: asg } = await sb.from("temp_assignments").select("*").in("job_request_id", ids).limit(500);
+      setAssignments(asg || []);
+    } else {
+      setAssignments([]);
+    }
   }
 
   async function setRequestStatus(id, status) {
@@ -70,6 +85,12 @@ export default function TempDashboard() {
   const [assigning, setAssigning] = useState({});
   const [hireTrack, setHireTrack] = useState({});
   const [conversions, setConversions] = useState([]);
+  // Batch 1: temp profiles, skill tags, per-assignment pay.
+  const [skills, setSkills] = useState([]);
+  const [newSkill, setNewSkill] = useState({});
+  const [assignments, setAssignments] = useState([]);
+  const [expandedTemp, setExpandedTemp] = useState(null);
+  const [payRate, setPayRate] = useState({});
 
   async function loadConversions() {
     const { data } = await supabase()
@@ -90,6 +111,62 @@ export default function TempDashboard() {
     if (!error) loadConversions();
   }
 
+  // ---------- Batch 1: profiles, skills, per-assignment pay ----------
+  async function enableTemp() {
+    const { error } = await supabase()
+      .from("temp_agency_config")
+      .insert({ company_id: company.id, enabled: true });
+    if (error) {
+      setMsg("Enable failed: " + error.message);
+      return;
+    }
+    setIsAgency(true);
+    setMsg("Temp staffing enabled for this company.");
+    loadAll();
+  }
+
+  function skillsFor(memberId) {
+    return skills.filter((s) => s.member_id === memberId);
+  }
+
+  async function addSkill(memberId) {
+    const skill = (newSkill[memberId] || "").trim().toLowerCase();
+    if (!skill || !memberId) return;
+    const { error } = await supabase().from("temp_member_skills").insert({
+      company_id: company.id,
+      member_id: memberId,
+      skill,
+    });
+    if (error) {
+      setMsg("Add skill failed: " + error.message);
+      return;
+    }
+    setNewSkill({ ...newSkill, [memberId]: "" });
+    const { data } = await supabase().from("temp_member_skills").select("*").eq("company_id", company.id).limit(500);
+    setSkills(data || []);
+  }
+
+  async function removeSkill(id) {
+    const { error } = await supabase().from("temp_member_skills").delete().eq("id", id);
+    if (error) {
+      setMsg("Remove failed: " + error.message);
+    } else {
+      setSkills(skills.filter((s) => s.id !== id));
+    }
+  }
+
+  function assignmentsFor(memberId) {
+    return assignments.filter((a) => a.member_id === memberId);
+  }
+
+  function requestFor(jobId) {
+    return requests.find((r) => r.id === jobId);
+  }
+
+  function fmtPay(cents) {
+    return cents == null ? "" : ` · $${(cents / 100).toFixed(2)}/hr`;
+  }
+
   async function assignTemp(jobId, appId) {
     const app = apps.find((a) => a.id === appId);
     if (!app?.member_id) {
@@ -99,10 +176,16 @@ export default function TempDashboard() {
     const days = parseInt(hireTrack[jobId] || "90", 10);
     const eligible = new Date();
     eligible.setDate(eligible.getDate() + days);
+    // Per-assignment pay: blank input falls back to the company default.
+    const entered = payRate[jobId];
+    const rate = (entered === undefined || entered === "")
+      ? parseFloat(cfg?.temp_hourly_pay ?? 20) || 20
+      : parseFloat(entered) || 0;
     const { error } = await supabase().from("temp_assignments").insert({
       job_request_id: jobId,
       member_id: app.member_id,
       status: "offered",
+      pay_rate_cents: Math.round(rate * 100),
       hire_track_days: days,
       hire_eligible_date: eligible.toISOString().slice(0, 10),
     });
@@ -180,21 +263,28 @@ export default function TempDashboard() {
       <main className="site-shell"><section className="panel" style={{ padding: 30 }}>Loading…</section></main>
     );
   }
-  if (!isAgency) {
-    return (
-      <main className="site-shell">
-        <section className="panel" style={{ padding: 30 }}>
-          <h2>Temp staffing isn't enabled for this company</h2>
-          <p style={{ color: "var(--muted)" }}>This section is only available to temp staffing companies.</p>
-        </section>
-      </main>
-    );
-  }
   if (!isManager) {
     return (
       <main className="site-shell">
         <section className="panel" style={{ padding: 30 }}>
           <h2>Managers only</h2>
+        </section>
+      </main>
+    );
+  }
+  if (!isAgency) {
+    return (
+      <main className="site-shell">
+        <section className="panel" style={{ padding: 30 }}>
+          <h2>Temp staffing isn't enabled for this company</h2>
+          <p style={{ color: "var(--muted)" }}>
+            Turn it on to get job requests, the temp pool, per-assignment pay, and dispatch here.
+            You can enable it for both your cleaning company and your staffing company — each keeps its own rates.
+          </p>
+          <button className="btn-primary" style={{ padding: "10px 20px", marginTop: 12 }} onClick={enableTemp}>
+            Enable temp staffing
+          </button>
+          {msg && <p style={{ color: "var(--muted)", fontSize: 14 }}>{msg}</p>}
         </section>
       </main>
     );
@@ -254,10 +344,25 @@ export default function TempDashboard() {
                       style={{ padding: 8, flex: 1, minWidth: 160 }}
                     >
                       <option value="">Choose temp…</option>
-                      {approvedTemps.map((t) => (
-                        <option key={t.id} value={t.id}>{t.full_name}</option>
-                      ))}
+                      {approvedTemps.map((t) => {
+                        const sk = skillsFor(t.member_id).map((s) => s.skill).join(", ");
+                        return (
+                          <option key={t.id} value={t.id}>
+                            {t.full_name}{sk ? ` (${sk})` : ""}
+                          </option>
+                        );
+                      })}
                     </select>
+                    <label style={{ fontSize: 13, display: "flex", alignItems: "center", gap: 4 }}>
+                      Pay $/hr
+                      <input
+                        type="number" step="0.01" min="0"
+                        value={payRate[r.id] ?? cfg?.temp_hourly_pay ?? 20}
+                        onChange={(e) => setPayRate({ ...payRate, [r.id]: e.target.value })}
+                        style={{ padding: 8, width: 84 }}
+                        title="Pay rate for this assignment (blank = company default)"
+                      />
+                    </label>
                     <select
                       value={hireTrack[r.id] || "90"}
                       onChange={(e) => setHireTrack({ ...hireTrack, [r.id]: e.target.value })}
@@ -276,6 +381,18 @@ export default function TempDashboard() {
                       Assign
                     </button>
                   </div>
+                  {assignments.filter((a) => a.job_request_id === r.id).length > 0 && (
+                    <div style={{ marginTop: 8, fontSize: 13 }}>
+                      {assignments.filter((a) => a.job_request_id === r.id).map((a) => {
+                        const ta = apps.find((x) => x.member_id === a.member_id);
+                        return (
+                          <div key={a.id} style={{ padding: "4px 0" }}>
+                            • {ta?.full_name || "Temp"} — {a.status}{fmtPay(a.pay_rate_cents)}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
               )}
               <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
@@ -314,11 +431,72 @@ export default function TempDashboard() {
             </div>
           ))}
           <h2 style={{ marginTop: 24 }}>Approved temps ({approvedTemps.length})</h2>
-          {approvedTemps.map((a) => (
-            <div key={a.id} className="card" style={{ padding: 12, marginBottom: 8, fontSize: 14 }}>
-              <strong>{a.full_name}</strong> · {a.email} {a.phone ? `· ${a.phone}` : ""}
-            </div>
-          ))}
+          <p style={{ color: "var(--muted)", fontSize: 13 }}>Tap a temp to see their profile, skill tags, and past assignments.</p>
+          {approvedTemps.map((a) => {
+            const sk = skillsFor(a.member_id);
+            const hist = assignmentsFor(a.member_id);
+            const open = expandedTemp === a.id;
+            return (
+              <div key={a.id} className="card" style={{ padding: 12, marginBottom: 8, fontSize: 14 }}>
+                <div
+                  onClick={() => setExpandedTemp(open ? null : a.id)}
+                  style={{ cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}
+                >
+                  <span>
+                    <strong>{a.full_name}</strong> · {a.email} {a.phone ? `· ${a.phone}` : ""}
+                    {sk.length > 0 && (
+                      <span style={{ color: "var(--muted)" }}> · {sk.map((s) => s.skill).join(", ")}</span>
+                    )}
+                  </span>
+                  <span style={{ color: "var(--muted)" }}>{open ? "▾" : "▸"}</span>
+                </div>
+                {open && (
+                  <div style={{ marginTop: 10, borderTop: "1px solid var(--border, #e5e7eb)", paddingTop: 10 }}>
+                    {a.availability && <div style={{ fontSize: 13, marginBottom: 6 }}><strong>Availability:</strong> {a.availability}</div>}
+                    {a.experience && <div style={{ fontSize: 13, marginBottom: 6 }}><strong>Experience:</strong> {a.experience}</div>}
+                    <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>Skill tags</div>
+                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 8 }}>
+                      {sk.map((s) => (
+                        <span key={s.id} className="badge" style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                          {s.skill}
+                          <button
+                            onClick={() => removeSkill(s.id)}
+                            style={{ border: "none", background: "none", cursor: "pointer", fontSize: 14, lineHeight: 1 }}
+                            title="Remove skill"
+                          >×</button>
+                        </span>
+                      ))}
+                      {sk.length === 0 && <span style={{ fontSize: 13, color: "var(--muted)" }}>No skills yet.</span>}
+                    </div>
+                    <div style={{ display: "flex", gap: 6 }}>
+                      <input
+                        value={newSkill[a.member_id] || ""}
+                        onChange={(e) => setNewSkill({ ...newSkill, [a.member_id]: e.target.value })}
+                        onKeyDown={(e) => { if (e.key === "Enter") addSkill(a.member_id); }}
+                        placeholder="Add a skill, e.g. floor care"
+                        style={{ padding: 8, flex: 1, fontSize: 13 }}
+                      />
+                      <button className="btn-ghost" style={{ padding: "8px 14px", fontSize: 13 }} onClick={() => addSkill(a.member_id)}>
+                        Add
+                      </button>
+                    </div>
+                    <div style={{ fontSize: 13, fontWeight: 600, marginTop: 10, marginBottom: 4 }}>
+                      Past assignments ({hist.length})
+                    </div>
+                    {hist.length === 0 && <div style={{ fontSize: 13, color: "var(--muted)" }}>No assignments yet.</div>}
+                    {hist.map((h) => {
+                      const rq = requestFor(h.job_request_id);
+                      return (
+                        <div key={h.id} style={{ fontSize: 13, padding: "4px 0" }}>
+                          • {rq ? `${rq.service_type.replace(/_/g, " ")} — ${rq.customer_name}${rq.job_date ? ` (${rq.job_date})` : ""}` : "Job"} — {h.status}{fmtPay(h.pay_rate_cents)}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </section>
       )}
 
