@@ -91,6 +91,8 @@ export default function TempDashboard() {
   const [assignments, setAssignments] = useState([]);
   const [expandedTemp, setExpandedTemp] = useState(null);
   const [payRate, setPayRate] = useState({});
+  // Batch 2: backfill picker.
+  const [replacing, setReplacing] = useState({});
 
   async function loadConversions() {
     const { data } = await supabase()
@@ -167,7 +169,18 @@ export default function TempDashboard() {
     return cents == null ? "" : ` · $${(cents / 100).toFixed(2)}/hr`;
   }
 
-  async function assignTemp(jobId, appId) {
+  // ---------- Batch 2: backfill ----------
+  async function markNoShow(assignmentId) {
+    if (!window.confirm("Mark this temp as a no-show?")) return;
+    const { error } = await supabase()
+      .from("temp_assignments")
+      .update({ status: "no_show" })
+      .eq("id", assignmentId);
+    setMsg(error ? "Update failed: " + error.message : "Marked as no-show. Pick a replacement below.");
+    if (!error) loadAll();
+  }
+
+  async function assignTemp(jobId, appId, payCents = null) {
     const app = apps.find((a) => a.id === appId);
     if (!app?.member_id) {
       setMsg("Temp needs an approved team invite first.");
@@ -176,16 +189,21 @@ export default function TempDashboard() {
     const days = parseInt(hireTrack[jobId] || "90", 10);
     const eligible = new Date();
     eligible.setDate(eligible.getDate() + days);
-    // Per-assignment pay: blank input falls back to the company default.
-    const entered = payRate[jobId];
-    const rate = (entered === undefined || entered === "")
-      ? parseFloat(cfg?.temp_hourly_pay ?? 20) || 20
-      : parseFloat(entered) || 0;
+    // Per-assignment pay: explicit override (backfill keeps the old rate),
+    // otherwise the box input, otherwise the company default.
+    let cents = payCents;
+    if (cents == null) {
+      const entered = payRate[jobId];
+      const rate = (entered === undefined || entered === "")
+        ? parseFloat(cfg?.temp_hourly_pay ?? 20) || 20
+        : parseFloat(entered) || 0;
+      cents = Math.round(rate * 100);
+    }
     const { error } = await supabase().from("temp_assignments").insert({
       job_request_id: jobId,
       member_id: app.member_id,
       status: "offered",
-      pay_rate_cents: Math.round(rate * 100),
+      pay_rate_cents: cents,
       hire_track_days: days,
       hire_eligible_date: eligible.toISOString().slice(0, 10),
     });
@@ -321,17 +339,23 @@ export default function TempDashboard() {
         <section className="panel" style={{ padding: 24, marginTop: 16 }}>
           <h2 style={{ marginTop: 0 }}>Job requests</h2>
           {requests.length === 0 && <p style={{ color: "var(--muted)" }}>No requests yet.</p>}
-          {requests.map((r) => (
+          {requests.map((r) => {
+            const reqAsg = assignments.filter((a) => a.job_request_id === r.id);
+            const assignedIds = new Set(reqAsg.map((a) => a.member_id));
+            const availableTemps = approvedTemps.filter((t) => t.member_id && !assignedIds.has(t.member_id));
+            const needsBackfill = reqAsg.some((a) => a.status === "no_show" || a.status === "declined");
+            return (
             <div key={r.id} className="card" style={{ padding: 16, marginBottom: 12 }}>
               <div style={{ display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
                 <strong>{r.service_type.replace(/_/g, " ")}</strong>
                 <span className="badge">{STATUS_LABELS[r.status] || r.status}</span>
               </div>
               <div style={{ fontSize: 14, color: "var(--muted)", marginTop: 6 }}>
-                {r.cleaners_needed} cleaner(s) × {r.hours_requested} hr · {r.customer_name} · {r.customer_email}
+                {r.cleaners_needed} cleaner(s) × {r.hours_requested} hr · {r.customer_name}{r.customer_email ? ` · ${r.customer_email}` : ""}
                 <br />
                 {r.site_address} {r.job_date ? `· ${r.job_date}` : ""}
                 {r.quoted_cents ? <><br />Quoted: ${(r.quoted_cents / 100).toFixed(2)}</> : null}
+                {r.hours_confirmed != null ? <><br />✅ Client confirmed {r.hours_confirmed} hr</> : null}
               </div>
               {r.job_details && <p style={{ fontSize: 14 }}>{r.job_details}</p>}
               {(r.status === "paid" || r.status === "assigned") && approvedTemps.length > 0 && (
@@ -381,16 +405,57 @@ export default function TempDashboard() {
                       Assign
                     </button>
                   </div>
-                  {assignments.filter((a) => a.job_request_id === r.id).length > 0 && (
-                    <div style={{ marginTop: 8, fontSize: 13 }}>
-                      {assignments.filter((a) => a.job_request_id === r.id).map((a) => {
-                        const ta = apps.find((x) => x.member_id === a.member_id);
-                        return (
-                          <div key={a.id} style={{ padding: "4px 0" }}>
-                            • {ta?.full_name || "Temp"} — {a.status}{fmtPay(a.pay_rate_cents)}
-                          </div>
-                        );
-                      })}
+                </div>
+              )}
+              {reqAsg.length > 0 && (
+                <div style={{ marginTop: 10, padding: 10, background: "var(--panel-2, #f6f7fb)", borderRadius: 8 }}>
+                  <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}>Assigned temps</div>
+                  {reqAsg.map((a) => {
+                    const ta = apps.find((x) => x.member_id === a.member_id);
+                    const actionable = ["offered", "accepted", "in_progress"].includes(a.status);
+                    return (
+                      <div key={a.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, padding: "4px 0", fontSize: 13 }}>
+                        <span>• {ta?.full_name || "Temp"} — {a.status}{fmtPay(a.pay_rate_cents)}</span>
+                        {actionable && (
+                          <button className="btn-ghost" style={{ padding: "4px 10px", fontSize: 12 }} onClick={() => markNoShow(a.id)}>
+                            No-show
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
+                  {needsBackfill && (
+                    <div style={{ marginTop: 8, paddingTop: 8, borderTop: "1px solid var(--border, #e5e7eb)" }}>
+                      <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}>Backfill — send a replacement fast</div>
+                      {availableTemps.length === 0 ? (
+                        <div style={{ fontSize: 13, color: "var(--muted)" }}>No other approved temps available.</div>
+                      ) : (
+                        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                          <select
+                            value={replacing[r.id] || ""}
+                            onChange={(e) => setReplacing({ ...replacing, [r.id]: e.target.value })}
+                            style={{ padding: 8, flex: 1, minWidth: 160 }}
+                          >
+                            <option value="">Choose replacement…</option>
+                            {availableTemps.map((t) => {
+                              const sk = skillsFor(t.member_id).map((s) => s.skill).join(", ");
+                              return <option key={t.id} value={t.id}>{t.full_name}{sk ? ` (${sk})` : ""}</option>;
+                            })}
+                          </select>
+                          <button
+                            className="btn-primary"
+                            style={{ padding: "8px 16px" }}
+                            disabled={!replacing[r.id]}
+                            onClick={() => {
+                              const ns = reqAsg.find((a) => a.status === "no_show" || a.status === "declined");
+                              assignTemp(r.id, replacing[r.id], ns?.pay_rate_cents ?? null);
+                              setReplacing({ ...replacing, [r.id]: "" });
+                            }}
+                          >
+                            Send replacement
+                          </button>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
@@ -404,7 +469,8 @@ export default function TempDashboard() {
                 ))}
               </div>
             </div>
-          ))}
+            );
+          })}
         </section>
       )}
 

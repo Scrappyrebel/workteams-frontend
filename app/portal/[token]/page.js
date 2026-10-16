@@ -22,6 +22,12 @@ export default function PortalPage() {
   const [cleanReq, setCleanReq] = useState({ kind: "extra", date: "", notes: "" });
   const [cleanBusy, setCleanBusy] = useState(false);
   const [cleanDone, setCleanDone] = useState(null);
+  // Temp staffing (Batch 2): request temps + confirm hours, when enabled.
+  const [tempReq, setTempReq] = useState({ serviceType: "commercial", cleanersNeeded: 2, hoursRequested: 4, jobDate: "", siteAddress: "", jobDetails: "" });
+  const [tempBusy, setTempBusy] = useState(false);
+  const [tempDone, setTempDone] = useState(false);
+  const [confirming, setConfirming] = useState({});
+  const [confirmBusy, setConfirmBusy] = useState(null);
   const [signingAmend, setSigningAmend] = useState(null);
   const [signName, setSignName] = useState("");
   const [signBusy, setSignBusy] = useState(false);
@@ -38,6 +44,9 @@ export default function PortalPage() {
         setData(result && typeof result.ok === "boolean"
           ? result
           : { ok: false, error: "Could not load this page. Please try again later." });
+        if (result && result.ok && result.location_address) {
+          setTempReq((t) => ({ ...t, siteAddress: t.siteAddress || result.location_address }));
+        }
       } catch {
         setData({ ok: false, error: "Could not load this page. Please try again later." });
       }
@@ -110,6 +119,44 @@ export default function PortalPage() {
       alert(err.message);
     }
     setCleanBusy(false);
+  }
+
+  async function requestTemps(e) {
+    e.preventDefault();
+    setTempBusy(true);
+    try {
+      const res = await fetch("/api/portal/temp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token, action: "request", ...tempReq }),
+      });
+      const j = await res.json();
+      if (!res.ok) throw new Error(j.error || "Could not submit");
+      setTempDone(true);
+    } catch (err) {
+      alert(err.message);
+    }
+    setTempBusy(false);
+  }
+
+  async function confirmHours(e, requestId) {
+    e.preventDefault();
+    const hours = parseFloat(confirming[requestId]);
+    if (!Number.isFinite(hours) || hours < 0) { alert("Enter the hours worked."); return; }
+    setConfirmBusy(requestId);
+    try {
+      const res = await fetch("/api/portal/temp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token, action: "confirm_hours", requestId, hours }),
+      });
+      const j = await res.json();
+      if (!res.ok) throw new Error(j.error || "Could not confirm");
+      window.location.reload();
+    } catch (err) {
+      alert(err.message);
+      setConfirmBusy(null);
+    }
   }
 
   const money = (n) => (n == null ? "priced on request" : "$" + Number(n).toFixed(2));
@@ -306,6 +353,90 @@ export default function PortalPage() {
                 </form>
               )}
             </section>
+
+            {data.temp_enabled && (
+              <section className="panel" style={{ padding: 22, margin: "18px 0" }}>
+                <h3 style={{ marginTop: 0 }}>Request temp staff</h3>
+                {tempDone ? (
+                  <p style={{ color: "#1e8e4d", fontWeight: 700 }}>✅ Request received — we'll confirm your temp staff shortly.</p>
+                ) : (
+                  <form onSubmit={requestTemps} style={{ display: "grid", gap: 10 }}>
+                    <div style={{ display: "flex", gap: 8 }}>
+                      <label style={{ flex: 1, fontSize: "0.85rem", display: "grid", gap: 4 }}>
+                        Service
+                        <select value={tempReq.serviceType} onChange={(e) => setTempReq({ ...tempReq, serviceType: e.target.value })} style={pInput}>
+                          <option value="commercial">Office & Commercial</option>
+                          <option value="residential">Residential</option>
+                          <option value="move_in_out">Move In / Move Out</option>
+                          <option value="construction_cleanup">Construction Cleanup</option>
+                          <option value="day_janitorial">Day Janitorial</option>
+                          <option value="other">Other</option>
+                        </select>
+                      </label>
+                      <label style={{ flex: 1, fontSize: "0.85rem", display: "grid", gap: 4 }}>
+                        Temps needed
+                        <input type="number" min="1" max="50" required value={tempReq.cleanersNeeded} onChange={(e) => setTempReq({ ...tempReq, cleanersNeeded: e.target.value })} style={pInput} />
+                      </label>
+                    </div>
+                    <div style={{ display: "flex", gap: 8 }}>
+                      <label style={{ flex: 1, fontSize: "0.85rem", display: "grid", gap: 4 }}>
+                        Hours
+                        <input type="number" min="1" max="500" step="0.5" required value={tempReq.hoursRequested} onChange={(e) => setTempReq({ ...tempReq, hoursRequested: e.target.value })} style={pInput} />
+                      </label>
+                      <label style={{ flex: 1, fontSize: "0.85rem", display: "grid", gap: 4 }}>
+                        Date needed
+                        <input type="date" value={tempReq.jobDate} onChange={(e) => setTempReq({ ...tempReq, jobDate: e.target.value })} style={pInput} />
+                      </label>
+                    </div>
+                    <label style={{ fontSize: "0.85rem", display: "grid", gap: 4 }}>
+                      Site address
+                      <input required value={tempReq.siteAddress} onChange={(e) => setTempReq({ ...tempReq, siteAddress: e.target.value })} style={pInput} />
+                    </label>
+                    <textarea placeholder="Job details (optional)" value={tempReq.jobDetails} onChange={(e) => setTempReq({ ...tempReq, jobDetails: e.target.value })} rows={2} style={pInput} />
+                    <button type="submit" disabled={tempBusy} style={pButton}>{tempBusy ? "Sending…" : "Request temp staff"}</button>
+                  </form>
+                )}
+              </section>
+            )}
+
+            {data.temp_enabled && data.temp_requests && data.temp_requests.length > 0 && (
+              <section className="panel" style={{ padding: 22, margin: "18px 0" }}>
+                <h3 style={{ marginTop: 0 }}>My temp requests</h3>
+                <div style={{ display: "grid", gap: 8 }}>
+                  {data.temp_requests.map((r) => (
+                    <div key={r.id} className="portal-card" style={{ minHeight: 0, padding: "12px 16px" }}>
+                      <strong>{r.service_type.replace(/_/g, " ")}</strong>
+                      <div style={{ fontSize: "0.9rem", color: "var(--muted)" }}>
+                        {r.cleaners_needed} temp(s) × {r.hours_requested} hr
+                        {r.job_date ? ` · ${r.job_date}` : ""} · {r.status.replace(/_/g, " ")}
+                      </div>
+                      {r.hours_confirmed != null ? (
+                        <p style={{ color: "#1e8e4d", fontWeight: 700, fontSize: "0.9rem", margin: "8px 0 0" }}>
+                          ✅ Hours confirmed: {r.hours_confirmed}
+                        </p>
+                      ) : ["assigned", "in_progress", "completed"].includes(r.status) ? (
+                        <form onSubmit={(e) => confirmHours(e, r.id)} style={{ display: "flex", gap: 8, marginTop: 8 }}>
+                          <input
+                            type="number" min="0" step="0.25" required
+                            placeholder="Hours worked"
+                            value={confirming[r.id] || ""}
+                            onChange={(e) => setConfirming({ ...confirming, [r.id]: e.target.value })}
+                            style={{ ...pInput, flex: 1 }}
+                          />
+                          <button type="submit" disabled={confirmBusy === r.id} style={{ ...pButton, padding: "11px 18px" }}>
+                            {confirmBusy === r.id ? "Saving…" : "Confirm hours"}
+                          </button>
+                        </form>
+                      ) : (
+                        <p style={{ fontSize: "0.85rem", color: "var(--muted)", margin: "8px 0 0" }}>
+                          We'll ask you to confirm hours once the job is done.
+                        </p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </section>
+            )}
 
             <section className="panel" style={{ padding: 22, margin: "18px 0" }}>
               <h3 style={{ marginTop: 0 }}>Contact us</h3>
