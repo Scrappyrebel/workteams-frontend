@@ -1,0 +1,14 @@
+import assert from "node:assert/strict";
+import { chooseAssignedShift, hasShiftAttendance } from "../lib/attendance-shifts.mjs";
+import { repairWebmPlayback } from "../lib/webm-playback-repair.mjs";
+const zone="America/Chicago";
+const shift={id:"shift-1",company_id:"company-1",member_id:"employee-1",location_id:"site-1",shift_date:"2026-10-15",start_time:"20:00",end_time:"23:00"};
+assert.equal(chooseAssignedShift([shift],new Date("2026-10-15T22:00:00Z"),new Set(),zone)?.id,"shift-1","early starts allowed");
+assert.equal(chooseAssignedShift([shift],new Date("2026-10-16T01:30:00Z"),new Set(),zone)?.id,"shift-1","30 minutes late allowed");
+assert.equal(chooseAssignedShift([shift],new Date("2026-10-16T01:30:01Z"),new Set(),zone),null,"later requires management");
+const proof={shift_id:"shift-1",company_id:"company-1",member_id:"employee-1",location_id:"site-1",clock_in:"2026-10-16T00:45:00Z",clock_out:"2026-10-16T01:15:00Z"};
+assert.equal(hasShiftAttendance(shift,[proof],new Date("2026-10-16T01:25:00Z"),zone),true);
+assert.equal(hasShiftAttendance(shift,[{...proof,member_id:"employee-2"}],new Date("2026-10-16T01:25:00Z"),zone),false,"cross-employee time cannot count");
+assert.equal(hasShiftAttendance(shift,[{...proof,location_id:"site-2"}],new Date("2026-10-16T01:25:00Z"),zone),false,"cross-site time cannot count");
+assert.equal(await repairWebmPlayback(new Blob(["unrelated"],{type:"video/mp4"})),null,"MP4 bypasses WebM reindexing");
+console.log("Protected functional tests passed: exact late boundary, identity, location, recording fallback.");

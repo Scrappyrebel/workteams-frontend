@@ -1,0 +1,18 @@
+import assert from "node:assert/strict";
+import { repairWebmPlayback } from "../lib/webm-playback-repair.mjs";
+const b=n=>{const a=[];do{a.unshift(n%256);n=Math.floor(n/256)}while(n);return Uint8Array.from(a)};
+const v=n=>{for(let w=1;w<8;w++)if(n<2**(7*w)-1){const a=new Uint8Array(w);for(let i=w-1;i>=0;i--){a[i]=n%256;n=Math.floor(n/256)}a[0]|=1<<(8-w);return a}};
+const join=(...xs)=>Buffer.concat(xs.map(x=>Buffer.from(x)));
+const e=(id,x)=>join(b(id),v(x.length),x);
+const info=e(0x1549a966,e(0x2ad7b1,b(1000000)));
+const track=e(0x1654ae6b,e(0xae,join(e(0xd7,b(1)),e(0x83,b(1)))));
+const clusters=[];
+for(let t=0;t<=170;t+=10)clusters.push(e(0x1f43b675,join(e(0xe7,b(t*1000)),e(0xa3,Buffer.from([0x81,0,0,t%30===0?0x80:0,0x10])))));
+const source=new Blob([join(e(0x1a45dfa3,e(0x4286,b(1))),e(0x18538067,join(info,track,...clusters)))],{type:"video/webm"});
+const original=Buffer.from(await source.arrayBuffer());
+const fixed=await repairWebmPlayback(source,170);
+assert(fixed,"missing seek index must be repaired");
+assert(Math.abs(fixed.durationSeconds-170)<1,"duration must cover 2m50s");
+assert.deepEqual(Buffer.from(await source.arrayBuffer()),original,"original evidence must never change");
+assert(fixed.blob.size>source.size,"index must be added to temporary playback");
+console.log("Video behavioral regression passed: indexed 2:50 and original unmodified.");
