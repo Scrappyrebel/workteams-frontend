@@ -61,6 +61,14 @@ check("multipart playback protected", "components/PrivateWalkthroughPlayer.js", 
   s.includes('new Blob(chunks'));
 check("multipart deletion removes all parts", "app/app/[companyId]/shift-videos/page.js", (s) =>
   s.includes("paths = [...manifest.parts, video.video_url]"));
+check("playback-only WebM seek repair", "components/PrivateWalkthroughPlayer.js", s =>
+  s.includes("repairWebmPlayback(") && s.includes("durationSeconds") &&
+  s.includes('storage.from("shift-videos").download(storagePath)') &&
+  s.includes('URL.createObjectURL(fixed?.blob || blob)'));
+check("repair preserves original evidence", "lib/webm-playback-repair.mjs", s =>
+  s.includes("export async function repairWebmPlayback") &&
+  s.includes("new Blob(parts, { type: blob.type })") &&
+  !s.includes(".upload(") && !s.includes(".update("));
 // 9. Retry does not create a new timestamp (idempotent clock-out).
 check("idempotent clock-out", CO, (s) =>
   s.includes("alreadyClosed") && !s.includes('status: 409') || s.includes("alreadyClosed"));
