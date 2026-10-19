@@ -67,3 +67,29 @@ yet connect to the live clock-out flow** or send actual customer/employee media.
 - One bot per app may be added to its company groups, or separate bots can be approved for stronger isolation. Neither may be added to another app's groups.
 - The operator must confirm every new company's PRIVATE group, posting rights, consent and account membership before enabling its forwarding; no group is created by this code.
 - Media transport remains disabled and not connected to live recorder/book uploads. No tests involving real company evidence or paid services have been run.
+
+## Owner-only group discovery prepared for these two existing companies
+
+After the WorkTeams app is accessible again and its owner-approved release is deployed:
+
+1. Sign in as the **company owner**; open company Settings.
+2. Under **Private Telegram evidence group**, click **Get this company's setup command**.
+3. In Telegram open **WorkTeams Message App** for Lilly B's Janitorial or
+   **WorkTeams Temp Agency** for Lilly B's Temp Cleaning Staffing.
+4. Paste the FULL company/day-specific `/wtverify_…@YourWorkTeamsBot` command.
+   Privacy mode can remain enabled. Telegram holds unconfirmed updates only
+   temporarily (usually up to 24 hours), so do not send a command days early.
+5. Return to Settings and press **Verify this Telegram group**. It performs
+   an on-demand, server-only Telegram `getMe` / `getUpdates` read without
+   acknowledging/consuming any updates. Only an owner of the selected persisted
+   company may see that company's matching private group.
+6. Read the verified candidate negative numeric group ID. An invalid, wrong
+   company, missing, multiple, or reused group does not become activated.
+7. **No routing setting is saved by discovery.** A future authorized
+   company-scoped configuration step must persist unique company-to-group
+   mappings and validate bot group membership before evidence forwarding.
+
+Do not run paid Vercel deploys or activate forwarding just to discover groups;
+this screen is staged in a draft PR and is not presently live. The token already
+saved in WorkTeams Vercel Production is not exposed to the client or GitHub.
+Control Hub / HetrixTools and other apps do not share that token or destinations.
