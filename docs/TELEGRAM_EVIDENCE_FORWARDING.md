@@ -55,3 +55,9 @@ yet connect to the live clock-out flow** or send actual customer/employee media.
    clearly authorized private test file. Verify playback, delivery and retention.
 5. Only with owner approval enable production and move media writes away from
    Supabase without breaking existing video/player/hold logic.
+
+## App-specific Telegram isolation
+- This codebase belongs to **WorkTeams** only. Proposed private group: **WorkTeams Evidence** (owner creates it in Telegram).
+- Use a separate, app-owned BotFather bot and token for this destination. Never share or copy the HetrixTools Control Hub emergency-alert bot credentials or destination.
+- Configure this project's Telegram environment variables only after group ownership and bot posting rights are verified. Never reuse another app's numeric Telegram chat ID.
+- No automatic posting, Telegram group creation, live delivery or production deployment has taken place.

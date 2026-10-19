@@ -20,6 +20,8 @@ test("feature is disabled by default and requires a private destination", async 
 });
 test("original photos are preserved as documents and MP4 uses video", () => {
   assert.equal(assessTelegramEvidence({kind:"book_photo",media:blob()}).method,"sendDocument");
+  assert.equal(assessTelegramEvidence({kind:"book_photo",media:blob()}).caption,"WorkTeams — communication book photo");
+  assert.equal(assessTelegramEvidence({kind:"shift_video",media:blob(100,"video/mp4")}).caption,"WorkTeams — shift video");
   assert.equal(assessTelegramEvidence({kind:"shift_video",
     media:blob(100,"video/mp4")}).method,"sendVideo");
   assert.equal(assessTelegramEvidence({kind:"shift_video",
