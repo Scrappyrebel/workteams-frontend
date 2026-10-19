@@ -64,25 +64,49 @@ export async function POST(req) {
     // Per cleaner, per hour — never flat rate.
     const totalCents = Math.round(cleanersNeeded * hoursRequested * rate * 100);
 
-    const { data: job, error: jobErr } = await db
+    // POINT 2 booking fields. Tolerant: falls back if 048 hasn't run.
+    const full = {
+      company_id: cfg.company_id,
+      service_type: serviceType,
+      cleaners_needed: cleanersNeeded,
+      hours_requested: hoursRequested,
+      job_date: b.jobDate || null,
+      schedule_notes: (b.scheduleNotes || "").slice(0, 2000) || null,
+      site_address: siteAddress.slice(0, 500),
+      customer_name: customerName.slice(0, 200),
+      customer_email: customerEmail.slice(0, 320),
+      customer_phone: String(b.customerPhone || "").slice(0, 40) || null,
+      job_details: String(b.jobDetails || "").slice(0, 4000) || null,
+      status: "pending",
+      quoted_cents: totalCents,
+      staffing_type: String(b.staffingType || "cleaning").slice(0, 40),
+      shift_start: b.shiftStart || null,
+      shift_end: b.shiftEnd || null,
+      recurring_days: Array.isArray(b.recurringDays) ? b.recurringDays : [],
+      recurring_until: b.recurringUntil || null,
+      on_site_contact_name: String(b.onSiteName || "").slice(0, 200) || null,
+      on_site_contact_phone: String(b.onSitePhone || "").slice(0, 40) || null,
+      bill_rate_confirmed: b.billRateConfirmed ? Number(b.billRateConfirmed) : null,
+      engagement_type: ["temp", "temp_to_hire", "direct_hire"].includes(b.engagementType)
+        ? b.engagementType
+        : "temp",
+    };
+    let job = null;
+    let { data: jobData, error: jobErr } = await db
       .from("temp_job_requests")
-      .insert({
-        company_id: cfg.company_id,
-        service_type: serviceType,
-        cleaners_needed: cleanersNeeded,
-        hours_requested: hoursRequested,
-        job_date: b.jobDate || null,
-        schedule_notes: (b.scheduleNotes || "").slice(0, 2000) || null,
-        site_address: siteAddress.slice(0, 500),
-        customer_name: customerName.slice(0, 200),
-        customer_email: customerEmail.slice(0, 320),
-        customer_phone: String(b.customerPhone || "").slice(0, 40) || null,
-        job_details: String(b.jobDetails || "").slice(0, 4000) || null,
-        status: "pending",
-        quoted_cents: totalCents,
-      })
+      .insert(full)
       .select("id")
       .single();
+    if (jobErr && /column/i.test(jobErr.message)) {
+      // Pre-048 fallback.
+      const { staffing_type, shift_start, shift_end, recurring_days, recurring_until,
+        on_site_contact_name, on_site_contact_phone, bill_rate_confirmed,
+        engagement_type, ...basic } = full;
+      const retry = await db.from("temp_job_requests").insert(basic).select("id").single();
+      jobData = retry.data;
+      jobErr = retry.error;
+    }
+    job = jobData;
     if (jobErr || !job) {
       return NextResponse.json({ error: "Could not create your request." }, { status: 500 });
     }

@@ -4,14 +4,27 @@ import { useContext, useEffect, useState } from "react";
 import { supabase } from "../../../../lib/supabase";
 import { CompanyContext } from "../../../../lib/company-context";
 import Playbook from "./Playbook";
+import { ClientsTab, OffersTab } from "./Intake";
 
 const TABS = [
   { key: "requests", label: "Job Requests" },
   { key: "temps", label: "Temp Pool" },
+  { key: "offers", label: "Shift Offers" },
+  { key: "clients", label: "Clients" },
   { key: "hire", label: "Temp-to-Hire" },
   { key: "playbook", label: "📖 Playbook" },
   { key: "settings", label: "Agency Settings" },
 ];
+
+const STAFFING_LANES = [
+  { key: "cleaning", label: "Cleaning / Janitorial" },
+  { key: "office", label: "Office / Administrative" },
+  { key: "manufacturing", label: "Manufacturing / Industrial" },
+  { key: "hospitality", label: "Hospitality / Events" },
+  { key: "general_labor", label: "General Labor" },
+];
+const LANE_LABELS = Object.fromEntries(STAFFING_LANES.map((l) => [l.key, l.label]));
+const ENGAGEMENT_LABELS = { temp: "Temp", temp_to_hire: "Temp-to-hire", direct_hire: "Direct hire" };
 
 const STATUS_LABELS = {
   pending: "New",
@@ -262,18 +275,20 @@ export default function TempDashboard() {
       conversion_fee: parseFloat(cfg.conversion_fee) || 0,
       updated_at: new Date().toISOString(),
     };
-    // Try with per-service rates; fall back if migration 044 hasn't run yet.
+    // Try with per-service rates + staffing lanes; fall back if migrations haven't run yet.
+    const full = { ...base, service_rates: parsedRates };
+    if (cfg.staffing_types) full.staffing_types = cfg.staffing_types;
     let { error } = await supabase()
       .from("temp_agency_config")
-      .update({ ...base, service_rates: parsedRates })
+      .update(full)
       .eq("company_id", company.id);
-    if (error && /service_rates/i.test(error.message)) {
+    if (error && /service_rates|staffing_types/i.test(error.message)) {
       ({ error } = await supabase()
         .from("temp_agency_config")
         .update(base)
         .eq("company_id", company.id));
     }
-    setMsg(error ? "Save failed: " + error.message : "Rates saved.");
+    setMsg(error ? "Save failed: " + error.message : "Settings saved.");
   }
 
   if (isAgency === null) {
@@ -282,13 +297,7 @@ export default function TempDashboard() {
     );
   }
   if (!isManager) {
-    return (
-      <main className="site-shell">
-        <section className="panel" style={{ padding: 30 }}>
-          <h2>Managers only</h2>
-        </section>
-      </main>
-    );
+    return <TempOffersView companyId={company.id} />;
   }
   if (!isAgency) {
     return (
@@ -342,7 +351,17 @@ export default function TempDashboard() {
           {requests.map((r) => {
             const reqAsg = assignments.filter((a) => a.job_request_id === r.id);
             const assignedIds = new Set(reqAsg.map((a) => a.member_id));
-            const availableTemps = approvedTemps.filter((t) => t.member_id && !assignedIds.has(t.member_id));
+            const reqLane = r.staffing_type || "cleaning";
+            // Multi-type matching: lane overlap first, then skill hints.
+            const laneMatched = approvedTemps.filter(
+              (t) => t.member_id && !assignedIds.has(t.member_id) &&
+                ((t.staffing_types || ["cleaning"]).includes(reqLane))
+            );
+            const laneOthers = approvedTemps.filter(
+              (t) => t.member_id && !assignedIds.has(t.member_id) &&
+                !((t.staffing_types || ["cleaning"]).includes(reqLane))
+            );
+            const availableTemps = [...laneMatched, ...laneOthers];
             const needsBackfill = reqAsg.some((a) => a.status === "no_show" || a.status === "declined");
             return (
             <div key={r.id} className="card" style={{ padding: 16, marginBottom: 12 }}>
@@ -351,9 +370,16 @@ export default function TempDashboard() {
                 <span className="badge">{STATUS_LABELS[r.status] || r.status}</span>
               </div>
               <div style={{ fontSize: 14, color: "var(--muted)", marginTop: 6 }}>
-                {r.cleaners_needed} cleaner(s) × {r.hours_requested} hr · {r.customer_name}{r.customer_email ? ` · ${r.customer_email}` : ""}
+                <span className="badge">{LANE_LABELS[r.staffing_type] || r.staffing_type || "Cleaning / Janitorial"}</span>{" "}
+                <span className="badge">{ENGAGEMENT_LABELS[r.engagement_type] || "Temp"}</span>
+                <br />
+                {r.cleaners_needed} temp(s) × {r.hours_requested} hr · {r.customer_name}{r.customer_email ? ` · ${r.customer_email}` : ""}
                 <br />
                 {r.site_address} {r.job_date ? `· ${r.job_date}` : ""}
+                {r.shift_start ? ` · ${String(r.shift_start).slice(0, 5)}–${String(r.shift_end || "").slice(0, 5)}` : ""}
+                {r.recurring_days?.length ? <><br />Recurring: {r.recurring_days.join(", ")}{r.recurring_until ? ` until ${r.recurring_until}` : ""}</> : null}
+                {r.on_site_contact_name ? <><br />On-site: {r.on_site_contact_name}{r.on_site_contact_phone ? ` (${r.on_site_contact_phone})` : ""}</> : null}
+                {r.bill_rate_confirmed ? <><br />Rate confirmed: ${Number(r.bill_rate_confirmed).toFixed(2)}/hr</> : null}
                 {r.quoted_cents ? <><br />Quoted: ${(r.quoted_cents / 100).toFixed(2)}</> : null}
                 {r.hours_confirmed != null ? <><br />✅ Client confirmed {r.hours_confirmed} hr</> : null}
               </div>
@@ -368,11 +394,12 @@ export default function TempDashboard() {
                       style={{ padding: 8, flex: 1, minWidth: 160 }}
                     >
                       <option value="">Choose temp…</option>
-                      {approvedTemps.map((t) => {
+                      {availableTemps.map((t) => {
                         const sk = skillsFor(t.member_id).map((s) => s.skill).join(", ");
+                        const crossLane = !((t.staffing_types || ["cleaning"]).includes(reqLane));
                         return (
                           <option key={t.id} value={t.id}>
-                            {t.full_name}{sk ? ` (${sk})` : ""}
+                            {t.full_name}{sk ? ` (${sk})` : ""}{crossLane ? " — other lane" : ""}
                           </option>
                         );
                       })}
@@ -518,8 +545,27 @@ export default function TempDashboard() {
                 </div>
                 {open && (
                   <div style={{ marginTop: 10, borderTop: "1px solid var(--border, #e5e7eb)", paddingTop: 10 }}>
+                    <div style={{ fontSize: 13, marginBottom: 6 }}>
+                      <strong>Lanes:</strong> {(a.staffing_types || ["cleaning"]).map((k) => LANE_LABELS[k] || k).join(", ")}
+                    </div>
                     {a.availability && <div style={{ fontSize: 13, marginBottom: 6 }}><strong>Availability:</strong> {a.availability}</div>}
+                    {(a.earliest_start || a.latest_end) && (
+                      <div style={{ fontSize: 13, marginBottom: 6 }}><strong>Hours:</strong> {a.earliest_start ? String(a.earliest_start).slice(0, 5) : "?"}–{a.latest_end ? String(a.latest_end).slice(0, 5) : "?"}{a.max_hours_per_week ? ` · max ${a.max_hours_per_week}/wk` : ""}</div>
+                    )}
+                    {a.city && <div style={{ fontSize: 13, marginBottom: 6 }}><strong>Location:</strong> {a.city}{a.zip ? ` ${a.zip}` : ""}</div>}
+                    {a.reliable_transportation != null && <div style={{ fontSize: 13, marginBottom: 6 }}><strong>Transportation:</strong> {a.reliable_transportation ? "Yes" : "No"}</div>}
                     {a.experience && <div style={{ fontSize: 13, marginBottom: 6 }}><strong>Experience:</strong> {a.experience}</div>}
+                    {a.years_experience != null && <div style={{ fontSize: 13, marginBottom: 6 }}><strong>Years:</strong> {a.years_experience}</div>}
+                    {(a.emergency_contact_name || a.emergency_contact_phone) && (
+                      <div style={{ fontSize: 13, marginBottom: 6 }}><strong>Emergency:</strong> {a.emergency_contact_name}{a.emergency_contact_relation ? ` (${a.emergency_contact_relation})` : ""}{a.emergency_contact_phone ? ` · ${a.emergency_contact_phone}` : ""}</div>
+                    )}
+                    <div style={{ fontSize: 13, marginBottom: 6 }}>
+                      <strong>Screening:</strong> BG {a.bg_check_status}{a.bg_check_consent ? " (consent ✓)" : " (NO CONSENT)"}
+                      {a.drug_policy_ack ? " · drug policy acknowledged" : ""}{a.i9_completed != null ? ` · I-9 ${a.i9_completed ? "done" : "pending"}` : ""}
+                    </div>
+                    {(a.reference_1_name || a.reference_2_name) && (
+                      <div style={{ fontSize: 13, marginBottom: 6 }}><strong>References:</strong> {[a.reference_1_name && `${a.reference_1_name} (${a.reference_1_phone || "no phone"})`, a.reference_2_name && `${a.reference_2_name} (${a.reference_2_phone || "no phone"})`].filter(Boolean).join(" · ")}</div>
+                    )}
                     <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>Skill tags</div>
                     <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 8 }}>
                       {sk.map((s) => (
@@ -566,6 +612,17 @@ export default function TempDashboard() {
         </section>
       )}
 
+      {tab === "offers" && (
+        <OffersTab companyId={company.id} typeLabels={LANE_LABELS}
+          temps={apps.filter((a) => a.status === "approved" && a.member_id)} />
+      )}
+
+      {tab === "clients" && (
+        <ClientsTab companyId={company.id}
+          staffingTypes={cfg?.staffing_types?.length ? cfg.staffing_types : ["cleaning"]}
+          typeLabels={LANE_LABELS} />
+      )}
+
       {tab === "hire" && (
         <section className="panel" style={{ padding: 24, marginTop: 16 }}>
           <h2 style={{ marginTop: 0 }}>Temp-to-hire tracking</h2>
@@ -608,6 +665,30 @@ export default function TempDashboard() {
         <section className="panel" style={{ padding: 24, marginTop: 16 }}>
           <h2 style={{ marginTop: 0 }}>Agency settings</h2>
           <form onSubmit={saveCfg} style={{ display: "grid", gap: 12, maxWidth: 400 }}>
+            <div>
+              <div style={{ fontWeight: 700, marginBottom: 6 }}>Temp lanes this agency runs</div>
+              <p style={{ fontSize: 13, color: "var(--muted)", margin: "0 0 8px" }}>
+                Pick every kind of temp work you staff — cleaning, office, manufacturing, or all of them.
+                Applications, skills and matching follow these lanes.
+              </p>
+              {STAFFING_LANES.map((l) => {
+                const on = (cfg.staffing_types || ["cleaning"]).includes(l.key);
+                return (
+                  <label key={l.key} style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 14, marginBottom: 6 }}>
+                    <input
+                      type="checkbox"
+                      checked={on}
+                      onChange={(e) => {
+                        const cur = cfg.staffing_types || ["cleaning"];
+                        const next = e.target.checked ? [...cur, l.key] : cur.filter((k) => k !== l.key);
+                        setCfg({ ...cfg, staffing_types: next.length ? next : ["cleaning"] });
+                      }}
+                    />
+                    {l.label}
+                  </label>
+                );
+              })}
+            </div>
             <label>
               Default customer rate — per cleaner, per hour ($)
               <input type="number" step="0.01" min="0" value={cfg.base_hourly_rate}
@@ -656,6 +737,91 @@ export default function TempDashboard() {
           </p>
         </section>
       )}
+    </main>
+  );
+}
+
+// ---------------- Temp-facing shift offers (POINT 4) ----------------
+function TempOffersView({ companyId }) {
+  const [offers, setOffers] = useState([]);
+  const [msg, setMsg] = useState("");
+  const [loading, setLoading] = useState(true);
+
+  async function load() {
+    const { data: session } = await supabase().auth.getSession();
+    const token = session?.session?.access_token;
+    const r = await fetch(`/api/temp/offers?companyId=${companyId}`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    const j = await r.json();
+    if (j.offers) setOffers(j.offers);
+    setLoading(false);
+  }
+  useEffect(() => { load(); }, [companyId]);
+
+  async function respond(id, action) {
+    setMsg("");
+    const { data: session } = await supabase().auth.getSession();
+    const token = session?.session?.access_token;
+    const r = await fetch("/api/temp/offers", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+      body: JSON.stringify({ id, companyId, action }),
+    });
+    const j = await r.json();
+    setMsg(j.ok ? (action === "accepted" ? "Shift accepted — see you there." : "Offer declined.") : j.error || "Update failed.");
+    if (j.ok) load();
+  }
+
+  const open = offers.filter((o) => o.status === "offered");
+  const past = offers.filter((o) => o.status !== "offered");
+
+  return (
+    <main className="site-shell">
+      <section className="panel" style={{ padding: 24 }}>
+        <p className="kicker">Temp Staffing</p>
+        <h1 style={{ marginTop: 4 }}>My shift offers ({open.length} open)</h1>
+        {msg && <p style={{ color: "var(--muted)", fontSize: 14 }}>{msg}</p>}
+        {loading && <p style={{ color: "var(--muted)" }}>Loading…</p>}
+        {!loading && open.length === 0 && (
+          <p style={{ color: "var(--muted)" }}>No open offers right now. New shift offers will appear here.</p>
+        )}
+        {open.map((o) => (
+          <div key={o.id} className="card" style={{ padding: 16, marginBottom: 12 }}>
+            <strong>{o.client_name}</strong>
+            <div style={{ fontSize: 14, color: "var(--muted)", marginTop: 6 }}>
+              {o.shift_date} · {String(o.start_time).slice(0, 5)}–{String(o.end_time).slice(0, 5)} · ${Number(o.pay_rate).toFixed(2)}/hr
+              <br />{o.site_address}
+              {o.respond_by && <><br />Respond by {new Date(o.respond_by).toLocaleString()}</>}
+            </div>
+            <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+              <button className="btn-primary" style={{ padding: "8px 20px" }} onClick={() => respond(o.id, "accepted")}>
+                Accept
+              </button>
+              <button className="btn-ghost" style={{ padding: "8px 20px" }} onClick={() => respond(o.id, "declined")}>
+                Decline
+              </button>
+            </div>
+          </div>
+        ))}
+        {past.length > 0 && (
+          <>
+            <h2 style={{ marginTop: 24 }}>Past offers</h2>
+            {past.slice(0, 20).map((o) => (
+              <div key={o.id} className="card" style={{ padding: 12, marginBottom: 8, fontSize: 14 }}>
+                <strong>{o.client_name}</strong>{" "}
+                <span className="badge">{o.status}</span>
+                <div style={{ color: "var(--muted)", fontSize: 13 }}>
+                  {o.shift_date} · {String(o.start_time).slice(0, 5)}–{String(o.end_time).slice(0, 5)} · ${Number(o.pay_rate).toFixed(2)}/hr
+                  {o.status === "accepted" && o.report_to && (
+                    <><br />Report to: {o.report_to}{o.parking_info ? ` · Park: ${o.parking_info}` : ""}{o.access_info ? ` · Access: ${o.access_info}` : ""}</>
+                  )}
+                </div>
+              </div>
+            ))}
+          </>
+        )}
+      </section>
     </main>
   );
 }

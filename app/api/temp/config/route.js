@@ -37,12 +37,22 @@ export async function GET(req) {
       return NextResponse.json({ error: "Too many requests." }, { status: 429 });
     }
     const db = createClient(SUPABASE_URL, SERVICE_KEY);
-    const { data: cfg } = await db
+    let { data: cfg } = await db
       .from("temp_agency_config")
-      .select("company_id, base_hourly_rate, service_rates, hire_track_options, conversion_fee")
+      .select("company_id, base_hourly_rate, service_rates, hire_track_options, conversion_fee, staffing_types")
       .eq("enabled", true)
       .limit(1)
       .maybeSingle();
+    if (!cfg) {
+      // Pre-048 fallback: staffing_types column doesn't exist yet.
+      const retry = await db
+        .from("temp_agency_config")
+        .select("company_id, base_hourly_rate, service_rates, hire_track_options, conversion_fee")
+        .eq("enabled", true)
+        .limit(1)
+        .maybeSingle();
+      cfg = retry.data;
+    }
     if (!cfg) {
       return NextResponse.json({ available: false }, { status: 200 });
     }
@@ -51,6 +61,15 @@ export async function GET(req) {
       .select("name")
       .eq("id", cfg.company_id)
       .single();
+    // Staffing lanes catalog (multi-type agencies). Tolerant if 048 hasn't run.
+    let staffingCatalog = [];
+    try {
+      const { data: cat } = await db
+        .from("temp_staffing_types")
+        .select("key, label, description, default_skills, onboarding_fields")
+        .order("label");
+      if (cat) staffingCatalog = cat;
+    } catch { /* pre-048 */ }
     return NextResponse.json({
       available: true,
       agencyName: co?.name || "Temp Staffing",
@@ -59,6 +78,8 @@ export async function GET(req) {
       hireTrackOptions: cfg.hire_track_options || [90, 180],
       conversionFee: Number(cfg.conversion_fee || 0),
       serviceTypes: SERVICE_TYPES,
+      staffingTypes: cfg.staffing_types || ["cleaning"],
+      staffingCatalog,
     });
   } catch (e) {
     return NextResponse.json({ error: "Config unavailable." }, { status: 500 });
