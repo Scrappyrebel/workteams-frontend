@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { checkRateLimit, clientIp } from "../../../../../lib/rate-limit";
+import { checkRateLimit, clientIp } from "../../../../lib/rate-limit";
 import { discoverVerifiedGroup, expectedGroupTitle,
-  verificationCommand } from "../../../../../lib/telegram-group-verification.server.mjs";
+  verificationCommand } from "../../../../lib/telegram-group-verification.server.mjs";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
