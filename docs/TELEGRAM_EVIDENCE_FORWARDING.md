@@ -110,3 +110,5 @@ Control Hub / HetrixTools and other apps do not share that token or destinations
 - Bot media forwarding does NOT yet read this database table; that is a
   later release requiring video and photo integrity, company access enforcement,
   verified receipts, per-file retention and full phone tests.
+
+- **Additional private-group safeguard:** Discovery rejects Telegram groups with a public `@username`, even if someone posts a matching company verification command and the group title appears correct.

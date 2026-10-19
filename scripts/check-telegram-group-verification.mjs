@@ -62,6 +62,10 @@ test("non-private, forged, wrong-day, unrelated and ambiguous groups fail closed
   assert.deepEqual(discoverVerifiedGroup({
     updates:[update(-1001234567890,"Other",cmd)],
     command:cmd,expectedTitle:title}),{status:"command_not_found"});
+  assert.deepEqual(discoverVerifiedGroup({
+    updates:[{ message: { text: cmd, chat: { id: -1001234567890,
+      type: "supergroup", title, username: "public_group" } } }],
+    command:cmd,expectedTitle:title}),{status:"command_not_found"});
   assert.deepEqual(discoverVerifiedGroup({updates:[{}],command:"/start",expectedTitle:title}),
     {status:"invalid_discovery"});
 });
