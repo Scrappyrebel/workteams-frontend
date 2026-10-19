@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { expectedGroupTitle, verificationCommand,
-  discoverVerifiedGroup, bindingDecision } from "../lib/telegram-group-verification.server.mjs";
+  discoverVerifiedGroup, bindingDecision, checkLivePrivateWorkTeamsGroup } from "../lib/telegram-group-verification.server.mjs";
 
 const BOT_TOKEN = "123456:" + "A".repeat(36);
 const BOT_USER = "LillyBsWorkTeamsEvidenceBot";
@@ -77,4 +77,34 @@ test("saved company binding is first-write only, idempotent, never reassigned",(
   assert.equal(bindingDecision({existingChatId:"-1001234567890",
     candidateChatId:"-1009876543210"}),"conflicting_existing_group");
   assert.equal(bindingDecision({candidateChatId:"@public"}),"invalid_candidate");
+});
+
+test("future WorkTeams tenants can verify a signed command without hardcoded names",()=>{
+  const name="Any Future Customer LLC";
+  assert.equal(expectedGroupTitle(name),null);
+  const cmd=make("33333333-3333-4333-8333-333333333333");
+  const entry=update(-1002223334445,"Custom Private Evidence",cmd);
+  const candidate=discoverVerifiedGroup({
+    updates:[entry],command:cmd,expectedTitle:null
+  });
+  assert.deepEqual(candidate,{
+    status:"verified_candidate",chatId:"-1002223334445",title:"Custom Private Evidence"
+  });
+  assert.deepEqual(checkLivePrivateWorkTeamsGroup(candidate,entry.message.chat,null),{
+    status:"verified_current_private_group",
+    chatId:"-1002223334445",title:"Custom Private Evidence"
+  });
+  assert.equal(checkLivePrivateWorkTeamsGroup(candidate,{
+    ...entry.message.chat,username:"public"
+  },null).status,"invalid_live_group");
+});
+
+test("signup lets any owner opt into instructions, not forced Telegram account",()=>{
+  const fs = await import("node:fs");
+  const url = new URL("../app/app/page.js",import.meta.url);
+  const page=fs.readFileSync(url,"utf8");
+  assert.match(page,/telegramSetup/);
+  assert.match(page,/employees.*do not need Telegram/i);
+  assert.match(page,/You will not need to enter any code in Vercel/);
+  assert.match(page,/telegram_setup=1/);
 });

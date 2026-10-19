@@ -9,12 +9,14 @@ export default function TelegramEvidenceSetup() {
   const { company, member } = useCompany();
   const [status, setStatus] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [privacyConfirmed, setPrivacyConfirmed] = useState(false);
   const [error, setError] = useState("");
 
   useEffect(() => { setStatus(null); setError(""); }, [company?.id]);
   if (member?.role !== "owner" || !company?.id) return null;
 
   async function check(verify) {
+    if (verify && !privacyConfirmed) { setError("Confirm group privacy and approved membership first."); return; }
     setBusy(true); setError("");
     try {
       const sb = supabase();
@@ -44,21 +46,32 @@ export default function TelegramEvidenceSetup() {
   return (
     <section className="card" aria-label="Private Telegram evidence group setup"
       style={{ marginTop: 20 }}>
-      <h3>Private Telegram evidence group</h3>
-      <p>Each company has its OWN private WorkTeams group. This setup only
-        identifies and saves that company\u0027s group; it does not send any videos or photos.</p>
+      <h3>Private Telegram evidence group (optional)</h3>
+      <p>Each customer company owns one PRIVATE evidence group; no company shares
+        messages with another. Employees submit inside WorkTeams and <strong>do not
+        need Telegram</strong>. Only the company owner and approved managers
+        should join the group. Group members can see every message in that group.</p>
+      <p>Your company owner does NOT need Vercel or a bot token. Add the
+        official WorkTeams Evidence Bot to a private group and verify below.
+        This setup only saves a group; it does not send videos or photos.</p>
       <button type="button" onClick={() => void check(false)} disabled={busy}>
         {busy ? "Checking…" : "Get this company's setup command"}
       </button>
       {status?.command && <div style={{ marginTop: 14 }}>
-        <p>In Telegram, open <strong>{status.expectedGroup}</strong> and send
+        <p>In Telegram, open <strong>{status.expectedGroup || "your private company evidence group"}</strong> and send
           this exact command to the WorkTeams Evidence Bot:</p>
         <code style={{ overflowWrap: "anywhere" }}>{status.command}</code>{" "}
         <button type="button" onClick={() => navigator.clipboard?.writeText(status.command)}
           style={{ marginLeft: 8 }}>Copy command</button>
       </div>}
       {status?.command && <div style={{ marginTop: 12 }}>
-        <button type="button" onClick={() => void check(true)} disabled={busy}>
+        <label style={{ display: "flex", gap: 8, alignItems: "start", marginBottom: 10 }}>
+          <input type="checkbox" checked={privacyConfirmed}
+            onChange={e => setPrivacyConfirmed(e.target.checked)} />
+          <span>I confirm this group is private, with only my company's approved
+            evidence viewers. Employees do not belong to this group.</span>
+        </label>
+        <button type="button" onClick={() => void check(true)} disabled={busy || !privacyConfirmed}>
           Verify and save this company group
         </button>
       </div>}

@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { checkRateLimit, clientIp } from "../../../../lib/rate-limit";
 import { discoverVerifiedGroup, expectedGroupTitle,
-  verificationCommand, bindingDecision } from "../../../../lib/telegram-group-verification.server.mjs";
+  verificationCommand, bindingDecision, checkLivePrivateWorkTeamsGroup } from "../../../../lib/telegram-group-verification.server.mjs";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -29,8 +29,9 @@ async function ownerContext(req) {
   if (memberError || member?.role !== "owner") return null;
   const { data: company, error: companyError } = await sb.from("companies")
     .select("name").eq("id", id).maybeSingle();
-  const expectedTitle = !companyError && expectedGroupTitle(company?.name);
-  return expectedTitle ? { id, expectedTitle } : null;
+  if (companyError || !company?.name || !String(company.name).trim()) return null;
+  const expectedTitle = expectedGroupTitle(company.name);
+  return { id, expectedTitle, companyName: company.name };
 }
 
 async function telegram(method) {
@@ -68,7 +69,8 @@ async function handler(req, verify) {
   });
   if (!command) return err("Telegram setup is unavailable.", 503);
   if (!verify) return NextResponse.json({
-    companyId: ctx.id, expectedGroup: ctx.expectedTitle, command,
+    companyId: ctx.id, companyName: ctx.companyName,
+    expectedGroup: ctx.expectedTitle, command,
     status: "awaiting_group_command", autoSendingEnabled: false,
   }, { headers: noStore });
   const updates = await telegram("getUpdates?limit=100&timeout=0");
@@ -79,6 +81,13 @@ async function handler(req, verify) {
   if (match.status !== "verified_candidate")
     return NextResponse.json({ status: match.status, expectedGroup: ctx.expectedTitle,
       saved: false, autoSendingEnabled: false }, { status: 409, headers: noStore });
+  // A signed command is not enough by itself. Re-read CURRENT chat privacy.
+  const liveChat = await telegram("getChat?chat_id=" + encodeURIComponent(match.chatId));
+  if (liveChat.error)
+    return err("Telegram group privacy could not be rechecked.", 503);
+  const liveMatch = checkLivePrivateWorkTeamsGroup(match, liveChat.data, ctx.expectedTitle);
+  if (liveMatch.status !== "verified_current_private_group")
+    return err("The group is public, renamed or unavailable. Nothing was saved.", 409);
   // Binding saves a verified candidate for this exact owner/company only.
   // A duplicate chat ID is rejected by a global UNIQUE database constraint.
   // Existing assignments may not be overwritten from this endpoint.
@@ -94,7 +103,7 @@ async function handler(req, verify) {
     .eq("company_id", ctx.id).maybeSingle();
   if (findError) return err("Verified group could not be saved. No routing was enabled.", 503);
   const decision = bindingDecision({
-    existingChatId: old?.chat_id ?? null, candidateChatId: match.chatId,
+    existingChatId: old?.chat_id ?? null, candidateChatId: liveMatch.chatId,
   });
   if (decision === "conflicting_existing_group")
     return err("This company already has a different verified group. Contact the owner for a reviewed change.", 409);
@@ -109,12 +118,12 @@ async function handler(req, verify) {
     const { data: { user } } = await userClient.auth.getUser();
     if (!user) return err("Owner session expired. Nothing was saved.", 401);
     const { error: saveError } = await admin.from("telegram_evidence_group_bindings")
-      .insert({ company_id: ctx.id, chat_id: match.chatId,
-        group_title: ctx.expectedTitle, verified_by: user.id, enabled: false });
+      .insert({ company_id: ctx.id, chat_id: liveMatch.chatId,
+        group_title: liveMatch.title, verified_by: user.id, enabled: false });
     // Both the chat ID and the company ID are UNIQUE in the database.
     if (saveError) return err("The group is already assigned or could not be safely saved.", 409);
   }
-  return NextResponse.json({ ...match, companyId: ctx.id, saved: true,
+  return NextResponse.json({ ...liveMatch, companyId: ctx.id, saved: true,
     autoSendingEnabled: false, status: "verified_and_saved" },
     { headers: noStore });
 }

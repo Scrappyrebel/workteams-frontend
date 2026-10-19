@@ -19,6 +19,11 @@ const TIMEZONES = [
 
 export default function SettingsPage() {
   const { company, member } = useCompany();
+  const [signupTelegramNotice, setSignupTelegramNotice] = useState(false);
+
+  useEffect(() => {
+    setSignupTelegramNotice(new URLSearchParams(window.location.search).get("telegram_setup") === "1");
+  }, []);
   const [name, setName] = useState("");
   const [timezone, setTimezone] = useState(DEFAULT_TZ);
   const [state, setState] = useState("");
@@ -159,6 +164,11 @@ export default function SettingsPage() {
           {saving ? "Saving…" : "Save settings"}
         </button>
       </form>
+      {signupTelegramNotice && <p className="card" role="status">
+        You chose optional private Telegram setup when creating this company.
+        Only the owner needs Telegram; employees continue uploading in WorkTeams.
+        Use the verification controls below. Uploads remain OFF until separately approved.
+      </p>}
       <TelegramEvidenceSetup />
     </div>
   );

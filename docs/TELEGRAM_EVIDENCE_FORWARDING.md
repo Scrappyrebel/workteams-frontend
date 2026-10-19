@@ -112,3 +112,20 @@ Control Hub / HetrixTools and other apps do not share that token or destinations
   verified receipts, per-file retention and full phone tests.
 
 - **Additional private-group safeguard:** Discovery rejects Telegram groups with a public `@username`, even if someone posts a matching company verification command and the group title appears correct.
+
+## Customer signup and nationwide self-service (all WorkTeams companies)
+- Any existing or new company owner can select **optional private Telegram
+  evidence setup** at WorkTeams company creation, or open company Settings
+  later. Employees do not need Telegram accounts and must not join the
+  owner/approved-manager evidence group.
+- The WorkTeams bot token is platform-owned and set in Vercel once; customers
+  never obtain or enter API keys in Vercel or GitHub.
+- The two initial internal companies use their already-named groups.
+  **Future customers are NOT hardcoded** to those businesses. Their company
+  UUID generates a unique signed bot command for any private group they own,
+  then the server rechecks current private `getChat` before first binding.
+- The company owner confirms the group contains only approved management.
+  A Telegram group cannot conceal one member's posts from another member.
+- All bindings remain disabled; no automatic evidence transmissions until
+  independent storage, source verification, file-size, retention and receipt
+  workflow is tested and authorized.
