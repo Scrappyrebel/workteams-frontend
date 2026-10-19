@@ -20,9 +20,11 @@ yet connect to the live clock-out flow** or send actual customer/employee media.
 - Default OFF: `TELEGRAM_EVIDENCE_ENABLED` must be `true` on a trusted server
   before messages can be attempted. Never put bot token, channel ID or provider
   credentials in NEXT_PUBLIC variables, source, GitHub comments, or chat.
-- After the owner creates and approves a private Telegram channel/group and a
-  bot with only necessary posting permissions, configure `TELEGRAM_EVIDENCE_BOT_TOKEN`
-  and fixed numeric `TELEGRAM_EVIDENCE_CHAT_ID` as server secrets in each app.
+- After the owner creates one PRIVATE Telegram group per company in this app and
+  a separate bot for this app with necessary posting permissions, configure
+  `TELEGRAM_EVIDENCE_BOT_TOKEN` and `TELEGRAM_EVIDENCE_COMPANY_GROUPS_JSON`
+  in this app's server secrets only. The JSON maps verified persisted company IDs
+  to unique negative private Telegram group chat IDs; there is NO global default.
 - No browser ever receives the token, and no employee may choose the destination.
 - Call the transport only AFTER server-side user/company/proof-ownership/RLS
   checks, proof record verification and authorized storage download. Never
@@ -56,8 +58,12 @@ yet connect to the live clock-out flow** or send actual customer/employee media.
 5. Only with owner approval enable production and move media writes away from
    Supabase without breaking existing video/player/hold logic.
 
-## App-specific Telegram isolation
-- This codebase belongs to **WorkTeams** only. Proposed private group: **WorkTeams Evidence** (owner creates it in Telegram).
-- Use a separate, app-owned BotFather bot and token for this destination. Never share or copy the HetrixTools Control Hub emergency-alert bot credentials or destination.
-- Configure this project's Telegram environment variables only after group ownership and bot posting rights are verified. Never reuse another app's numeric Telegram chat ID.
-- No automatic posting, Telegram group creation, live delivery or production deployment has taken place.
+## Mandatory per-company, per-app Telegram isolation
+- **WorkTeams** uses its own bot credentials; never reuse Control Hub/HetrixTools secrets or group.
+- Every company inside **WorkTeams** gets a DIFFERENT private Telegram group, created/owned by the company administrator. There is NOT one shared "WorkTeams Evidence" group across all companies.
+- Mapping format (example identifiers only): `TELEGRAM_EVIDENCE_COMPANY_GROUPS_JSON='{"company-a-uuid":"-1001111111111","company-b-uuid":"-1002222222222"}'`. Actual company IDs come from verified persisted company records, NOT caller requests.
+- The server refuses to send for an unconfigured company, invalid JSON, duplicate destinations, public chat IDs, or disabled configuration. Never fall back to an app-wide group. If the Telegram receipt references a different group, treat delivery as failed.
+- Adding a new company must NOT grant any other tenant access. Future owner-only company settings UI needs verified company membership, audit history, collision checks and a nonsecret display of group status.
+- One bot per app may be added to its company groups, or separate bots can be approved for stronger isolation. Neither may be added to another app's groups.
+- The operator must confirm every new company's PRIVATE group, posting rights, consent and account membership before enabling its forwarding; no group is created by this code.
+- Media transport remains disabled and not connected to live recorder/book uploads. No tests involving real company evidence or paid services have been run.
