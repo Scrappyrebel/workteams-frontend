@@ -46,7 +46,7 @@ export default function TelegramEvidenceSetup() {
       style={{ marginTop: 20 }}>
       <h3>Private Telegram evidence group</h3>
       <p>Each company has its OWN private WorkTeams group. This setup only
-        identifies that group; it does not send any videos or photos.</p>
+        identifies and saves that company\u0027s group; it does not send any videos or photos.</p>
       <button type="button" onClick={() => void check(false)} disabled={busy}>
         {busy ? "Checking…" : "Get this company's setup command"}
       </button>
@@ -59,13 +59,13 @@ export default function TelegramEvidenceSetup() {
       </div>}
       {status?.command && <div style={{ marginTop: 12 }}>
         <button type="button" onClick={() => void check(true)} disabled={busy}>
-          Verify this Telegram group
+          Verify and save this company group
         </button>
       </div>}
-      {status?.status === "verified_candidate" && <p role="status">
+      {status?.status === "verified_and_saved" && <p role="status">
         Group matched: <strong>{status.title}</strong>.
         Telegram group ID: <code>{status.chatId}</code>.
-        <strong> Uploads are not enabled.</strong>
+        <strong> Group saved. Uploads are not enabled.</strong>
       </p>}
       {error && <p role="alert" style={{ color: "var(--danger)" }}>{error}</p>}
     </section>

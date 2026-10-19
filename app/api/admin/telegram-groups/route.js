@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { checkRateLimit, clientIp } from "../../../../lib/rate-limit";
 import { discoverVerifiedGroup, expectedGroupTitle,
-  verificationCommand } from "../../../../lib/telegram-group-verification.server.mjs";
+  verificationCommand, bindingDecision } from "../../../../lib/telegram-group-verification.server.mjs";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -79,10 +79,44 @@ async function handler(req, verify) {
   if (match.status !== "verified_candidate")
     return NextResponse.json({ status: match.status, expectedGroup: ctx.expectedTitle,
       saved: false, autoSendingEnabled: false }, { status: 409, headers: noStore });
-  // Candidate is NOT activated. Saving the destination and enabling uploads
-  // requires durable owner-approved per-company mapping and media tests.
-  return NextResponse.json({ ...match, companyId: ctx.id, saved: false,
-    autoSendingEnabled: false }, { headers: noStore });
+  // Binding saves a verified candidate for this exact owner/company only.
+  // A duplicate chat ID is rejected by a global UNIQUE database constraint.
+  // Existing assignments may not be overwritten from this endpoint.
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !serviceKey) return err("Company group saving is not configured.", 503);
+  const admin = createClient(url, serviceKey, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  });
+  const { data: old, error: findError } = await admin
+    .from("telegram_evidence_group_bindings")
+    .select("chat_id, enabled")
+    .eq("company_id", ctx.id).maybeSingle();
+  if (findError) return err("Verified group could not be saved. No routing was enabled.", 503);
+  const decision = bindingDecision({
+    existingChatId: old?.chat_id ?? null, candidateChatId: match.chatId,
+  });
+  if (decision === "conflicting_existing_group")
+    return err("This company already has a different verified group. Contact the owner for a reviewed change.", 409);
+  if (decision === "invalid_candidate")
+    return err("The discovered group identifier was invalid.", 409);
+  if (decision === "insert") {
+    const token = (req.headers.get("authorization") || "").replace(/^Bearer\s+/, "");
+    const userClient = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY, {
+        global: { headers: { Authorization: "Bearer " + token } },
+      });
+    const { data: { user } } = await userClient.auth.getUser();
+    if (!user) return err("Owner session expired. Nothing was saved.", 401);
+    const { error: saveError } = await admin.from("telegram_evidence_group_bindings")
+      .insert({ company_id: ctx.id, chat_id: match.chatId,
+        group_title: ctx.expectedTitle, verified_by: user.id, enabled: false });
+    // Both the chat ID and the company ID are UNIQUE in the database.
+    if (saveError) return err("The group is already assigned or could not be safely saved.", 409);
+  }
+  return NextResponse.json({ ...match, companyId: ctx.id, saved: true,
+    autoSendingEnabled: false, status: "verified_and_saved" },
+    { headers: noStore });
 }
 
 export async function GET(req) { return handler(req, false); }

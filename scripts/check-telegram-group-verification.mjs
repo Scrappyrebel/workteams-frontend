@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { expectedGroupTitle, verificationCommand,
-  discoverVerifiedGroup } from "../lib/telegram-group-verification.server.mjs";
+  discoverVerifiedGroup, bindingDecision } from "../lib/telegram-group-verification.server.mjs";
 
 const BOT_TOKEN = "123456:" + "A".repeat(36);
 const BOT_USER = "LillyBsWorkTeamsEvidenceBot";
@@ -64,4 +64,13 @@ test("non-private, forged, wrong-day, unrelated and ambiguous groups fail closed
     command:cmd,expectedTitle:title}),{status:"command_not_found"});
   assert.deepEqual(discoverVerifiedGroup({updates:[{}],command:"/start",expectedTitle:title}),
     {status:"invalid_discovery"});
+});
+
+test("saved company binding is first-write only, idempotent, never reassigned",()=>{
+  assert.equal(bindingDecision({candidateChatId:"-1001234567890"}),"insert");
+  assert.equal(bindingDecision({existingChatId:"-1001234567890",
+    candidateChatId:"-1001234567890"}),"already_verified");
+  assert.equal(bindingDecision({existingChatId:"-1001234567890",
+    candidateChatId:"-1009876543210"}),"conflicting_existing_group");
+  assert.equal(bindingDecision({candidateChatId:"@public"}),"invalid_candidate");
 });

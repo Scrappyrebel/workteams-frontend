@@ -93,3 +93,20 @@ Do not run paid Vercel deploys or activate forwarding just to discover groups;
 this screen is staged in a draft PR and is not presently live. The token already
 saved in WorkTeams Vercel Production is not exposed to the client or GitHub.
 Control Hub / HetrixTools and other apps do not share that token or destinations.
+
+## Staged durable binding — NOT migrated or live
+- A source-only migration `supabase/048_telegram_evidence_groups.sql` defines a
+  one-to-one company/group mapping. Database uniqueness prevents a private group
+  being used for two separate company IDs.
+- Company owner verification **will** save the first verified group into this
+  table after the migration is safely applied and feature code approved for
+  production. Repeating verification of the same group is idempotent.
+- The owner setup screen refuses to overwrite another assigned group; changes
+  require a separate reviewed flow. No anonymous or authenticated direct
+  writes to the binding table.
+- `enabled` defaults to false and cannot be changed by this migration.
+  The existing `TELEGRAM_EVIDENCE_ENABLED` is also absent/false. Nothing is
+  posted to Telegram just because a company group is saved.
+- Bot media forwarding does NOT yet read this database table; that is a
+  later release requiring video and photo integrity, company access enforcement,
+  verified receipts, per-file retention and full phone tests.
