@@ -1,0 +1,32 @@
+name: WorkTeams Trigger Helper Access Guard
+
+on:
+  pull_request:
+    paths:
+      - 'supabase/050_trigger_helper_execute_restrictions.sql'
+      - 'scripts/check-trigger-helper-access.mjs'
+      - '.github/workflows/trigger-helper-access.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'supabase/050_trigger_helper_execute_restrictions.sql'
+      - 'scripts/check-trigger-helper-access.mjs'
+      - '.github/workflows/trigger-helper-access.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: workteams-trigger-helper-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  trigger-helper:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - run: node --test scripts/check-trigger-helper-access.mjs
