@@ -6,10 +6,12 @@ import { TIERS } from "../lib/tiers";
 import { SUPPORT_EMAIL } from "../lib/app-url";
 import { getTierPrices } from "../lib/product";
 
-// Public national sales page for WorkTeams — 2026 visual refresh.
-// Signed-in visitors are redirected into the app by app/page.js, so everyone
-// here is a prospective customer. All pricing/trial/feature claims match the
-// live product exactly; this file is presentation only.
+// Public national sales page for WorkTeams — restyled 2026-10-20 to the
+// owner's approved mockup layout (deep-navy hero, dual phone mockups, badge
+// strip, filled featured pricing card), executed in the WorkTeams royal-blue
+// brand palette (--brand / --brand-deep / ink). Presentation only: nothing here is invented —
+// every pricing, trial, and feature claim traces to the live product and to
+// lib/tiers.js exactly.
 //
 // TESTIMONIALS: when real customer quotes are approved for use, build a
 // <Testimonials /> section here (between <Staffing /> and <Pricing />) with
@@ -132,6 +134,13 @@ const I = {
       <path d="M20 6.5 9.2 17.5 4 12.3" />
     </Svg>
   ),
+  checkCircle: (
+    <Svg size={22}>
+      <circle cx="12" cy="12" r="9" fill="currentColor" stroke="none" opacity=".16" />
+      <circle cx="12" cy="12" r="9" />
+      <path d="M8.4 12.4 11 15l4.6-4.9" />
+    </Svg>
+  ),
   shield: (
     <Svg>
       <path d="M12 21.5s7.5-3.8 7.5-9.5V5.2L12 2.5 4.5 5.2V12c0 5.7 7.5 9.5 7.5 9.5z" />
@@ -166,9 +175,10 @@ const I = {
       <path d="M4.5 12h14M13 6l6 6-6 6" />
     </Svg>
   ),
-  spark: (
-    <Svg size={18}>
-      <path d="M12 3l1.9 5.3L19.5 10l-5.6 1.9L12 17l-1.9-5.1L4.5 10l5.6-1.7z" />
+  pin: (
+    <Svg size={20}>
+      <path d="M12 21.5s-7-5.6-7-11a7 7 0 1 1 14 0c0 5.4-7 11-7 11z" />
+      <circle cx="12" cy="10.5" r="2.6" />
     </Svg>
   ),
 };
@@ -183,9 +193,10 @@ export default function LandingContent() {
   }, []);
 
   return (
-    <main className="wt2-site">
+    <main className="wt2-m-site">
       <SiteNav />
       <Hero />
+      <BadgeStrip />
       <FounderStrip />
       <Features />
       <HowItWorks />
@@ -202,88 +213,72 @@ export default function LandingContent() {
 
 function SiteNav() {
   return (
-    <header className="wt2-nav">
-      <Link href="/" className="wt2-nav-brand">
-        <span className="wt2-mark" aria-hidden="true">WT</span>
+    <header className="wt2-m-nav">
+      <Link href="/" className="wt2-m-nav-brand">
+        <span className="wt2-m-mark" aria-hidden="true">WT</span>
         <span>WorkTeams</span>
       </Link>
-      <nav className="wt2-nav-links" aria-label="Page sections">
+      <nav className="wt2-m-nav-links" aria-label="Page sections">
         <a href="#features">Features</a>
         <a href="#how">How it works</a>
         <a href="#staffing">Staffing</a>
         <a href="#pricing">Pricing</a>
         <a href="#faq">FAQ</a>
       </nav>
-      <div className="wt2-nav-cta">
-        <Link href="/login" className="wt2-btn wt2-btn-ghost">Sign in</Link>
-        <Link href="/login" className="wt2-btn wt2-btn-primary">Start free trial</Link>
+      <div className="wt2-m-nav-cta">
+        <Link href="/login" className="wt2-m-btn wt2-m-btn-navghost">Sign in</Link>
+        <Link href="/login" className="wt2-m-btn wt2-m-btn-primary">Start free trial</Link>
       </div>
     </header>
   );
 }
 
-/* A stylized phone rendering of the crew app — illustrative UI, built from
+/* Two stylized phones rendering the crew app — illustrative UI built from
    divs so it stays crisp at any size. Sample shift rows are generic. */
-function PhoneMock() {
+function HeroPhones() {
   return (
-    <div className="wt2-phone-wrap" aria-hidden="true">
-      <div className="wt2-chip wt2-chip-a">
-        <span className="wt2-chip-ic">{I.clockPin}</span>
-        <span>
-          <strong>Clocked in</strong>
-          <small>GPS verified on site</small>
-        </span>
+    <div className="wt2-m-phones" aria-hidden="true">
+      <div className="wt2-m-phone wt2-m-phone-back">
+        <div className="wt2-m-phone-head wt2-m-phone-head-brand">
+          <strong>Schedule</strong>
+          <small>Today · Tue, Oct 8</small>
+        </div>
+        <div className="wt2-m-shift">
+          <span className="wt2-m-shift-dot wt2-m-dot-live" />
+          <div className="wt2-m-shift-body">
+            <strong>City Office Clean</strong>
+            <p>9:00–11:00 AM · Alex R.</p>
+            <span className="wt2-m-pill wt2-m-pill-live">In progress</span>
+          </div>
+        </div>
+        <div className="wt2-m-shift">
+          <span className="wt2-m-shift-dot wt2-m-dot-next" />
+          <div className="wt2-m-shift-body">
+            <strong>Downtown Retail</strong>
+            <p>1:30–3:30 PM · Maria L.</p>
+            <span className="wt2-m-pill">Scheduled</span>
+          </div>
+        </div>
+        <p className="wt2-m-phone-link">View all shifts →</p>
       </div>
-      <div className="wt2-phone">
-        <div className="wt2-phone-bar">
-          <span className="wt2-dot" />
-          <span className="wt2-dot" />
-          <span className="wt2-dot" />
+      <div className="wt2-m-phone wt2-m-phone-front">
+        <div className="wt2-m-phone-head wt2-m-phone-head-brand wt2-m-phone-head-center">
+          <span className="wt2-m-head-pin">{I.pin}</span>
+          <strong>Clock In</strong>
         </div>
-        <div className="wt2-phone-head">
-          <span className="wt2-mark wt2-mark-sm">WT</span>
-          <div>
-            <strong>Today&apos;s shifts</strong>
-            <small>Tuesday · 3 jobs</small>
+        <div className="wt2-m-clock-body">
+          <p className="wt2-m-clocked">
+            Clocked In <span className="wt2-m-clocked-time">9:03 AM</span>
+            <span className="wt2-m-verified">{I.checkCircle}</span>
+          </p>
+          <p className="wt2-m-clock-loc">Location: City Office Building</p>
+          <div className="wt2-m-map">
+            <span className="wt2-m-map-park" />
+            <span className="wt2-m-map-pin">{I.clockPin}</span>
           </div>
+          <p className="wt2-m-clock-note">Within 30m radius · On site · GPS verified</p>
+          <div className="wt2-m-clock-btn">Clock Out</div>
         </div>
-        <div className="wt2-shift wt2-shift-live">
-          <div className="wt2-shift-top">
-            <strong>Office clean — Downtown</strong>
-            <span className="wt2-live-pill">On site</span>
-          </div>
-          <p>Crew of 2 · 6:00 AM</p>
-          <div className="wt2-shift-bar"><span style={{ width: "68%" }} /></div>
-          <p className="wt2-shift-note">Clocked in · GPS verified</p>
-        </div>
-        <div className="wt2-shift">
-          <div className="wt2-shift-top">
-            <strong>Medical clinic — Nightly</strong>
-            <span className="wt2-time-pill">7:30 PM</span>
-          </div>
-          <p>Crew of 3 · Recurring</p>
-        </div>
-        <div className="wt2-shift">
-          <div className="wt2-shift-top">
-            <strong>Walkthrough — New bid</strong>
-            <span className="wt2-time-pill">2:00 PM</span>
-          </div>
-          <p>Measure rooms · Check the scope</p>
-        </div>
-        <div className="wt2-phone-cta">Clock in</div>
-        <div className="wt2-phone-tabs">
-          <span className="wt2-tab wt2-tab-on" />
-          <span className="wt2-tab" />
-          <span className="wt2-tab" />
-          <span className="wt2-tab" />
-        </div>
-      </div>
-      <div className="wt2-chip wt2-chip-b">
-        <span className="wt2-chip-ic">{I.fileSign}</span>
-        <span>
-          <strong>Bid sent</strong>
-          <small>Priced by the square foot</small>
-        </span>
       </div>
     </div>
   );
@@ -291,57 +286,53 @@ function PhoneMock() {
 
 function Hero() {
   return (
-    <section className="wt2-hero">
-      <div className="wt2-hero-glow wt2-glow-a" aria-hidden="true" />
-      <div className="wt2-hero-glow wt2-glow-b" aria-hidden="true" />
-      <div className="wt2-hero-inner">
-        <div className="wt2-hero-copy">
-          <p className="wt2-eyebrow-pill">
-            <span className="wt2-pill-ic">{I.spark}</span>
-            Built by a cleaner, not a tech company
-          </p>
+    <section className="wt2-m-hero">
+      <div className="wt2-m-hero-inner">
+        <div className="wt2-m-hero-copy">
+          <p className="wt2-m-eyebrow-hero">For cleaning &amp; janitorial companies</p>
           <h1>
-            The app that thinks like a <span className="wt2-grad-text">cleaner.</span>
+            <span className="wt2-m-line">Every shift</span>
+            <span className="wt2-m-line">covered.</span>
+            <span className="wt2-m-line">Every job</span>
+            <span className="wt2-m-line">proven.</span>
           </h1>
-          <p className="wt2-lede">
-            WorkTeams runs your cleaning business the way you already run it. Walk the
-            building, measure the rooms, check off the scope, price it by the hour or by
-            the square foot — then schedule the crew, track their hours by GPS, and hand
-            payroll-ready reports to your accountant. One app, built mobile-first for the
-            people doing the work.
+          <p className="wt2-m-lede">
+            WorkTeams runs your cleaning business the way you already run it — walk
+            the building, price it by the hour or by the square foot, schedule the
+            crew, and track their hours by GPS. Then hand payroll-ready reports to
+            your accountant. One app, built mobile-first for the people doing the work.
           </p>
-          <div className="wt2-cta-row">
-            <Link href="/login" className="wt2-btn wt2-btn-primary wt2-btn-lg wt2-btn-glow">
-              Start free trial {I.arrow}
+          <div className="wt2-m-cta-row">
+            <Link href="/login" className="wt2-m-btn wt2-m-btn-primary wt2-m-btn-lg wt2-m-btn-glow">
+              Start my 7-day free trial
             </Link>
-            <a href="#pricing" className="wt2-btn wt2-btn-outline wt2-btn-lg">See the plans</a>
+            <a href="#pricing" className="wt2-m-btn wt2-m-btn-hero-outline wt2-m-btn-lg">See plans &amp; pricing</a>
           </div>
-          <p className="wt2-cta-note">7-day free trial · No card required</p>
-          <div className="wt2-hero-proof">
-            <div className="wt2-proof">
-              <span className="wt2-proof-ic">{I.calendar}</span>
-              <div>
-                <strong>Scheduling</strong>
-                <span>Every shift, every crew, on their phone</span>
-              </div>
-            </div>
-            <div className="wt2-proof">
-              <span className="wt2-proof-ic">{I.clockPin}</span>
-              <div>
-                <strong>GPS time clock</strong>
-                <span>Know who&apos;s on site, and prove it</span>
-              </div>
-            </div>
-            <div className="wt2-proof">
-              <span className="wt2-proof-ic">{I.ruler}</span>
-              <div>
-                <strong>Walkthrough bidding</strong>
-                <span>Measure rooms, scope the work, price it right</span>
-              </div>
-            </div>
-          </div>
+          <p className="wt2-m-cta-note">7-day free trial · No card required</p>
         </div>
-        <PhoneMock />
+        <HeroPhones />
+      </div>
+    </section>
+  );
+}
+
+const BADGES = [
+  "GPS-verified clock-ins",
+  "7-day free trial",
+  "Built for cleaning & janitorial teams",
+  "Works on any smartphone",
+];
+
+function BadgeStrip() {
+  return (
+    <section className="wt2-m-badges" aria-label="Highlights">
+      <div className="wt2-m-badges-inner">
+        {BADGES.map((b) => (
+          <span key={b} className="wt2-m-badge">
+            <span className="wt2-m-badge-ic">{I.checkCircle}</span>
+            {b}
+          </span>
+        ))}
       </div>
     </section>
   );
@@ -349,11 +340,11 @@ function Hero() {
 
 function FounderStrip() {
   return (
-    <section className="wt2-founder">
-      <div className="wt2-founder-inner">
-        <span className="wt2-quote-mark" aria-hidden="true">&ldquo;</span>
+    <section className="wt2-m-founder">
+      <div className="wt2-m-founder-inner">
+        <span className="wt2-m-quote-mark" aria-hidden="true">&ldquo;</span>
         <div>
-          <p className="wt2-eyebrow wt2-eyebrow-light">Why it&apos;s different</p>
+          <p className="wt2-m-eyebrow wt2-m-eyebrow-dark">Why it&apos;s different</p>
           <h2>Made by someone who&apos;s done a thousand walkthroughs.</h2>
           <p>
             Most crew software is designed by people who have never held a mop. WorkTeams
@@ -368,64 +359,32 @@ function FounderStrip() {
   );
 }
 
-const FEATURE_GROUPS = [
-  {
-    title: "Win the job",
-    copy: "Go from first call to signed contract without a clipboard.",
-    accent: "wt2-accent-a",
-    items: [
-      [I.ruler, "Room-by-room walkthroughs", "Type in each room's measurements and check off the scope as you tour the building."],
-      [I.tag, "Honest pricing", "Price by the hour, by the square foot, or by base rate — your call, your numbers."],
-      [I.fileSign, "Bids & proposals", "Send a clean online quote and get the contract signed."],
-    ],
-  },
-  {
-    title: "Run the crew",
-    copy: "Everyone knows where to be, and you know they showed up.",
-    accent: "wt2-accent-b",
-    items: [
-      [I.calendar, "Scheduling", "Build shifts in seconds. Your crew sees them on their phones."],
-      [I.clockPin, "GPS time clock", "Clock in from the job site — with proof of where they were."],
-      [I.target, "Geofenced clock-in", "Nobody clocks in from the couch. Set a radius per location."],
-      [I.bell, "Late & no-show alerts", "Know the minute a shift goes sideways."],
-      [I.chat, "Crew messaging", "Reach the whole team without group-text chaos."],
-    ],
-  },
-  {
-    title: "Know your numbers",
-    copy: "Stop guessing whether a job made money.",
-    accent: "wt2-accent-c",
-    items: [
-      [I.report, "Payroll-ready hour reports", "Clean hour totals and CSV exports your payroll provider will love."],
-      [I.chart, "Job profitability", "See what each contract actually earned after labor and supplies."],
-      [I.camera, "Inspections with photos", "Quality checks your clients can see."],
-      [I.box, "Work orders & supplies", "Track jobs and stock without the spreadsheet."],
-      [I.portal, "Client portal", "Give customers a professional window into their service."],
-    ],
-  },
+const FEATURES = [
+  [I.calendar, "Scheduling", "Build shifts in seconds. Your crew sees them on their phones."],
+  [I.clockPin, "GPS time clock", "Clock in from the job site — with proof of where they were."],
+  [I.camera, "Inspections with photos", "Quality checks your clients can see."],
+  [I.chat, "Crew messaging", "Reach the whole team without group-text chaos."],
+  [I.target, "Geofenced clock-in", "Nobody clocks in from the couch. Set a radius per location."],
+  [I.bell, "Late & no-show alerts", "Know the minute a shift goes sideways."],
+  [I.fileSign, "Bids & proposals", "Send a clean online quote and get the contract signed."],
+  [I.ruler, "Room-by-room walkthroughs", "Type in each room's measurements and check off the scope as you tour the building."],
+  [I.report, "Work orders", "Track jobs without the spreadsheet."],
+  [I.box, "Supply tracking", "Track stock without the spreadsheet."],
+  [I.portal, "Client portal", "Give customers a professional window into their service."],
+  [I.chart, "Job profitability", "See what each contract actually earned after labor and supplies."],
 ];
 
 function Features() {
   return (
-    <section id="features" className="wt2-section">
-      <p className="wt2-eyebrow">Features</p>
-      <h2 className="wt2-h2">Everything a cleaning company needs. Nothing it doesn&apos;t.</h2>
-      <div className="wt2-groups">
-        {FEATURE_GROUPS.map((g) => (
-          <article key={g.title} className={`wt2-group-card ${g.accent}`}>
-            <h3>{g.title}</h3>
-            <p className="wt2-group-copy">{g.copy}</p>
-            <ul>
-              {g.items.map(([icon, title, desc]) => (
-                <li key={title}>
-                  <span className="wt2-feat-ic">{icon}</span>
-                  <div>
-                    <strong>{title}</strong>
-                    <span>{desc}</span>
-                  </div>
-                </li>
-              ))}
-            </ul>
+    <section id="features" className="wt2-m-section">
+      <p className="wt2-m-eyebrow">Features designed for cleaning teams</p>
+      <h2 className="wt2-m-h2">Everything you need to manage your crews</h2>
+      <div className="wt2-m-feat-grid">
+        {FEATURES.map(([icon, title, desc]) => (
+          <article key={title} className="wt2-m-feat-card">
+            <span className="wt2-m-feat-ic">{icon}</span>
+            <strong>{title}</strong>
+            <p>{desc}</p>
           </article>
         ))}
       </div>
@@ -442,16 +401,16 @@ const STEPS = [
 
 function HowItWorks() {
   return (
-    <section id="how" className="wt2-how">
-      <div className="wt2-how-inner">
-        <p className="wt2-eyebrow">How it works</p>
-        <h2 className="wt2-h2">From walkthrough to paycheck in four steps.</h2>
-        <ol className="wt2-steps">
+    <section id="how" className="wt2-m-how">
+      <div className="wt2-m-how-inner">
+        <p className="wt2-m-eyebrow">How it works</p>
+        <h2 className="wt2-m-h2">From walkthrough to paycheck in four steps.</h2>
+        <ol className="wt2-m-steps">
           {STEPS.map(([icon, title, desc], i) => (
-            <li key={title} className="wt2-step">
-              <span className="wt2-step-badge">
-                <span className="wt2-step-ic">{icon}</span>
-                <span className="wt2-step-num" aria-hidden="true">{i + 1}</span>
+            <li key={title} className="wt2-m-step">
+              <span className="wt2-m-step-badge">
+                <span className="wt2-m-step-ic">{icon}</span>
+                <span className="wt2-m-step-num" aria-hidden="true">{i + 1}</span>
               </span>
               <strong>{title}</strong>
               <p>{desc}</p>
@@ -465,10 +424,10 @@ function HowItWorks() {
 
 function Staffing() {
   return (
-    <section id="staffing" className="wt2-staffing">
-      <div className="wt2-staffing-inner">
-        <div className="wt2-staffing-copy">
-          <p className="wt2-eyebrow wt2-eyebrow-light">More than cleaning crews</p>
+    <section id="staffing" className="wt2-m-staffing">
+      <div className="wt2-m-staffing-inner">
+        <div className="wt2-m-staffing-copy">
+          <p className="wt2-m-eyebrow wt2-m-eyebrow-on-dark">More than cleaning crews</p>
           <h2>Run a temp staffing side, too.</h2>
           <p>
             WorkTeams also powers temp staffing. Keep a roster of ready-to-work temps
@@ -476,20 +435,20 @@ function Staffing() {
             your clients, dispatch the right person for each shift, and let clients
             confirm hours right in their portal.
           </p>
-          <div className="wt2-lane-row" aria-label="Staffing types">
+          <div className="wt2-m-lane-row" aria-label="Staffing types">
             {["Cleaning", "Office", "Manufacturing", "Hospitality", "General labor"].map((lane) => (
-              <span key={lane} className="wt2-lane">{lane}</span>
+              <span key={lane} className="wt2-m-lane">{lane}</span>
             ))}
           </div>
         </div>
-        <div className="wt2-staffing-card">
-          <span className="wt2-staffing-ic">{I.users}</span>
+        <div className="wt2-m-staffing-card">
+          <span className="wt2-m-staffing-ic">{I.users}</span>
           <h3>See it in action</h3>
           <p>
             Lilly B&apos;s Temp Cleaning Staffing — temp cleaners on demand — runs on
             this same app, from client requests to confirmed hours.
           </p>
-          <Link href="/temp" className="wt2-btn wt2-btn-light wt2-btn-block">
+          <Link href="/temp" className="wt2-m-btn wt2-m-btn-primary wt2-m-btn-block">
             Visit the temp staffing service {I.arrow}
           </Link>
         </div>
@@ -506,13 +465,13 @@ const ASSURANCES = [
 
 function Assurance() {
   return (
-    <section className="wt2-section wt2-assurance">
-      <p className="wt2-eyebrow">Straight dealing</p>
-      <h2 className="wt2-h2">Built to be trusted with your business.</h2>
-      <div className="wt2-assure-grid">
+    <section className="wt2-m-section wt2-m-assurance">
+      <p className="wt2-m-eyebrow">Straight dealing</p>
+      <h2 className="wt2-m-h2">Built to be trusted with your business.</h2>
+      <div className="wt2-m-assure-grid">
         {ASSURANCES.map(([icon, title, desc]) => (
-          <article key={title} className="wt2-assure-card">
-            <span className="wt2-assure-ic">{icon}</span>
+          <article key={title} className="wt2-m-assure-card">
+            <span className="wt2-m-assure-ic">{icon}</span>
             <strong>{title}</strong>
             <p>{desc}</p>
           </article>
@@ -524,37 +483,37 @@ function Assurance() {
 
 function Pricing({ tierKeys, prices }) {
   return (
-    <section id="pricing" className="wt2-section wt2-pricing">
-      <p className="wt2-eyebrow">Pricing</p>
-      <h2 className="wt2-h2">Three simple tiers. Priced for cleaning companies.</h2>
-      <p className="wt2-section-sub">
+    <section id="pricing" className="wt2-m-section wt2-m-pricing">
+      <p className="wt2-m-eyebrow">Pricing</p>
+      <h2 className="wt2-m-h2">Simple, transparent pricing</h2>
+      <p className="wt2-m-section-sub">
         7-day free trial on every tier. No card required — pick your tier before the trial ends to keep going.
       </p>
-      <div className="wt2-tiers">
+      <div className="wt2-m-tiers">
         {tierKeys.map((key, i) => {
           const tier = TIERS[key];
           const price = prices ? prices[key] : tier.examplePrice;
           const featured = key === "plus";
           return (
-            <article key={key} className={featured ? "wt2-tier wt2-tier-featured" : "wt2-tier"}>
-              {featured && <span className="wt2-tier-badge">Most popular</span>}
+            <article key={key} className={featured ? "wt2-m-tier wt2-m-tier-featured" : "wt2-m-tier"}>
+              {featured && <span className="wt2-m-tier-badge">Most popular</span>}
               <h3>{tier.name}</h3>
-              <p className="wt2-tier-price">
-                <span className="wt2-price">${price}</span>
-                <span className="wt2-per">/month</span>
+              <p className="wt2-m-tier-price">
+                <span className="wt2-m-price">${price}</span>
+                <span className="wt2-m-per">/month</span>
               </p>
-              <p className="wt2-tier-tag">{tier.tagline}</p>
+              <p className="wt2-m-tier-tag">{tier.tagline}</p>
               <ul>
                 {tier.features.map((f) => (
                   <li key={f}>
-                    <span className="wt2-check">{I.check}</span>
+                    <span className="wt2-m-check">{I.check}</span>
                     <span>{f}</span>
                   </li>
                 ))}
               </ul>
               <Link
                 href="/login"
-                className={featured ? "wt2-btn wt2-btn-primary wt2-btn-block" : "wt2-btn wt2-btn-outline wt2-btn-block"}
+                className={featured ? "wt2-m-btn wt2-m-btn-tier-featured wt2-m-btn-block" : "wt2-m-btn wt2-m-btn-tier wt2-m-btn-block"}
               >
                 {i === 0 ? "Start free trial" : `Choose ${tier.name}`}
               </Link>
@@ -591,10 +550,10 @@ const FAQS = [
 
 function Faq() {
   return (
-    <section id="faq" className="wt2-section wt2-faq">
-      <p className="wt2-eyebrow">Questions</p>
-      <h2 className="wt2-h2">Straight answers.</h2>
-      <div className="wt2-faq-list">
+    <section id="faq" className="wt2-m-section wt2-m-faq">
+      <p className="wt2-m-eyebrow">Questions</p>
+      <h2 className="wt2-m-h2">Straight answers.</h2>
+      <div className="wt2-m-faq-list">
         {FAQS.map(([q, a]) => (
           <details key={q}>
             <summary>{q}</summary>
@@ -608,30 +567,28 @@ function Faq() {
 
 function FinalCta() {
   return (
-    <section className="wt2-final">
-      <div className="wt2-final-ring wt2-ring-a" aria-hidden="true" />
-      <div className="wt2-final-ring wt2-ring-b" aria-hidden="true" />
-      <h2>Your next walkthrough could quote itself.</h2>
+    <section className="wt2-m-final">
+      <h2>Ready to keep every shift covered?</h2>
       <p>Try WorkTeams free for 7 days and run your cleaning business from your pocket.</p>
-      <Link href="/login" className="wt2-btn wt2-btn-light wt2-btn-lg wt2-btn-glow">
-        Start free trial {I.arrow}
+      <Link href="/login" className="wt2-m-btn wt2-m-btn-white wt2-m-btn-lg">
+        Start my 7-day free trial
       </Link>
-      <p className="wt2-final-note">7-day free trial · No card required</p>
+      <p className="wt2-m-final-note">7-day free trial · No card required</p>
     </section>
   );
 }
 
 function SiteFooter() {
   return (
-    <footer className="wt2-footer">
-      <div className="wt2-footer-inner">
-        <span className="wt2-nav-brand">
-          <span className="wt2-mark" aria-hidden="true">WT</span>
+    <footer className="wt2-m-footer">
+      <div className="wt2-m-footer-inner">
+        <span className="wt2-m-nav-brand">
+          <span className="wt2-m-mark" aria-hidden="true">WT</span>
           <span>WorkTeams</span>
         </span>
         <p>Built by a cleaner, for cleaners. © 2026 WorkTeams.</p>
         <p>Questions? <a href={`mailto:${SUPPORT_EMAIL}`}>{SUPPORT_EMAIL}</a></p>
-        <span className="wt2-footer-links">
+        <span className="wt2-m-footer-links">
           <Link href="/temp">Temp staffing</Link>
           <Link href="/privacy">Privacy</Link>
           <Link href="/terms">Terms</Link>
