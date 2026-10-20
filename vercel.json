@@ -7,6 +7,10 @@
     {
       "path": "/api/cron/attendance",
       "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/cron/retention-purge",
+      "schedule": "17 9 * * *"
     }
   ]
 }
