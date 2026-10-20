@@ -145,9 +145,11 @@ export default function ContractsPage() {
       if (amendForm.price_per_visit) changes.price_per_visit = Number(amendForm.price_per_visit);
       if (amendForm.visits_per_week) changes.visits_per_week = Number(amendForm.visits_per_week);
       if (amendForm.end_date) changes.end_date = amendForm.end_date;
+      const { data: { session } } = await supabase().auth.getSession();
+      if (!session?.access_token) throw new Error("Sign in as an owner or admin first.");
       const res = await fetch("/api/amendments/create", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
         body: JSON.stringify({
           contract_id: amendFor.id,
           company_id: company.id,

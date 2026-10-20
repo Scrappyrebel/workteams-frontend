@@ -4,19 +4,43 @@ import { createClient } from "@supabase/supabase-js";
 const sb = () =>
   createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
 
+async function authedUser(req) {
+  const token = (req.headers.get("authorization") || "").replace(/^Bearer\s+/i, "");
+  if (!token) return null;
+  const client = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+    { global: { headers: { Authorization: `Bearer ${token}` } } }
+  );
+  const { data: { user }, error } = await client.auth.getUser();
+  return error ? null : user;
+}
+
 function makeToken() {
   const bytes = crypto.getRandomValues(new Uint8Array(32));
   return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
 }
 
 // Owner/admin: create a contract amendment and generate its signing link.
+// The caller must be signed in AND hold an owner/admin role in the company —
+// this route mints signing tokens for legal documents, so it fails closed.
 export async function POST(req) {
   try {
+    const user = await authedUser(req);
+    if (!user) return NextResponse.json({ error: "Sign in required." }, { status: 401 });
     const { contract_id, company_id, title, description, changes } = await req.json();
     if (!contract_id || !company_id || !title?.trim() || !description?.trim()) {
       return NextResponse.json({ error: "Contract, title, and description are required." }, { status: 400 });
     }
     const client = sb();
+    const { data: actor } = await client
+      .from("company_members")
+      .select("id, role")
+      .eq("user_id", user.id)
+      .eq("company_id", company_id)
+      .maybeSingle();
+    if (!actor || !["owner", "admin"].includes(actor.role)) {
+      return NextResponse.json({ error: "Only owners and admins can create amendments." }, { status: 403 });
+    }
     // Verify the contract belongs to the company.
     const { data: contract } = await client
       .from("contracts")
