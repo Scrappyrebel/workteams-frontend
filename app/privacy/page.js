@@ -103,6 +103,21 @@ export default function PrivacyPage() {
           We use essential cookies and similar technologies to keep you logged in,
           remember your preferences, and secure your session.
         </p>
+
+        <h3 style={{ ...h, fontSize: "1.05rem" }}>2.8. Temp staffing applicant information</h3>
+        <p style={p}>
+          If you apply for temporary work through the temp staffing page of a
+          business, we collect the information you provide in your application:
+          your name and contact details, the types of work you are seeking, your
+          availability and transportation, two references, and an emergency
+          contact. We also record the status confirmations you provide during the
+          application — whether you have completed Form I-9, your E-Verify
+          status, and your acknowledgment of the drug policy of that business. We
+          record only these status flags and acknowledgments; we do not collect
+          or store your I-9 or identity documents, your Social Security number,
+          or drug test results. Your application is shared with the business you
+          applied to, so it can consider you for assignments.
+        </p>
       </div>
 
       <div style={section}>
@@ -134,6 +149,7 @@ export default function PrivacyPage() {
           <li style={li}>Supabase — database hosting and authentication</li>
           <li style={li}>Vercel — application hosting</li>
           <li style={li}>Resend — transactional emails</li>
+          <li style={li}>OpenStreetMap (Nominatim) — address geocoding</li>
         </ul>
         <p style={p}>
           Each provider processes data under contractual obligations and only as needed
