@@ -1,0 +1,28 @@
+name: WorkTeams Directory Access Guard
+
+on:
+  pull_request:
+    paths:
+      - 'supabase/049_team_directory_security_invoker.sql'
+      - 'scripts/check-team-directory-security.mjs'
+      - '.github/workflows/team-directory-security.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'supabase/049_team_directory_security_invoker.sql'
+      - 'scripts/check-team-directory-security.mjs'
+      - '.github/workflows/team-directory-security.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  directory-security:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - run: node --test scripts/check-team-directory-security.mjs
