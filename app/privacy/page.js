@@ -15,7 +15,7 @@ export default function PrivacyPage() {
     <main className="site-shell" style={{ maxWidth: 760 }}>
       <p className="eyebrow">LEGAL</p>
       <h1 style={{ fontSize: "2rem", margin: "6px 0 4px" }}>Privacy Policy</h1>
-      <p style={{ color: "var(--muted)", marginBottom: 26 }}>Last updated: October 7, 2026</p>
+      <p style={{ color: "var(--muted)", marginBottom: 26 }}>Last updated: October 20, 2026</p>
 
       <div style={section}>
         <h2 style={h}>1. Introduction</h2>
