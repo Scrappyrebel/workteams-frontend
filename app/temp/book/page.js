@@ -83,7 +83,7 @@ export default function TempBook() {
 
   if (loading) {
     return (
-      <main className="site-shell">
+      <main className="site-shell wt2-t-site">
         <section className="panel" style={{ padding: 30 }}>
           Loading…
         </section>
@@ -92,7 +92,7 @@ export default function TempBook() {
   }
   if (!cfg) {
     return (
-      <main className="site-shell">
+      <main className="site-shell wt2-t-site">
         <section className="panel" style={{ padding: 30 }}>
           <h2>Temp staffing isn't available right now</h2>
           <p style={{ color: "var(--muted)" }}>Please check back soon.</p>
@@ -103,8 +103,8 @@ export default function TempBook() {
 
   const input = { width: "100%", padding: 10, marginTop: 4 };
   return (
-    <main className="site-shell">
-      <section className="panel" style={{ padding: 30, maxWidth: 640, margin: "0 auto" }}>
+    <main className="site-shell wt2-t-site">
+      <section className="panel wt2-t-book-panel" style={{ padding: 30, maxWidth: 640, margin: "0 auto" }}>
         <p className="kicker">Book temp staff</p>
         <h1 style={{ marginTop: 4 }}>Request your crew</h1>
         <p style={{ color: "var(--muted)" }}>
@@ -284,3 +284,4 @@ export default function TempBook() {
     </main>
   );
 }
+
