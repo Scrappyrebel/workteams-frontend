@@ -20,7 +20,7 @@ export default function PrivacyPage() {
       <div style={section}>
         <h2 style={h}>1. Introduction</h2>
         <p style={p}>
-          This Privacy Policy describes how That&apos;s A Wrap and More LLC, a Missouri
+          This Privacy Policy describes how Ridgefront Tech LLC, a Missouri
           limited liability company (&quot;Company,&quot; &quot;we,&quot; &quot;us,&quot; or
           &quot;our&quot;), collects, uses, shares, and protects personal information when
           you use WorkTeams, our workforce-management application for cleaning and
@@ -258,7 +258,7 @@ export default function PrivacyPage() {
         <h2 style={h}>10. Contact us</h2>
         <p style={p}>For privacy questions or requests:</p>
         <p style={p}>
-          That&apos;s A Wrap and More LLC<br />
+          Ridgefront Tech LLC<br />
           29108 State Highway Y, Cabin A<br />
           Jonesburg, MO 63351<br />
           <a href="mailto:lillybsjanitorial@gmail.com">lillybsjanitorial@gmail.com</a>

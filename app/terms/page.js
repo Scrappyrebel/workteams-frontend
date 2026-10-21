@@ -19,7 +19,7 @@ export default function TermsPage() {
       <div style={section}>
         <h2 style={h}>1. The service</h2>
         <p style={p}>
-          WorkTeams is provided by That&apos;s A Wrap and More LLC, a Missouri limited
+          WorkTeams is provided by Ridgefront Tech LLC, a Missouri limited
           liability company. WorkTeams provides workforce software for cleaning companies:
           scheduling, a GPS time clock, hour and payroll reports, inspections, crew messaging,
           bidding, work orders, supplies, a client portal, and training. Features
@@ -150,7 +150,7 @@ export default function TermsPage() {
       <div style={section}>
         <h2 style={h}>12. Contact</h2>
         <p style={p}>
-          That&apos;s A Wrap and More LLC<br />
+          Ridgefront Tech LLC<br />
           29108 State Highway Y, Cabin A<br />
           Jonesburg, MO 63351<br />
           <a href="mailto:lillybsjanitorial@gmail.com">lillybsjanitorial@gmail.com</a>
