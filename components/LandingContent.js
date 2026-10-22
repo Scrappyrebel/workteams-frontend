@@ -5,6 +5,7 @@ import Link from "next/link";
 import { TIERS } from "../lib/tiers";
 import { SUPPORT_EMAIL } from "../lib/app-url";
 import { getTierPrices } from "../lib/product";
+import {WORKTEAMS_PUBLIC_SALE_APPROVED} from "../lib/public-launch-status";
 
 // Public national sales page for WorkTeams — restyled 2026-10-20 to the
 // owner's approved mockup layout (deep-navy hero, dual phone mockups, badge
@@ -195,6 +196,12 @@ export default function LandingContent() {
   return (
     <main className="wt2-m-site">
       <SiteNav />
+      {!WORKTEAMS_PUBLIC_SALE_APPROVED && <section id="construction-status" role="status" aria-label="Under Construction — Available at a Later Date"
+        style={{maxWidth:1100,margin:"20px auto",padding:"20px",background:"#fff4df",border:"3px solid #9c4b09",borderRadius:12,color:"#452609",lineHeight:1.55}}>
+        <h1 style={{fontSize:"1.45rem",margin:"0 0 8px"}}>UNDER CONSTRUCTION — Available at a Later Date</h1>
+        <p style={{margin:"0 0 8px"}}>WorkTeams is still being developed and tested for nationwide subscribers. The public subscription offering is not yet certified as ready for sale. Please check back later for availability updates.</p>
+        <p style={{fontSize:".92rem",margin:0}}>Existing users can continue to <Link href="/login" style={{color:"#74360c",fontWeight:700,textDecoration:"underline"}}>sign in</Link> to their private workspaces. Your existing work is unaffected.</p>
+      </section>}
       <Hero />
       <BadgeStrip />
       <FounderStrip />
@@ -227,7 +234,7 @@ function SiteNav() {
       </nav>
       <div className="wt2-m-nav-cta">
         <Link href="/login" className="wt2-m-btn wt2-m-btn-navghost">Sign in</Link>
-        <Link href="/login" className="wt2-m-btn wt2-m-btn-primary">Start free trial</Link>
+        <a href={WORKTEAMS_PUBLIC_SALE_APPROVED?"/login":"#construction-status"} className="wt2-m-btn wt2-m-btn-primary">{WORKTEAMS_PUBLIC_SALE_APPROVED?"Start free trial":"Check launch status"}</a>
       </div>
     </header>
   );
@@ -303,12 +310,12 @@ function Hero() {
             your accountant. One app, built mobile-first for the people doing the work.
           </p>
           <div className="wt2-m-cta-row">
-            <Link href="/login" className="wt2-m-btn wt2-m-btn-primary wt2-m-btn-lg wt2-m-btn-glow">
-              Start my 7-day free trial
-            </Link>
+            <a href={WORKTEAMS_PUBLIC_SALE_APPROVED?"/login":"#construction-status"} className="wt2-m-btn wt2-m-btn-primary wt2-m-btn-lg wt2-m-btn-glow">
+              {WORKTEAMS_PUBLIC_SALE_APPROVED?"Start my 7-day free trial":"Under Construction — Check Availability"}
+            </a>
             <a href="#pricing" className="wt2-m-btn wt2-m-btn-hero-outline wt2-m-btn-lg">See plans &amp; pricing</a>
           </div>
-          <p className="wt2-m-cta-note">7-day free trial · No card required</p>
+          <p className="wt2-m-cta-note">{WORKTEAMS_PUBLIC_SALE_APPROVED?"7-day free trial · No card required":"Subscriber launch is pending independent testing and approval."}</p>
         </div>
         <HeroPhones />
       </div>
@@ -318,7 +325,7 @@ function Hero() {
 
 const BADGES = [
   "GPS-verified clock-ins",
-  "7-day free trial",
+  "Under Construction — public launch pending",
   "Built for cleaning & janitorial teams",
   "Works on any smartphone",
 ];
@@ -487,7 +494,7 @@ function Pricing({ tierKeys, prices }) {
       <p className="wt2-m-eyebrow">Pricing</p>
       <h2 className="wt2-m-h2">Simple, transparent pricing</h2>
       <p className="wt2-m-section-sub">
-        7-day free trial on every tier. No card required — pick your tier before the trial ends to keep going.
+        {WORKTEAMS_PUBLIC_SALE_APPROVED?"7-day free trial on eligible tiers; confirm current terms before subscribing.":"Plan pricing is shown for preview only. WorkTeams is Under Construction and not yet approved for a public subscription launch."}
       </p>
       <div className="wt2-m-tiers">
         {tierKeys.map((key, i) => {
@@ -568,12 +575,12 @@ function Faq() {
 function FinalCta() {
   return (
     <section className="wt2-m-final">
-      <h2>Ready to keep every shift covered?</h2>
-      <p>Try WorkTeams free for 7 days and run your cleaning business from your pocket.</p>
-      <Link href="/login" className="wt2-m-btn wt2-m-btn-white wt2-m-btn-lg">
-        Start my 7-day free trial
-      </Link>
-      <p className="wt2-m-final-note">7-day free trial · No card required</p>
+      <h2>{WORKTEAMS_PUBLIC_SALE_APPROVED?"Ready to keep every shift covered?":"Interested in WorkTeams?"}</h2>
+      <p>{WORKTEAMS_PUBLIC_SALE_APPROVED?"Try WorkTeams and run your cleaning business from your pocket.":"Under Construction — WorkTeams will be available at a later date after nationwide subscriber testing. Please check back for updates."}</p>
+      <a href={WORKTEAMS_PUBLIC_SALE_APPROVED?"/login":"#construction-status"} className="wt2-m-btn wt2-m-btn-white wt2-m-btn-lg">
+        {WORKTEAMS_PUBLIC_SALE_APPROVED?"Start my 7-day free trial":"View construction status"}
+      </a>
+      <p className="wt2-m-final-note">{WORKTEAMS_PUBLIC_SALE_APPROVED?"7-day free trial · No card required":"Public launch not yet certified; existing sign-in remains available."}</p>
     </section>
   );
 }
