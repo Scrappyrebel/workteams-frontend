@@ -6,6 +6,7 @@ import { useParams, useRouter } from "next/navigation";
 import { supabase } from "../../../../../lib/supabase";
 import { useCompany } from "../../../../../lib/company-context";
 import { canUseWithRole } from "../../../../../lib/tiers";
+import BidCommissionCard from "../../../../../components/BidCommissionCard";
 import RateLookup from "../../../../../components/RateLookup";
 import RateGuidance from "../../../../../components/RateGuidance";
 
@@ -486,6 +487,14 @@ export default function BidDetailPage() {
           jobType={pricing.job_type}
         />
       </section>
+
+      <BidCommissionCard
+        monthlyRevenue={
+          !bid?.frequency || bid.frequency === "one-time"
+            ? total
+            : total * ({ weekly: 4.33, "2x-week": 8.67, "3x-week": 13, "5x-week": 21.67, biweekly: 2.17, monthly: 1 }[bid.frequency] || 1)
+        }
+      />
 
       {mode === "line_items" && (
       <section className="panel" style={{ padding: 22, margin: "18px 0" }}>
