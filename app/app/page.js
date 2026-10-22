@@ -12,6 +12,7 @@ export default function CompaniesPage() {
   const [user, setUser] = useState(null);
   const [memberships, setMemberships] = useState([]);
   const [name, setName] = useState("");
+  const [telegramSetup, setTelegramSetup] = useState(false);
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
   const [justJoined, setJustJoined] = useState(0);
@@ -76,7 +77,7 @@ export default function CompaniesPage() {
       return;
     }
     setName("");
-    router.push(`/app/${company.id}`);
+    router.push(`/app/${company.id}/settings${telegramSetup ? "?telegram_setup=1" : ""}`);
   }
 
   if (loading) return <main className="site-shell"><p>Loading…</p></main>;
@@ -145,6 +146,18 @@ export default function CompaniesPage() {
               {creating ? "Creating…" : "Create"}
             </button>
           </div>
+          <label style={{ display: "flex", gap: 8, marginTop: 12, alignItems: "start" }}>
+            <input type="checkbox" checked={telegramSetup}
+              onChange={e => setTelegramSetup(e.target.checked)} />
+            <span>Show me how to set up private Telegram evidence copies of
+              shift videos and communication-book photos (optional).</span>
+          </label>
+          <p style={{ color: "var(--muted)", fontSize: "0.85rem" }}>
+            Telegram is for company owners and approved management only.
+            Employees upload normally in WorkTeams and do not need Telegram.
+            You will not need to enter any code in Vercel.
+            Checking this box does not enable sending or change proof rules.
+          </p>
           <p style={{ color: "var(--muted)", fontSize: "0.85rem", marginTop: 8 }}>
             New companies start on the Starter tier. You'll be the owner.
           </p>

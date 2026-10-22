@@ -8,5 +8,10 @@
       "path": "/api/cron/attendance",
       "schedule": "*/5 * * * *"
     }
-  ]
+  ],
+  "git": {
+    "deploymentEnabled": {
+      "build/**": false
+    }
+  }
 }
