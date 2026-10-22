@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import CommercialConstructionNotice from "./CommercialConstructionNotice";
 import { TIERS } from "../lib/tiers";
 import { SUPPORT_EMAIL } from "../lib/app-url";
 import { getTierPrices } from "../lib/product";
@@ -194,6 +195,7 @@ export default function LandingContent() {
 
   return (
     <main className="wt2-m-site">
+      <CommercialConstructionNotice />
       <SiteNav />
       <Hero />
       <BadgeStrip />

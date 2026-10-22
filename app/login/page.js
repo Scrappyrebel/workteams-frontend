@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import CommercialConstructionNotice from "../../components/CommercialConstructionNotice";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "../../lib/supabase";
@@ -79,6 +80,7 @@ export default function LoginPage() {
 
   return (
     <main className="site-shell" style={{ maxWidth: 520 }}>
+      <CommercialConstructionNotice />
       <Link href="/" className="back-link">← Back to home</Link>
       <section className="panel" style={{ padding: 30 }}>
         <p className="eyebrow">SIGN IN</p>
