@@ -1,0 +1,61 @@
+name: Routine Security Monitoring
+
+on:
+  schedule:
+    - cron: "41 10 * * *" # Daily UTC; staggered to reduce load
+    - cron: "43 11 * * 1" # Weekly deeper review, Mondays UTC
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "package.json"
+      - "package-lock.json"
+      - ".github/workflows/routine-security.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: routine-security-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  review:
+    name: Dependency and public HTTPS security checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout without persisted credentials
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Set up the production Node.js major version
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "24"
+      - name: Audit lockfile readiness
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ ! -f package-lock.json ]; then
+            echo "::warning::Missing committed package-lock.json; resolving a temporary audit-only lockfile. Results may not match the deployed dependency versions."
+            echo "⚠️ No committed lockfile. Audit uses a temporary resolution and cannot verify the exact deployed package versions." >> "$GITHUB_STEP_SUMMARY"
+            npm install --package-lock-only --ignore-scripts --no-audit --no-fund
+          fi
+      - name: Check public production HTTPS homepage
+        if: github.event_name != 'pull_request'
+        shell: bash
+        env:
+          SITE_URL: https://app.lillybsjanitorial.com
+        run: |
+          set -euo pipefail
+          status="$(curl --silent --show-error --location --proto "=https" --proto-redir "=https" --retry 2 --retry-delay 2 --connect-timeout 10 --max-time 50 --output /dev/null --write-out "%{http_code}" "$SITE_URL")"
+          echo "Production HTTPS status: $status" >> "$GITHUB_STEP_SUMMARY"
+          if [[ ! "$status" =~ ^2[0-9][0-9]$ ]]; then
+            echo "::error::Production site HTTPS request failed or returned HTTP $status"
+            exit 1
+          fi
+      - name: Check production dependency vulnerabilities (high or critical)
+        run: npm audit --omit=dev --audit-level=high --no-fund
+      - name: Weekly full dependency audit (including development packages)
+        if: ${{ always() && (github.event_name == 'workflow_dispatch' || github.event.schedule == '43 11 * * 1') }}
+        run: npm audit --audit-level=moderate --no-fund
