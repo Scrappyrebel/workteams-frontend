@@ -10,11 +10,11 @@
     "check:protected-core": "node scripts/check-protected-clock.mjs && node scripts/check-protected-video.mjs"
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.117.2",
-    "isomorphic-dompurify": "^4.4.0",
-    "next": "16.3.6",
-    "react": "19.3.0",
-    "react-dom": "19.3.0",
+    "@supabase/supabase-js": "^2.118.0",
+    "isomorphic-dompurify": "^4.6.0",
+    "next": "16.4.2",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
     "stripe": "^23.0.0",
     "tus-js-client": "^4.3.1",
     "web-push": "^3.6.7"
