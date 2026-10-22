@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import CommercialConstructionNotice from "../../../../components/CommercialConstructionNotice";
 import { supabase } from "../../../../lib/supabase";
 import { useCompany } from "../../../../lib/company-context";
 import { TIERS } from "../../../../lib/tiers";
@@ -135,6 +136,7 @@ export default function PlansPage() {
 
   return (
     <div>
+      <CommercialConstructionNotice />
       <p className="eyebrow">PLANS</p>
       <h2 style={{ fontSize: "1.8rem" }}>Choose your tier</h2>
       <p style={{ color: "var(--muted)" }}>

@@ -1,0 +1,7 @@
+# WorkTeams public subscription launch notice — October 22, 2026
+
+WorkTeams' national commercial landing page, public login, and company subscription plans display a prominent, accessible high-contrast 🚧 **UNDER CONSTRUCTION** banner. The notice states commercial monthly subscriptions are not ready for general public launch and **will be available at a later date**; interested people should check back. Existing authorized accounts can sign in and continue working.
+
+This change discloses commercial readiness without changing payroll, scheduling, employee shift pages, invoices, payment provider contracts, database RLS, Stripe checkout or existing subscribers. It is NOT displayed in private authenticated company operations and NOT added to Lilly B's separate temporary-staffing service (/temp). The banner must remain until the owner explicitly approves WorkTeams' national commercial launch after real customer, company isolation, subscription, financial, security, mobile and legal acceptance. Recheck each production domain and keep accurate status in the handoff.
+
+**No paid service, data migration or production finance write.** This national sales disclosure is not one-tenant customization.
