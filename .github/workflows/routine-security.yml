@@ -26,14 +26,14 @@ permissions:
   contents: read
 
 concurrency:
-  group: routine-security-${{ github.ref }}
+  group: routine-security-${{ github.ref }}-${{ github.event_name }}-${{ github.event.schedule || inputs.scan_level || 'pr' }}
   cancel-in-progress: true
 
 jobs:
   review:
     name: Dependency and public HTTPS security checks
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
     env:
       SCAN_LEVEL: ${{ github.event_name == 'pull_request' && 'daily' || github.event_name == 'workflow_dispatch' && inputs.scan_level || github.event.schedule == '35 2 * * 1' && 'weekly' || github.event.schedule == '30 3 1 * *' && 'monthly' || 'daily' }}
     steps:
