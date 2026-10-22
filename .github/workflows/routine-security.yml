@@ -2,9 +2,20 @@ name: Routine Security Monitoring
 
 on:
   schedule:
-    - cron: "41 10 * * *" # Daily UTC; staggered to reduce load
-    - cron: "43 11 * * 1" # Weekly deeper review, Mondays UTC
+    - cron: "35 1 * * *"
+      timezone: "America/Chicago"
+    - cron: "35 2 * * 1"
+      timezone: "America/Chicago"
+    - cron: "30 3 1 * *"
+      timezone: "America/Chicago"
   workflow_dispatch:
+    inputs:
+      scan_level:
+        description: Choose daily, weekly or monthly scan
+        required: true
+        default: monthly
+        type: choice
+        options: [daily, weekly, monthly]
   pull_request:
     paths:
       - "package.json"
@@ -23,6 +34,8 @@ jobs:
     name: Dependency and public HTTPS security checks
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    env:
+      SCAN_LEVEL: ${{ github.event_name == 'pull_request' && 'daily' || github.event_name == 'workflow_dispatch' && inputs.scan_level || github.event.schedule == '35 2 * * 1' && 'weekly' || github.event.schedule == '30 3 1 * *' && 'monthly' || 'daily' }}
     steps:
       - name: Checkout without persisted credentials
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -41,7 +54,9 @@ jobs:
             echo "⚠️ No committed lockfile. Audit uses a temporary resolution and cannot verify the exact deployed package versions." >> "$GITHUB_STEP_SUMMARY"
             npm install --package-lock-only --ignore-scripts --no-audit --no-fund
           fi
-      - name: Check public production HTTPS homepage
+      - name: Daily - production HTTPS check
+        id: site
+        continue-on-error: true
         if: github.event_name != 'pull_request'
         shell: bash
         env:
@@ -54,8 +69,66 @@ jobs:
             echo "::error::Production site HTTPS request failed or returned HTTP $status"
             exit 1
           fi
-      - name: Check production dependency vulnerabilities (high or critical)
+      - name: Daily - high and critical production dependency audit
+        id: runtime
+        continue-on-error: true
         run: npm audit --omit=dev --audit-level=high --no-fund
-      - name: Weekly full dependency audit (including development packages)
-        if: ${{ always() && (github.event_name == 'workflow_dispatch' || github.event.schedule == '43 11 * * 1') }}
+      - name: Weekly and monthly - all packages, moderate severity and above
+        id: broad
+        if: ${{ always() && (env.SCAN_LEVEL == 'weekly' || env.SCAN_LEVEL == 'monthly') }}
+        continue-on-error: true
         run: npm audit --audit-level=moderate --no-fund
+      - name: Weekly and monthly - tracked secrets and sensitive configuration
+        id: secrets
+        if: ${{ always() && (env.SCAN_LEVEL == 'weekly' || env.SCAN_LEVEL == 'monthly') }}
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          env_files="$(git ls-files | grep -E '(^|/)\.env($|\.)' | grep -Ev '\.(example|sample|template)$' || true)"
+          risky="$(git grep -l -E -e 'gh[pousr]_[A-Za-z0-9]{30,}' -e 'AKIA[0-9A-Z]{16}' -e 'sb_secret_[A-Za-z0-9_-]{20,}' -e 'BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY' -- '*.js' '*.mjs' '*.ts' '*.tsx' '*.jsx' '*.json' '*.sql' 2>/dev/null || true)"
+          if [ -n "$env_files" ] || [ -n "$risky" ]; then
+            echo '### Potential leaked credentials (file paths only; manually validate)' >> "$GITHUB_STEP_SUMMARY"
+            printf '%s\n%s\n' "$env_files" "$risky" >> "$GITHUB_STEP_SUMMARY"
+            echo '::error::Possible secret exposure in tracked source'
+            exit 1
+          fi
+          echo 'No selected secret patterns found; this does not prove the source is secure.' >> "$GITHUB_STEP_SUMMARY"
+      - name: Monthly - include low-severity dependency advisories
+        id: deeper_audit
+        if: ${{ always() && env.SCAN_LEVEL == 'monthly' }}
+        continue-on-error: true
+        run: npm audit --audit-level=low --no-fund
+      - name: Monthly - privileged database code and unsafe application pattern review
+        id: deep_code
+        if: ${{ always() && env.SCAN_LEVEL == 'monthly' }}
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo '### Code locations requiring independent review (indicators, not confirmed vulnerabilities)' >> "$GITHUB_STEP_SUMMARY"
+          git grep -l -E -e 'SECURITY[[:space:]]+DEFINER' -e 'dangerouslySetInnerHTML' -e 'eval[[:space:]]*\(' -e 'DISABLE ROW LEVEL SECURITY' -- '*.sql' '*.ts' '*.tsx' '*.js' '*.jsx' '*.mjs' 2>/dev/null | head -n 70 >> "$GITHUB_STEP_SUMMARY" || true
+          git grep -l -E -e 'gh[pousr]_[A-Za-z0-9]{30,}' -e 'AKIA[0-9A-Z]{16}' -e 'sb_secret_[A-Za-z0-9_-]{20,}' -- '*.yaml' '*.yml' '*.toml' 2>/dev/null | head -n 50 >> "$GITHUB_STEP_SUMMARY" || true
+          echo 'Separately verify live Supabase Security Advisor, tenant isolation/RLS, privileged roles, Backblaze restores and Vercel rules.' >> "$GITHUB_STEP_SUMMARY"
+      - name: Summarize all layers and fail if any security check failed
+        if: ${{ always() }}
+        shell: bash
+        env:
+          SITE: ${{ steps.site.outcome }}
+          RUNTIME: ${{ steps.runtime.outcome }}
+          BROAD: ${{ steps.broad.outcome }}
+          SECRETS: ${{ steps.secrets.outcome }}
+          DEEPER: ${{ steps.deeper_audit.outcome }}
+          DEEP_CODE: ${{ steps.deep_code.outcome }}
+        run: |
+          set -euo pipefail
+          {
+            echo '### Security review outcome'
+            echo '| Step | Result |'
+            echo '|---|---|'
+            for key in SITE RUNTIME BROAD SECRETS DEEPER DEEP_CODE; do printf '| %s | %s |\n' "$key" "${!key}"; done
+            echo 'Critical and high findings require urgent review; these scanners do not automatically contain attackers.'
+          } >> "$GITHUB_STEP_SUMMARY"
+          for key in SITE RUNTIME BROAD SECRETS DEEPER DEEP_CODE; do
+            if [ "${!key}" = failure ]; then echo "::error::Security check failed: $key"; exit 1; fi
+          done
