@@ -1,5 +1,14 @@
 # WorkTeams: recurring security monitoring
 
+## Three independent overnight schedules (America/Chicago)
+
+- Daily: 12:25 AM every day, including Mondays and the 1st of the month.
+- Weekly: 1:35 AM every Monday, even when daily/monthly checks are also due.
+- Monthly: 2:45 AM on the 1st of each month, even when daily/weekly checks are due.
+- All three use unique cron triggers and produce separate Actions runs. No workflow-level cancellation. Scheduled times are spread by over an hour, but GitHub scheduling delays can still cause actual overlap.
+- The daily scan checks HTTPS and high/critical production dependencies. Weekly repeats daily and adds broader packages and secret/source patterns. Monthly repeats weekly and adds low-severity audits and privileged-code/SQL pattern checks.
+- The independent daily ChatGPT alert review at 5:30 AM is a report, **not** a security scan. Live Supabase, Vercel and Backblaze controls require separate checks; static source scans cannot guarantee safety.
+
 ## Automated monitoring
 
 - Daily: GitHub Actions runs a production dependency vulnerability audit and an HTTPS homepage reachability check. This is not an authenticated penetration test.
