@@ -197,6 +197,28 @@ check("shift video page never uploads an oversized single object", SV, src =>
 check("quick video picker never uploads an oversized single object", "components/ShiftVideoQuick.js", src =>
   src.includes("uploadShiftVideoSafely({") &&
   !src.includes("new tus.Upload(file, {"));
+// Proof required by default + employee override (spec 2026-10-23, mig 052).
+const OV = "app/api/time/clock-out/override/route.js";
+const PP = "lib/proof-policy.js";
+const MIG = "supabase/052_proof_required_default_override.sql";
+check("proof policy tolerant read (absence = required)", PP, (s) =>
+  s.includes("!== false") && s.includes("proofRequired"));
+check("override requires a persisted reason", OV, (s) =>
+  s.includes("shift_proof_overrides") && s.includes("cleanReason") &&
+  s.includes("proof_override_used: true"));
+check("completion accepts a persisted override per kind", CC, (s) =>
+  s.includes("shift_proof_overrides") && s.includes('overrideKinds.has("walkthrough")') &&
+  s.includes('overrideKinds.has("book")') && s.includes("proof_override_used"));
+check("employee override control with required reason", C, (s) =>
+  s.includes("I can't upload this") && s.includes("Save override reason") &&
+  s.includes('"/api/time/clock-out/override"') && s.includes("renderProofOverride"));
+check("migration 052 defaults + override table + existing companies on", MIG, (s) =>
+  s.includes("alter column require_walkthrough_video set default true") &&
+  s.includes("alter column require_book_photo set default true") &&
+  s.includes("create table if not exists public.shift_proof_overrides") &&
+  s.includes("set require_walkthrough_video = true") &&
+  s.includes("grant select, insert, update, delete on public.shift_proof_overrides to authenticated"));
+
 if (failures.length) {
   console.error("\nREGRESSION FAILURES:");
   failures.forEach((f) => console.error("  x " + f));

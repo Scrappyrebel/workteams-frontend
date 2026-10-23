@@ -39,13 +39,24 @@ export default function CompanyLayout({ children }) {
       // (2026-10-09 and 2026-10-12 both locked owners out over this.)
       let company = null;
       {
-        const withTz = await sb.from("companies").select("id,name,tier,timezone,subscription_status,is_complimentary,created_at").eq("id", companyId).single();
-        if (withTz.data) {
-          company = withTz.data;
+        // Widest read first: timezone + the end-of-shift proof switches
+        // (enable_* from 040, require_* from 039, defaults flipped ON by
+        // 052). If the API cannot serve some columns yet, fall back step by
+        // step instead of locking the user out. Missing proof values are
+        // resolved downstream by lib/proof-policy: absence = feature ON and
+        // requirement ON (the spec default), never a crash.
+        const widest = await sb.from("companies").select("id,name,tier,timezone,subscription_status,is_complimentary,created_at,enable_shift_videos,enable_comm_book,require_walkthrough_video,require_book_photo").eq("id", companyId).single();
+        if (widest.data) {
+          company = widest.data;
         } else {
-          const withoutTz = await sb.from("companies").select("id,name,tier,subscription_status,is_complimentary,created_at").eq("id", companyId).single();
-          company = withoutTz.data;
-          if (company) company.timezone = "America/Chicago";
+          const withTz = await sb.from("companies").select("id,name,tier,timezone,subscription_status,is_complimentary,created_at").eq("id", companyId).single();
+          if (withTz.data) {
+            company = withTz.data;
+          } else {
+            const withoutTz = await sb.from("companies").select("id,name,tier,subscription_status,is_complimentary,created_at").eq("id", companyId).single();
+            company = withoutTz.data;
+            if (company) company.timezone = "America/Chicago";
+          }
         }
       }
       const { data: member } = await sb

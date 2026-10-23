@@ -8,6 +8,7 @@ import { isManagerRole, isSupervisorRole } from "../../../../lib/roles";
 import EmergencyButton from "../../../../components/EmergencyButton";
 import EndShiftProof from "../../../../components/EndShiftProof";
 import { chooseAssignedShift } from "../../../../lib/attendance-shifts.mjs";
+import { proofRequired } from "../../../../lib/proof-policy";
 
 function getPosition() {
   return new Promise((resolve) => {
@@ -64,6 +65,10 @@ export default function TimeClockPage() {
   const [lastShiftLength, setLastShiftLength] = useState(null);
   const [proofEntry, setProofEntry] = useState(null);
   const [proofNotice, setProofNotice] = useState("");
+  // Employee proof overrides by time entry id (shift_proof_overrides,
+  // migration 052) — shown on each entry card so an override is never
+  // mistaken for real proof.
+  const [overridesByEntry, setOverridesByEntry] = useState({});
 
   const isManager = isManagerRole(member?.role);
   // Supervisors and up see the team's entries and who's on the clock.
@@ -111,6 +116,28 @@ export default function TimeClockPage() {
     if (!canViewTeam || filter === "mine") q = q.eq("member_id", member.id);
     const { data } = await q;
     setEntries(data || []);
+
+    // Overrides for the entries on screen. Tolerant: before migration 052
+    // runs, the table is absent — keep the plain entry list, no crash.
+    try {
+      const entryIds = (data || []).map((e) => e.id);
+      if (entryIds.length) {
+        const { data: ovs, error: ovError } = await sb
+          .from("shift_proof_overrides")
+          .select("id, time_entry_id, proof_kind, reason, created_at")
+          .in("time_entry_id", entryIds)
+          .order("created_at", { ascending: true });
+        if (!ovError) {
+          const map = {};
+          for (const o of ovs || []) {
+            (map[o.time_entry_id] = map[o.time_entry_id] || []).push(o);
+          }
+          setOverridesByEntry(map);
+        }
+      } else {
+        setOverridesByEntry({});
+      }
+    } catch { /* overrides unavailable — entries still render */ }
 
     const { data: locs } = await sb.from("locations").select("id, name, lat, lng, geofence_radius_m").eq("company_id", company.id).order("name");
     setLocations(locs || []);
@@ -462,6 +489,8 @@ export default function TimeClockPage() {
           <h3 style={{ margin: "0 0 4px" }}>📋 End of shift</h3>
           <p style={{ color: "var(--muted)", fontSize: "0.88rem", margin: "0 0 14px" }}>
             Record your walkthrough and book photo before you clock out — no need to hunt through tabs.
+            {(proofRequired(company, "walkthrough") || proofRequired(company, "book")) &&
+              " Required proof must be uploaded — or an override reason saved — before clock-out can finish."}
           </p>
           <EndShiftProof
             ref={proofRef}
@@ -473,6 +502,8 @@ export default function TimeClockPage() {
             onProofUploaded={finalizeProofUpload}
             enableVideo={company.enable_shift_videos !== false}
             enableBook={company.enable_comm_book !== false}
+            requireVideo={proofRequired(company, "walkthrough")}
+            requireBook={proofRequired(company, "book")}
           />
         </section>
       )}
@@ -564,6 +595,21 @@ export default function TimeClockPage() {
                   : <strong>open</strong>}{" "}
                 {hrs && <span style={{ color: "var(--muted)" }}>({hrs} h)</span>}
               </p>
+              {(overridesByEntry[e.id]?.length > 0 || e.proof_override_used) && (
+                <div style={{ marginTop: 8, padding: "8px 10px", background: "#fff4e5", border: "1px solid #e0a458", borderRadius: 8 }}>
+                  <strong style={{ fontSize: "0.9rem" }}>⚠ Proof override used — not real proof</strong>
+                  {(overridesByEntry[e.id] || []).map((o) => (
+                    <p key={o.id} style={{ margin: "4px 0 0", fontSize: "0.88rem" }}>
+                      {o.proof_kind === "walkthrough" ? "📹 Walkthrough video" : "📷 Book photo"}
+                      {" — “"}{o.reason}{"” · "}
+                      {new Date(o.created_at).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}
+                    </p>
+                  ))}
+                  {!overridesByEntry[e.id]?.length && (
+                    <p style={{ margin: "4px 0 0", fontSize: "0.88rem" }}>See Shift Videos / Communication Book for the reason.</p>
+                  )}
+                </div>
+              )}
             </div>
           );
         })}

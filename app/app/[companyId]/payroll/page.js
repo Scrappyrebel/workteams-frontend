@@ -41,15 +41,23 @@ export default function PayrollPage() {
           .order("display_name");
     // Employees may only read their own time entries (enforced by RLS too);
     // filter the query as well so no one else's rows reach the browser.
-    let entryQ = sb
-      .from("time_entries")
-      .select("member_id, clock_in, clock_out, clock_in_role, pay_rate_applied")
-      .eq("company_id", company.id)
-      .gte("clock_in", range.start + "T00:00:00")
-      .lte("clock_in", range.end + "T23:59:59")
-      .not("clock_out", "is", null);
-    if (!isManager) entryQ = entryQ.eq("member_id", member.id);
-    const { data: entries } = await entryQ;
+    // proof_override_used arrives with migration 052 — read it tolerantly:
+    // if the API cannot serve the column yet, retry without it rather
+    // than blanking the payroll report.
+    const runEntries = (withFlag) => {
+      let q = sb
+        .from("time_entries")
+        .select("member_id, clock_in, clock_out, clock_in_role, pay_rate_applied" + (withFlag ? ", proof_override_used" : ""))
+        .eq("company_id", company.id)
+        .gte("clock_in", range.start + "T00:00:00")
+        .lte("clock_in", range.end + "T23:59:59")
+        .not("clock_out", "is", null);
+      if (!isManager) q = q.eq("member_id", member.id);
+      return q;
+    };
+    let entryResult = await runEntries(true);
+    if (entryResult.error) entryResult = await runEntries(false);
+    const entries = entryResult.data;
 
     // Managers get pay rates to build per-hat estimates (member_pay is manager-only).
     let payByMember = {};
@@ -62,13 +70,14 @@ export default function PayrollPage() {
     }
 
     const totals = {};
-    for (const m of members || []) totals[m.id] = { member: m, hours: 0, shifts: 0, cleanerHours: 0, managerHours: 0, estPay: 0 };
+    for (const m of members || []) totals[m.id] = { member: m, hours: 0, shifts: 0, cleanerHours: 0, managerHours: 0, estPay: 0, overrideShifts: 0 };
     for (const e of entries || []) {
       const t = totals[e.member_id];
       if (!t) continue;
       const hrs = (new Date(e.clock_out) - new Date(e.clock_in)) / 3600000;
       t.hours += hrs;
       t.shifts += 1;
+      if (e.proof_override_used) t.overrideShifts += 1;
       if (isManager) {
         const hat = e.clock_in_role === "manager" ? "manager" : "cleaner";
         const rate = e.pay_rate_applied ?? payByMember[e.member_id]?.[hat === "manager" ? "manager_hourly_rate" : "cleaner_hourly_rate"] ?? payByMember[e.member_id]?.hourly_rate ?? 0;
@@ -156,6 +165,11 @@ export default function PayrollPage() {
                 {r.cleanerHours > 0 && r.managerHours > 0 && <span> • </span>}
                 {r.managerHours > 0 && <span>📋 {r.managerHours.toFixed(2)} h manager</span>}
                 <span style={{ fontWeight: 800, color: "var(--brand-deep)" }}> • est. ${r.estPay.toFixed(2)}</span>
+              </div>
+            )}
+            {r.overrideShifts > 0 && (
+              <div style={{ fontSize: "0.85rem", fontWeight: 700, color: "#9b2d15", marginTop: 6 }}>
+                ⚠ {r.overrideShifts} shift{r.overrideShifts === 1 ? "" : "s"} used a proof override (required proof not uploaded) — see Time entries for the reason{r.overrideShifts === 1 ? "" : "s"}
               </div>
             )}
           </div>

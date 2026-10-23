@@ -3,12 +3,15 @@
 import { useEffect, useState } from "react";
 import { supabase } from "../lib/supabase";
 
-// Existing company-level proof requirements are enforced by the clock-out
-// completion API. Only an owner/manager may change these switches.
+// Company-level proof requirements, enforced by the clock-out completion
+// API. Both requirements are ON by default for every company (migration
+// 052); the ONLY way one turns off is an owner/manager deliberately
+// unchecking it here. Tolerant read: a value the API cannot serve yet
+// resolves to REQUIRED (the spec default), matching lib/proof-policy.
 export default function CompanyShiftProofSettings({ companyId }) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [policy, setPolicy] = useState({ video: false, book: false });
+  const [policy, setPolicy] = useState({ video: true, book: true });
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
 
@@ -21,10 +24,13 @@ export default function CompanyShiftProofSettings({ companyId }) {
         .eq("id", companyId)
         .single();
       if (!live) return;
-      if (loadError) setError("Could not load proof settings: " + loadError.message);
-      else setPolicy({
-        video: !!data.require_walkthrough_video,
-        book: !!data.require_book_photo,
+      if (loadError) {
+        // Missing/unreadable = required (spec default ON), never a lockout.
+        setPolicy({ video: true, book: true });
+        setMessage("Saved settings could not be read, so both requirements are shown as ON — the default. Saving stores your choice.");
+      } else setPolicy({
+        video: data.require_walkthrough_video !== false,
+        book: data.require_book_photo !== false,
       });
       setLoading(false);
     })();
@@ -49,7 +55,7 @@ export default function CompanyShiftProofSettings({ companyId }) {
     if (updateError || !data) {
       setError("Could not save proof settings: " + (updateError?.message || "Access denied"));
     } else {
-      setPolicy({ video: !!data.require_walkthrough_video, book: !!data.require_book_photo });
+      setPolicy({ video: data.require_walkthrough_video !== false, book: data.require_book_photo !== false });
       setMessage("Proof requirements saved for this company.");
     }
     setSaving(false);
@@ -59,8 +65,11 @@ export default function CompanyShiftProofSettings({ companyId }) {
     <section className="panel" style={{ padding: 18, marginBottom: 18 }}>
       <h3 style={{ margin: "0 0 8px" }}>Shift Video & Communication Book Requirements</h3>
       <p style={{ color: "var(--muted)", marginTop: 0 }}>
-        Set rules separately for this company. Turning a requirement off makes
-        that proof optional; employees can still submit it when needed.
+        Both requirements are <strong>ON and active by default</strong> for this
+        company: at clock-out, employees must provide the end-of-shift video and
+        the Communication Book photo (or save an override reason a manager can
+        review). Unchecking a switch here is the only way to make that proof
+        optional; employees can still submit it when needed.
       </p>
       {loading ? <p>Loading requirements…</p> : (
         <form onSubmit={save}>
