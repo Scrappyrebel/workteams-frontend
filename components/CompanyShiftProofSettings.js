@@ -65,11 +65,13 @@ export default function CompanyShiftProofSettings({ companyId }) {
     <section className="panel" style={{ padding: 18, marginBottom: 18 }}>
       <h3 style={{ margin: "0 0 8px" }}>Shift Video & Communication Book Requirements</h3>
       <p style={{ color: "var(--muted)", marginTop: 0 }}>
-        Both requirements are <strong>ON and active by default</strong> for this
-        company: at clock-out, employees must provide the end-of-shift video and
-        the Communication Book photo (or save an override reason a manager can
-        review). Unchecking a switch here is the only way to make that proof
-        optional; employees can still submit it when needed.
+        Both requirements are <strong>ON and active</strong> for this company:
+        at clock-out, employees must provide the end-of-shift video and the
+        Communication Book photo (or save an override reason a manager can
+        review). They stay on unless an <strong>owner or manager deliberately
+        turns one off</strong> by unchecking its switch below and saving — that
+        deliberate action is the only way to make a proof optional, and
+        employees can still submit it when needed.
       </p>
       {loading ? <p>Loading requirements…</p> : (
         <form onSubmit={save}>
@@ -77,11 +79,17 @@ export default function CompanyShiftProofSettings({ companyId }) {
             <input type="checkbox" checked={policy.video}
               onChange={(e) => setPolicy((p) => ({ ...p, video: e.target.checked }))} />
             Require end-of-shift video
+            <strong style={{ color: policy.video ? "var(--success-ink)" : "var(--danger)" }}>
+              {policy.video ? "— ON (active)" : "— OFF (optional)"}
+            </strong>
           </label>
           <label style={{ display: "flex", gap: 10, marginBottom: 14, alignItems: "center" }}>
             <input type="checkbox" checked={policy.book}
               onChange={(e) => setPolicy((p) => ({ ...p, book: e.target.checked }))} />
             Require Communication Book photo
+            <strong style={{ color: policy.book ? "var(--success-ink)" : "var(--danger)" }}>
+              {policy.book ? "— ON (active)" : "— OFF (optional)"}
+            </strong>
           </label>
           <button type="submit" disabled={saving} className="btn btn-primary"
             style={{ cursor: saving ? "wait" : "pointer" }}>
