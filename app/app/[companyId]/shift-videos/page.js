@@ -44,6 +44,7 @@ export default function ShiftVideosPage() {
   const [preparedShare, setPreparedShare] = useState(null);
   const [shareStatusVideoId, setShareStatusVideoId] = useState(null);
   const [playingId, setPlayingId] = useState(null);
+  const [videoOverrides, setVideoOverrides] = useState([]);
   const [videoUrls, setVideoUrls] = useState({});
   const [playbackIssue, setPlaybackIssue] = useState(null);
   const fileRef = useRef(null);
@@ -75,6 +76,19 @@ export default function ShiftVideosPage() {
         setListError("Employee names could not be loaded, but saved recordings are shown.");
       }
       setVideos(vids || []);
+      // Walkthrough overrides (migration 052): shifts where the employee
+      // saved an "I can't upload this" reason instead of a video. Manager
+      // review only. Tolerant: table absent before the migration runs.
+      try {
+        const { data: ovs, error: ovError } = await sb
+          .from("shift_proof_overrides")
+          .select("id, proof_kind, reason, created_at, location_id, member_id, company_members!shift_proof_overrides_member_id_fkey(display_name), locations(name)")
+          .eq("company_id", company.id)
+          .eq("proof_kind", "walkthrough")
+          .order("created_at", { ascending: false })
+          .limit(100);
+        if (!ovError) setVideoOverrides(ovs || []);
+      } catch { /* overrides unavailable — video list still renders */ }
       const { data: locs, error: locationsError } = await sb
         .from("locations")
         .select("id, name")
@@ -410,6 +424,27 @@ export default function ShiftVideosPage() {
           </div>
         )}
       </section>
+
+      {/* Walkthrough overrides — manager review (never shown as videos) */}
+      {isManager && videoOverrides.length > 0 && (
+        <section className="panel" style={{ marginBottom: 20, border: "2px solid #e0a458", background: "#fffaf2" }}>
+          <h2 style={{ marginTop: 0 }}>⚠ Walkthrough overrides — no video uploaded</h2>
+          <p style={{ color: "var(--muted)", marginTop: 0 }}>
+            These employees used the “I can&apos;t upload this” override for the required
+            end-of-shift video. The reason they gave is shown with their name and location.
+          </p>
+          {videoOverrides.map((o) => (
+            <div key={o.id} style={{ borderBottom: "1px solid var(--border)", padding: "10px 0" }}>
+              <strong>{o.company_members?.display_name || "Someone"}</strong>
+              {o.locations?.name ? <span> · 📍 {o.locations.name}</span> : null}
+              <span style={{ color: "var(--muted)", fontSize: 13 }}>
+                {" · "}{new Date(o.created_at).toLocaleString()}
+              </span>
+              <p style={{ margin: "4px 0 0" }}>Reason: “{o.reason}”</p>
+            </div>
+          ))}
+        </section>
+      )}
 
       {/* Video list */}
       <section className="panel">

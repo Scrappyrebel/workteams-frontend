@@ -111,6 +111,7 @@ function CommBookPhoto({ path, canExport, label }) {
 export default function CommBookPage() {
   const { company, member, loading } = useCompany();
   const [entries, setEntries] = useState([]);
+  const [bookOverrides, setBookOverrides] = useState([]);
   const [locations, setLocations] = useState([]);
   const [form, setForm] = useState({ category: "note", location_id: "", message: "" });
   const [photo, setPhoto] = useState(null);
@@ -131,6 +132,19 @@ export default function CommBookPage() {
       .order("created_at", { ascending: false })
       .limit(100);
     setEntries(data || []);
+    // Book-photo overrides (migration 052): shifts where the employee saved
+    // an "I can't upload this" reason instead of a book photo. Manager
+    // review only. Tolerant: table absent before the migration runs.
+    try {
+      const { data: ovs, error: ovError } = await sb
+        .from("shift_proof_overrides")
+        .select("id, proof_kind, reason, created_at, location_id, member_id, company_members!shift_proof_overrides_member_id_fkey(display_name), locations(name)")
+        .eq("company_id", company.id)
+        .eq("proof_kind", "book")
+        .order("created_at", { ascending: false })
+        .limit(100);
+      if (!ovError) setBookOverrides(ovs || []);
+    } catch { /* overrides unavailable — log still renders */ }
     const { data: locs } = await sb
       .from("locations")
       .select("id, name")
@@ -282,6 +296,27 @@ export default function CommBookPage() {
           </button>
         </div>
       </section>
+
+      {/* Book-photo overrides — manager review (never shown as photos) */}
+      {isManager && bookOverrides.length > 0 && (
+        <section className="panel" style={{ marginBottom: 20, border: "2px solid #e0a458", background: "#fffaf2" }}>
+          <h2 style={{ marginTop: 0 }}>⚠ Book photo overrides — no photo uploaded</h2>
+          <p style={{ color: "var(--muted)", marginTop: 0 }}>
+            These employees used the “I can&apos;t upload this” override for the required
+            Communication Book photo. The reason they gave is shown with their name and location.
+          </p>
+          {bookOverrides.map((o) => (
+            <div key={o.id} style={{ borderBottom: "1px solid var(--border)", padding: "10px 0" }}>
+              <strong>{o.company_members?.display_name || "Someone"}</strong>
+              {o.locations?.name ? <span> · 📍 {o.locations.name}</span> : null}
+              <span style={{ color: "var(--muted)", fontSize: 13 }}>
+                {" · "}{new Date(o.created_at).toLocaleString()}
+              </span>
+              <p style={{ margin: "4px 0 0" }}>Reason: “{o.reason}”</p>
+            </div>
+          ))}
+        </section>
+      )}
 
       {/* Entries */}
       <section className="panel">

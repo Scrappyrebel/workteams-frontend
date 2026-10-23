@@ -33,9 +33,15 @@ function extForMime(mime) {
 // - Video and photo upload INDEPENDENTLY via resumable TUS / storage upload.
 // - Proof rows link to the time entry (shift_videos.time_entry_id,
 //   comm_book.time_entry_id).
+// - Required proof (spec 2026-10-23): when requireVideo / requireBook is on,
+//   that kind must be uploaded — OR the employee saves an override with a
+//   REQUIRED free-text reason ("I can't upload this") via
+//   POST /api/time/clock-out/override, which persists a shift_proof_overrides
+//   row the completion API accepts in place of the proof row and flags the
+//   time entry for manager review.
 // Exposes via ref: hasPendingUploads(), waitForUploads().
 const EndShiftProof = forwardRef(function EndShiftProof(
-  { companyId, memberId, entryId, locationId, locationName, enableVideo = true, enableBook = true, onProofUploaded },
+  { companyId, memberId, entryId, locationId, locationName, enableVideo = true, enableBook = true, requireVideo = false, requireBook = false, onProofUploaded },
   ref
 ) {
   const isiOS = typeof navigator !== "undefined" && (/iPhone|iPad|iPod/i.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1));
@@ -57,6 +63,16 @@ const EndShiftProof = forwardRef(function EndShiftProof(
   const [noBookAtLocation, setNoBookAtLocation] = useState(false);
   const [noBookStatus, setNoBookStatus] = useState("idle"); // idle|saving|saved|error
   const [noBookError, setNoBookError] = useState("");
+
+  // --- proof override state (per kind): "I can't upload this" + reason ---
+  const [videoOverrideOpen, setVideoOverrideOpen] = useState(false);
+  const [videoOverrideReason, setVideoOverrideReason] = useState("");
+  const [videoOverrideStatus, setVideoOverrideStatus] = useState("idle"); // idle|saving|saved|error
+  const [videoOverrideError, setVideoOverrideError] = useState("");
+  const [bookOverrideOpen, setBookOverrideOpen] = useState(false);
+  const [bookOverrideReason, setBookOverrideReason] = useState("");
+  const [bookOverrideStatus, setBookOverrideStatus] = useState("idle"); // idle|saving|saved|error
+  const [bookOverrideError, setBookOverrideError] = useState("");
 
   const [done, setDone] = useState(false);
 
@@ -81,6 +97,9 @@ const EndShiftProof = forwardRef(function EndShiftProof(
   const noBookSelectedRef = useRef(false);
   const noBookSavedRef = useRef(false);
   const noBookSavePromiseRef = useRef(null);
+  const videoOverrideSavedRef = useRef(false);
+  const bookOverrideSavedRef = useRef(false);
+  const overrideSavingRef = useRef(0); // in-flight override saves
   const waitersRef = useRef([]); // resolve fns waiting for uploads
 
   // Clock shows ACTIVE recording time only. The independent one-shot deadline
@@ -155,14 +174,17 @@ const EndShiftProof = forwardRef(function EndShiftProof(
 
   function hasPendingUploads() {
     // A FAILED upload needs an explicit Retry; never wait forever on it.
+    // A SAVED override satisfies its kind, so it is never "pending".
     const videoPending = enableVideo &&
       ["recording", "paused", "finishing", "recorded", "uploading"].includes(recState) &&
-      !videoSavedRef.current;
-    const photoPending = enableBook && !!photoFile && !noBookSelectedRef.current && !photoSavedRef.current;
+      !videoSavedRef.current && !videoOverrideSavedRef.current;
+    const photoPending = enableBook && !!photoFile && !noBookSelectedRef.current && !photoSavedRef.current && !bookOverrideSavedRef.current;
     // A no-book report is a real, persisted alternative to a photo. It is
     // never required to finish BEFORE the employee can save clock-out time.
-    const noBookPending = enableBook && noBookSelectedRef.current && !noBookSavedRef.current;
-    return videoPending || photoPending || noBookPending;
+    const noBookPending = enableBook && noBookSelectedRef.current && !noBookSavedRef.current && !bookOverrideSavedRef.current;
+    // An override save in flight must finish before completion is attempted.
+    const overridePending = overrideSavingRef.current > 0;
+    return videoPending || photoPending || noBookPending || overridePending;
   }
 
   useImperativeHandle(ref, () => ({
@@ -605,6 +627,111 @@ const EndShiftProof = forwardRef(function EndShiftProof(
     try { await task; } finally { noBookSavePromiseRef.current = null; }
   }
 
+  // Employee override: persist "I can't upload this" + a REQUIRED reason.
+  // The server derives company/member/location from the entry and flags the
+  // time entry; the completion API then accepts this row for that kind.
+  async function saveProofOverride(kind) {
+    const isVideo = kind === "walkthrough";
+    const reason = (isVideo ? videoOverrideReason : bookOverrideReason).trim();
+    const setStatus = isVideo ? setVideoOverrideStatus : setBookOverrideStatus;
+    const setError = isVideo ? setVideoOverrideError : setBookOverrideError;
+    if (!reason) {
+      setError("Write the reason you can't upload this — your manager will see it.");
+      setStatus("error");
+      return;
+    }
+    overrideSavingRef.current += 1;
+    setStatus("saving");
+    setError("");
+    try {
+      const sb = supabase();
+      const { data: { session } } = await sb.auth.getSession();
+      if (!session) throw new Error("You're signed out. Sign back in and retry.");
+      const res = await fetch("/api/time/clock-out/override", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({ companyId, entryId, kind, reason }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error || "Could not save the override. Tap Retry.");
+      if (isVideo) videoOverrideSavedRef.current = true;
+      else bookOverrideSavedRef.current = true;
+      setStatus("saved");
+      setDone(true);
+      onProofUploaded?.(entryId);
+    } catch (err) {
+      setStatus("error");
+      setError(err instanceof Error ? err.message : "Could not save the override. Tap Retry.");
+    } finally {
+      overrideSavingRef.current = Math.max(0, overrideSavingRef.current - 1);
+      notifyWaiters();
+    }
+  }
+
+  // The per-kind override control shown at the proof step when that proof
+  // is required but the employee genuinely cannot upload it.
+  function renderProofOverride(kind) {
+    const isVideo = kind === "walkthrough";
+    const open = isVideo ? videoOverrideOpen : bookOverrideOpen;
+    const setOpen = isVideo ? setVideoOverrideOpen : setBookOverrideOpen;
+    const reason = isVideo ? videoOverrideReason : bookOverrideReason;
+    const setReason = isVideo ? setVideoOverrideReason : setBookOverrideReason;
+    const status = isVideo ? videoOverrideStatus : bookOverrideStatus;
+    const error = isVideo ? videoOverrideError : bookOverrideError;
+    const label = isVideo ? "walkthrough video" : "book photo";
+    if (status === "saved") {
+      return (
+        <div style={{ marginTop: 10, padding: "10px", background: "#fff4e5", border: "1px solid #e0a458", borderRadius: 8 }}>
+          <strong>⚠ Override saved — no {label} for this shift.</strong>
+          <p style={{ margin: "4px 0 0", fontSize: "0.88rem" }}>
+            Reason your manager will see: “{reason.trim()}”
+          </p>
+        </div>
+      );
+    }
+    return (
+      <div style={{ marginTop: 10 }}>
+        {!open ? (
+          <button type="button" onClick={() => setOpen(true)}
+            style={{ width: "100%", padding: "12px", fontWeight: 700, background: "#fff4e5", border: "1px solid #e0a458", borderRadius: 8 }}>
+            ⚠ I can&apos;t upload this {label}
+          </button>
+        ) : (
+          <div style={{ padding: "10px", border: "1px solid #e0a458", borderRadius: 8, background: "#fffaf2" }}>
+            <label style={{ display: "block", fontWeight: 700, marginBottom: 6 }}>
+              Why can&apos;t you upload the {label}? (required — your manager will see this)
+              <textarea
+                value={reason}
+                onChange={(e) => setReason(e.target.value)}
+                rows={3}
+                maxLength={1000}
+                placeholder="e.g. No signal at this location — upload keeps failing"
+                style={{ width: "100%", marginTop: 6, padding: "10px", borderRadius: 8, border: "1px solid var(--border)", fontSize: "1rem" }}
+              />
+            </label>
+            {error && <p role="alert" style={{ color: "var(--danger)", margin: "4px 0" }}>{error}</p>}
+            <div style={{ display: "flex", gap: 8 }}>
+              <button type="button" disabled={status === "saving" || !reason.trim()}
+                onClick={() => void saveProofOverride(kind)}
+                style={{ flex: 1, padding: "12px", fontWeight: 700 }}>
+                {status === "saving" ? "Saving…" : "Save override reason"}
+              </button>
+              <button type="button" onClick={() => setOpen(false)} style={{ padding: "12px" }}>
+                Cancel
+              </button>
+            </div>
+            <p style={{ color: "var(--muted)", fontSize: "0.82rem", margin: "6px 0 0" }}>
+              Only use this when you truly can&apos;t upload. The shift is flagged for your manager.
+            </p>
+          </div>
+        )}
+      </div>
+    );
+  }
+
   function handleNoBookChange(checked) {
     if (!checked) {
       if (noBookSavedRef.current || noBookSavePromiseRef.current) return;
@@ -692,7 +819,14 @@ const EndShiftProof = forwardRef(function EndShiftProof(
       <>
       {/* ---- Walkthrough video ---- */}
       <div style={{ marginBottom: 16 }}>
-        <div style={{ fontWeight: 800, marginBottom: 6 }}>📹 End-of-shift walkthrough</div>
+        <div style={{ fontWeight: 800, marginBottom: 6 }}>
+          📹 End-of-shift walkthrough
+          {requireVideo && (
+            <span style={{ marginLeft: 8, fontSize: "0.78rem", background: "#b3261e", color: "#fff", borderRadius: 999, padding: "2px 10px", verticalAlign: "middle" }}>
+              REQUIRED
+            </span>
+          )}
+        </div>
 
         {recState === "idle" && (
           <button onClick={startRecording} style={{ width: "100%", padding: "14px", fontSize: "1rem", fontWeight: 700 }}>
@@ -780,6 +914,8 @@ const EndShiftProof = forwardRef(function EndShiftProof(
         {videoError && recState !== "recorded" && (
           <p style={{ color: "var(--danger)" }}>{videoError}</p>
         )}
+        {requireVideo && !videoSaved && (recState === "idle" || recState === "recorded") &&
+          renderProofOverride("walkthrough")}
         {locationName && recState === "idle" && (
           <p style={{ color: "var(--muted)", fontSize: "0.82rem", margin: "6px 0 0", textAlign: "center" }}>
             Tagged to {locationName} · up to 10 min
@@ -793,7 +929,14 @@ const EndShiftProof = forwardRef(function EndShiftProof(
       <>
       {/* ---- Communication Book proof ---- */}
       <div style={{ borderTop: "1px solid var(--border)", paddingTop: 14 }}>
-        <div style={{ fontWeight: 800, marginBottom: 4 }}>📷 Communication book</div>
+        <div style={{ fontWeight: 800, marginBottom: 4 }}>
+          📷 Communication book
+          {requireBook && (
+            <span style={{ marginLeft: 8, fontSize: "0.78rem", background: "#b3261e", color: "#fff", borderRadius: 999, padding: "2px 10px", verticalAlign: "middle" }}>
+              REQUIRED
+            </span>
+          )}
+        </div>
         <p style={{ color: "var(--muted)", fontSize: "0.85rem", margin: "0 0 8px" }}>
           If this location has a communication book, take its photo. If there is no book, report it instead — no photo is needed.
         </p>
@@ -868,6 +1011,8 @@ const EndShiftProof = forwardRef(function EndShiftProof(
             )}
           </div>
         )}
+        {requireBook && photoState !== "uploaded" && !noBookAtLocation &&
+          renderProofOverride("book")}
       </div>
       </>
       )}
