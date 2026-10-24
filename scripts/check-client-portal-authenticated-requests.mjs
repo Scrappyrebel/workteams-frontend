@@ -52,7 +52,10 @@ for(const term of [
 ])assert.ok(requests.includes(term),"Missing authenticated customer request UI: "+term);
 assert.ok(portal.includes("AuthenticatedCustomerRequests"));
 assert.ok(portal.includes("companyId={loc.company_id} locationId={loc.location_id}"));
-assert.ok(portal.includes("setLocations([]);setError"));
+assert.ok(portal.includes("onAuthorizationLost={()=>{"),"Must handle customer authorization loss");
+assert.ok(portal.includes("requestSequence.current++;"),"Revoke pending customer identity reads on access loss");
+assert.ok(portal.includes("setLocations([]);setNotice(\"\");setBusy(false)"),"Access loss must hide stale locations");
+assert.ok(portal.includes("setError(t("),"Must report access loss without claiming successful authorization");
 assert.ok(oldHistory.includes("and portal_token_id=pt.id"),
  "Old bearer-token history must filter exact bearer record (never authenticated contact messages)");
 assert.ok(!oldHistory.includes("customer_contact_id"),"No new auth requests exposed through bearer tokens");
