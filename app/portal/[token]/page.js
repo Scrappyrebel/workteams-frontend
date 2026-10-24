@@ -218,7 +218,7 @@ export default function PortalPage() {
               <h3 style={{margin:"0 0 10px"}}>Quick Access / Acceso rápido</h3>
               <div style={{display:"flex",gap:12,flexWrap:"wrap"}}>
                 <a href="#portal-visits">Upcoming visits</a>
-                <a href="#portal-inspections">Quality reports</a>
+                <a href="#portal-inspections">Published quality reports</a>
                 <a href="#portal-work">Open work</a>
                 {contract && <a href="#portal-contract">Contract &amp; scope</a>}
                 {data?.amendments?.length > 0 && <a href="#portal-amendments">Contract amendments{dueAmendments>0? ` (${dueAmendments} to sign)` : ""}</a>}
@@ -246,13 +246,14 @@ export default function PortalPage() {
             </section>
 
             <section className="panel" style={{ padding: 22, margin: "18px 0" }}>
-              <h3 id="portal-inspections" style={{ marginTop: 0 }}>Recent quality scores</h3>
-              {data.inspections.length === 0 && <p style={{ color: "var(--muted)" }}>No inspections recorded yet.</p>}
+              <h3 id="portal-inspections" style={{ marginTop: 0 }}>Published quality reports</h3>
+              <p style={{fontSize:"0.82rem",color:"var(--muted)"}}>Only quality summaries approved by the business for this location are visible. Inspection notes, photos, internal checklists and employee identities are private.</p>
+              {data.inspections.length === 0 && <p style={{ color: "var(--muted)" }}>No quality reports have been approved for customer sharing yet.</p>}
               <div style={{ display: "grid", gap: 8 }}>
                 {data.inspections.map((x, i) => (
                   <div key={i} className="portal-card" style={{ minHeight: 0, padding: "12px 16px" }}>
                     <span className="card-kicker">{x.inspection_date} • {"★".repeat(x.score || 0)}</span>
-                    {x.notes && <p style={{ margin: "6px 0 0", fontSize: "0.9rem", color: "var(--muted)" }}>{x.notes}</p>}
+                    {x.customer_summary && <p style={{ margin: "6px 0 0", fontSize: "0.9rem", color: "var(--muted)" }}>{x.customer_summary}</p>}
                   </div>
                 ))}
               </div>
