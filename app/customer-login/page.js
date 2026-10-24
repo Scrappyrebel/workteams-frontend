@@ -16,6 +16,16 @@ export default function CustomerLogin(){
   const params=new URLSearchParams(window.location.search);
   if(params.get("mode")==="create")setMode("create");
   if(params.get("lang")==="es")setLanguage("es");
+  if(params.get("verified")==="1")setNotice(
+   params.get("lang")==="es"?
+   "Si confirmó su correo electrónico, inicie sesión para comprobar su acceso autorizado.":
+   "If you confirmed your email address, sign in to check your approved customer access."
+  );
+  if(params.get("reset")==="1")setNotice(
+   params.get("lang")==="es"?
+   "Inicie sesión con su contraseña actualizada.":
+   "Sign in using your updated password."
+  );
  },[]);
  async function submit(e){
   e.preventDefault();if(busy)return;
@@ -28,7 +38,12 @@ export default function CustomerLogin(){
     "Ingrese una contraseña de al menos 8 caracteres."));
    const client=supabase();
    if(mode==="create"){
-    const {data,error:failure}=await client.auth.signUp({email:clean,password});
+    const confirmUrl=new URL("/customer-login",window.location.origin);
+    confirmUrl.searchParams.set("verified","1");
+    confirmUrl.searchParams.set("lang",language);
+    const {data,error:failure}=await client.auth.signUp({
+      email:clean,password,options:{emailRedirectTo:confirmUrl.toString()}
+    });
     if(failure)throw failure;
     if(data.session){
       window.location.assign("/customer-portal");
@@ -82,7 +97,8 @@ export default function CustomerLogin(){
    </form>
    {error&&<p role="alert" style={{color:"#b3261e"}}>{error}</p>}
    {notice&&<p role="status">{notice}</p>}
-   <p><Link href="/forgot-password">{t("Forgot password?","¿Olvidó su contraseña?")}</Link></p>
+   <p><Link href={`/forgot-password?source=customer&lang=${language}`}>
+    {t("Forgot password?","¿Olvidó su contraseña?")}</Link></p>
    <p><Link href="/">{t("Use your existing location link instead","Utilice su enlace de ubicación existente")}</Link></p>
   </section>
  </main>;
