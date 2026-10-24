@@ -196,7 +196,10 @@ export default function ClientPortalPage() {
        (!deliveryConfirmed[message.id]||!reply)){
       setResponseError("Verify the recipient and deliver the document privately before marking a contract copy request resolved. Add a customer-safe confirmation message.");return;
     }
-    if(message.category==="document_copy"&&/(https?:\\/\\/|www\\.|\\.pdf|\\.docx?|\\.zip)/i.test(reply)){
+    if(message.category==="document_copy"&&(
+       reply.toLowerCase().includes("://")||
+       reply.toLowerCase().includes("www.")||
+       /[.]pdf|[.]docx?|[.]zip/i.test(reply))){
       setResponseError("Do not paste document links, file paths or attachments into a shared location-link reply.");return;
     }
     if(reply&& (reply.length<10||reply.length>1200)){
