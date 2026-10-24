@@ -40,7 +40,7 @@ alter table public.client_portal_identity_management_events
  'location_granted','login_activated','login_disabled',
  'quality_access_granted','quality_access_revoked',
  'work_order_access_granted','work_order_access_revoked',
- 'document_access_granted','document_access_revoked',
+ 'document_access_granted','document_access_revoked','document_published','document_withdrawn',
  'schedule_access_granted','schedule_access_revoked'
  ));
 
