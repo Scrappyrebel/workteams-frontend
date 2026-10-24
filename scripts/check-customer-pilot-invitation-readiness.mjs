@@ -36,7 +36,9 @@ for(const phrase of [
 ])assert.ok(manager.includes(phrase),"Manager invitation UI guard missing: "+phrase);
 assert.ok(parent.includes("pilotRequested={pilotRequested} pilotEnabled={pilotEnabled}"));
 assert.ok(signup.includes('params.get("mode")==="create"'));
-assert.ok(signup.includes('params.get("lang")==="es"'));
+assert.ok(signup.includes('const supplied=params.get("lang")'));
+assert.ok(signup.includes('supplied==="es"?"es"'));
+assert.ok(signup.includes("workteams-customer-portal-language"));
 for(const language of ["en","es"]){
  const msg=makeCustomerInvitation({
   origin:"https://app.lillybsjanitorial.com",
