@@ -5,6 +5,7 @@ import {supabase} from "../lib/supabase";
 export default function CustomerDocumentManager({companyId,locations,pilotRequested}){
  const [locationId,setLocationId]=useState("");
  const [title,setTitle]=useState("");
+ const [expiryDays,setExpiryDays]=useState("90");
  const [file,setFile]=useState(null);
  const [docs,setDocs]=useState([]);
  const [busy,setBusy]=useState(false);
@@ -65,7 +66,8 @@ export default function CustomerDocumentManager({companyId,locations,pilotReques
   setBusy(true);setError("");setNotice("");
   try{
    const {data,error:e}=await supabase().rpc("set_workteams_customer_document_publication",{
-    p_company_id:companyId,p_document_id:doc.id,p_publish:makePublic,p_expires_at:null
+    p_company_id:companyId,p_document_id:doc.id,p_publish:makePublic,
+    p_expires_at:makePublic?new Date(Date.now()+Number(expiryDays)*86400000).toISOString():null
    });
    if(e||data?.ok!==true||data.published!==makePublic)
     throw Error(e?.message||"Document publication was not verified.");
@@ -103,9 +105,15 @@ export default function CustomerDocumentManager({companyId,locations,pilotReques
    </button>
    {loading&&<p role="status">Checking company documents…</p>}
    {!loading&&!error&&docs.length===0&&<p>No PDF documents have been added here.</p>}
+   <label htmlFor="doc-expiry-days">Published download expiry / Vencimiento del acceso</label>
+   <select id="doc-expiry-days" value={expiryDays} onChange={e=>setExpiryDays(e.target.value)}>
+    <option value="30">30 days / días</option>
+    <option value="90">90 days / días</option>
+    <option value="365">365 days / días</option>
+   </select>
    {docs.map(doc=><div key={doc.id} style={{borderTop:"1px solid var(--line,#ccc)",padding:"12px 0"}}>
     <strong>{doc.title}</strong>
-    <p style={{fontSize:13}}>{doc.file_name} · {doc.published?"PUBLISHED":"PRIVATE"}</p>
+    <p style={{fontSize:13}}>{doc.file_name} · {doc.published?"PUBLISHED":"PRIVATE"} · {doc.expires_at?"Expires "+new Date(doc.expires_at).toLocaleDateString():"No expiry set"}</p>
     <button type="button" disabled={busy||loading} onClick={()=>void publish(doc,!doc.published)}>
      {doc.published?"Withdraw / Retirar":"Publish after review / Publicar"}
     </button>
