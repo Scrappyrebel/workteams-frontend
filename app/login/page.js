@@ -9,31 +9,11 @@ import { getSession } from "../../lib/session";
 
 export default function LoginPage() {
   const router = useRouter();
-  const [mode, setMode] = useState("password"); // "link" | "password"
   const [pwMode, setPwMode] = useState("signin"); // "signin" | "signup"
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [sent, setSent] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-
-  async function sendLink(e) {
-    e.preventDefault();
-    setError("");
-    setLoading(true);
-    try {
-      const { error } = await supabase().auth.signInWithOtp({
-        email: email.trim().toLowerCase(),
-        options: { emailRedirectTo: window.location.origin + "/app" },
-      });
-      if (error) throw error;
-      setSent(true);
-    } catch (err) {
-      setError(err.message || "Could not send the sign-in link.");
-    } finally {
-      setLoading(false);
-    }
-  }
 
   async function signInPassword(e) {
     e.preventDefault();
@@ -86,56 +66,7 @@ export default function LoginPage() {
         <p className="eyebrow">SIGN IN</p>
         <h2>Welcome back.</h2>
 
-        <div style={{ display: "flex", gap: 8, margin: "16px 0 20px" }}>
-          <button
-            type="button"
-            onClick={() => { setMode("link"); setError(""); }}
-            style={tabStyle(mode === "link")}
-          >
-            Email link
-          </button>
-          <button
-            type="button"
-            onClick={() => { setMode("password"); setError(""); }}
-            style={tabStyle(mode === "password")}
-          >
-            Password
-          </button>
-        </div>
-
-        {mode === "link" ? (
-          sent ? (
-            <div>
-              <p style={{ fontSize: "1.05rem" }}>
-                ✅ We sent a sign-in link to <strong>{email}</strong>.
-              </p>
-              <p style={{ color: "var(--muted)" }}>
-                Tap the link in that email on this device and you'll land in your companies.
-                The link expires after a while — you can request a new one anytime.
-              </p>
-            </div>
-          ) : (
-            <form onSubmit={sendLink}>
-              <label style={labelStyle} htmlFor="email">Work email</label>
-              <input
-                id="email"
-                type="email"
-                required
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="you@yourcompany.com"
-                style={inputStyle}
-              />
-              {error && <p style={errorStyle}>{error}</p>}
-              <button type="submit" disabled={loading} style={buttonStyle}>
-                {loading ? "Sending…" : "Send sign-in link"}
-              </button>
-              <p style={{ color: "var(--muted)", fontSize: "0.9rem", marginTop: 12 }}>
-                No password needed. Each sign-in email is good for one login.
-              </p>
-            </form>
-          )
-        ) : pwMode === "signin" ? (
+        {pwMode === "signin" ? (
           <form onSubmit={signInPassword}>
             <label style={labelStyle} htmlFor="pw-email">Work email</label>
             <input
@@ -261,16 +192,3 @@ const linkButtonStyle = {
   fontSize: "0.95rem",
   textDecoration: "underline",
 };
-
-function tabStyle(active) {
-  return {
-    flex: 1,
-    padding: "10px",
-    borderRadius: 999,
-    border: active ? "none" : "1px solid var(--line)",
-    background: active ? "var(--brand)" : "transparent",
-    color: active ? "#fff" : "inherit",
-    fontWeight: 700,
-    cursor: "pointer",
-  };
-}
