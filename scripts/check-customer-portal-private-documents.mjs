@@ -56,7 +56,7 @@ for(const s of [
 ])assert.ok(download.includes(s),"Missing download security guard: "+s);
 for(const s of [
  "/api/customer-documents/upload","set_workteams_customer_document_publication",
- "out.published!==false","Upload PRIVATE PDF","Withdraw / Retirar"
+ "out.published!==false","Upload PRIVATE PDF",'t("Withdraw","Retirar")'
 ])assert.ok(manager.includes(s),"Missing manager controls: "+s);
 assert.ok(grants.includes("set_workteams_customer_document_access"));
 assert.ok(grants.includes("l.document_access"));
