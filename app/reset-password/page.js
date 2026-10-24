@@ -13,6 +13,17 @@ export default function ResetPasswordPage() {
   const [confirm, setConfirm] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [isCustomer, setIsCustomer] = useState(false);
+  const [language, setLanguage] = useState("en");
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    setIsCustomer(params.get("source") === "customer");
+    setLanguage(params.get("lang") === "es" ? "es" : "en");
+  }, []);
+  const t = (en, es) => isCustomer && language === "es" ? es : en;
+  const backHref = isCustomer ? `/customer-login?lang=${language}` : "/login";
+  const retryHref = isCustomer ?
+    `/forgot-password?source=customer&lang=${language}` : "/forgot-password";
 
   // The reset link carries a recovery session; the client picks it up
   // from the URL automatically. Only then can the password be changed.
@@ -36,19 +47,25 @@ export default function ResetPasswordPage() {
   async function savePassword(e) {
     e.preventDefault();
     setError("");
-    if (password.length < 6) {
-      setError("Choose a password at least 6 characters long.");
+    if (password.length < (isCustomer ? 8 : 6)) {
+      setError(t(
+        isCustomer ? "Choose a password at least 8 characters long." :
+          "Choose a password at least 6 characters long.",
+        "Elija una contraseña de al menos 8 caracteres."
+      ));
       return;
     }
     if (password !== confirm) {
-      setError("The two passwords don't match.");
+      setError(t("The two passwords don't match.",
+        "Las contraseñas no coinciden."));
       return;
     }
     setLoading(true);
     try {
       const { error } = await supabase().auth.updateUser({ password });
       if (error) throw error;
-      router.replace("/login");
+      router.replace(isCustomer ?
+        `/customer-login?lang=${language}&reset=1` : "/login");
     } catch (err) {
       setError(err.message || "Could not update the password.");
     } finally {
@@ -58,38 +75,41 @@ export default function ResetPasswordPage() {
 
   return (
     <main className="site-shell" style={{ maxWidth: 520 }}>
-      <Link href="/login" className="back-link">← Back to sign in</Link>
+      <Link href={backHref} className="back-link">← {t("Back to sign in", "Volver al inicio de sesión")}</Link>
       <section className="panel" style={{ padding: 30 }}>
         <p className="eyebrow">RESET PASSWORD</p>
-        <h2>Choose a new password.</h2>
+        <h2>{t("Choose a new password.", "Elija una nueva contraseña.")}</h2>
         {!ready ? (
-          <p style={{ color: "var(--muted)" }}>Checking your reset link…</p>
+          <p style={{ color: "var(--muted)" }}>{t("Checking your reset link…", "Verificando su enlace…")}</p>
         ) : !valid ? (
           <div>
             <p style={{ color: "#b3261e", fontWeight: 700 }}>
-              That reset link isn't valid anymore.
+              {t("That reset link isn't valid anymore.", "Este enlace ya no es válido.")}
             </p>
             <p style={{ color: "var(--muted)" }}>
-              Links expire after a while or after they've been used.{" "}
-              <Link href="/forgot-password" style={{ color: "var(--brand)", fontWeight: 700 }}>
-                Request a fresh one.
+              {t(
+                "Links expire after a while or after they've been used.",
+                "Los enlaces caducan después de un tiempo o al utilizarlos."
+              )}{" "}
+              <Link href={retryHref} style={{ color: "var(--brand)", fontWeight: 700 }}>
+                {t("Request a fresh one.", "Solicite otro enlace.")}
               </Link>
             </p>
           </div>
         ) : (
           <form onSubmit={savePassword}>
-            <label style={labelStyle} htmlFor="new-pass">New password</label>
+            <label style={labelStyle} htmlFor="new-pass">{t("New password", "Nueva contraseña")}</label>
             <input
               id="new-pass"
               type="password"
               required
-              minLength={6}
+              minLength={isCustomer ? 8 : 6}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              placeholder="At least 6 characters"
+              placeholder={t(isCustomer ? "At least 8 characters" : "At least 6 characters", "Al menos 8 caracteres")}
               style={inputStyle}
             />
-            <label style={labelStyle} htmlFor="confirm-pass">Repeat it</label>
+            <label style={labelStyle} htmlFor="confirm-pass">{t("Repeat it", "Repita la contraseña")}</label>
             <input
               id="confirm-pass"
               type="password"
@@ -101,7 +121,7 @@ export default function ResetPasswordPage() {
             />
             {error && <p style={errorStyle}>{error}</p>}
             <button type="submit" disabled={loading} style={buttonStyle}>
-              {loading ? "Saving…" : "Save new password"}
+              {loading ? t("Saving…", "Guardando…") : t("Save new password", "Guardar contraseña")}
             </button>
           </form>
         )}
