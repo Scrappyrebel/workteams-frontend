@@ -421,11 +421,11 @@ export default function PortalPage() {
 
             {signingAmend && (
               <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50, padding: 16 }}>
-                <form onSubmit={signAmendment} style={{ background: "#fff", borderRadius: 16, padding: 24, maxWidth: 480, width: "100%", display: "grid", gap: 12 }}>
-                  <h3 style={{ margin: 0 }}>{t('Sign amendment','Firmar modificación')}</h3>
+                <form onSubmit={signAmendment} aria-busy={signBusy} aria-labelledby="portal-sign-amendment-title" style={{ background: "#fff", borderRadius: 16, padding: 24, maxWidth: 480, width: "100%", display: "grid", gap: 12 }}>
+                  <h3 id="portal-sign-amendment-title" style={{ margin: 0 }}>{t('Sign amendment','Firmar modificación')}</h3>
                   <p style={{ fontWeight: 800, margin: 0 }}>{signingAmend.title}</p>
                   <p style={{ fontSize: "0.9rem", whiteSpace: "pre-line", margin: 0 }}>{signingAmend.description}</p>
-                  <input required placeholder={t("Type your full name to sign","Escriba su nombre completo para firmar")} value={signName} onChange={(e) => setSignName(e.target.value)} style={pInput} />
+                  <input aria-label={t("Full legal name for signature","Nombre legal completo para la firma")} autoComplete="name" required placeholder={t("Type your full name to sign","Escriba su nombre completo para firmar")} value={signName} onChange={(e) => setSignName(e.target.value)} style={pInput} />
                   <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
                     <button type="button" disabled={signBusy} onClick={() => setSigningAmend(null)} style={{ ...pButton, background: "#fff", color: "var(--text)", border: "1px solid var(--line)" }}>{t('Cancel','Cancelar')}</button>
                     <button type="submit" disabled={signBusy || Boolean(portalAction.current)} style={pButton}>{signBusy ? t("Signing…","Firmando…") : t("Sign amendment","Firmar modificación")}</button>
@@ -442,8 +442,8 @@ export default function PortalPage() {
                   {cleanDone.price != null ? ` (${money(cleanDone.price)})` : ""}.
                 </p>
               ) : (
-                <form onSubmit={requestClean} style={{ display: "grid", gap: 10 }}>
-                  <div style={{ display: "flex", gap: 8 }}>
+                <form onSubmit={requestClean} aria-busy={cleanBusy} aria-label={t("Request extra service","Solicitar servicio adicional")} style={{ display: "grid", gap: 10 }}>
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                     <label style={{ flex: 1, fontSize: "0.85rem", display: "grid", gap: 4 }}>
                       Service
                       <select value={cleanReq.kind} onChange={(e) => setCleanReq({ ...cleanReq, kind: e.target.value })} style={pInput}>
@@ -456,7 +456,7 @@ export default function PortalPage() {
                       <input type="date" required value={cleanReq.date} onChange={(e) => setCleanReq({ ...cleanReq, date: e.target.value })} style={pInput} />
                     </label>
                   </div>
-                  <textarea placeholder={t("Notes (optional)","Notas (opcional)")} value={cleanReq.notes} onChange={(e) => setCleanReq({ ...cleanReq, notes: e.target.value })} rows={2} style={pInput} />
+                  <textarea aria-label={t("Additional service notes (optional)","Notas adicionales del servicio (opcional)")} placeholder={t("Notes (optional)","Notas (opcional)")} value={cleanReq.notes} onChange={(e) => setCleanReq({ ...cleanReq, notes: e.target.value })} rows={2} style={pInput} />
                   <button type="submit" disabled={cleanBusy || Boolean(portalAction.current)} style={pButton}>{cleanBusy ? t("Sending…","Enviando…") : t("Request service","Solicitar servicio")}</button>
                 </form>
               )}
@@ -466,10 +466,10 @@ export default function PortalPage() {
               <section className="panel" style={{ padding: 22, margin: "18px 0" }}>
                 <h3 id="portal-temp" style={{ marginTop: 0 }}>{t('Request temp staff','Solicitar personal temporal')}</h3>
                 {tempDone ? (
-                  <p style={{ color: "#1e8e4d", fontWeight: 700 }}>✅ Request received — we'll confirm your temp staff shortly.</p>
+                  <p role="status" aria-live="polite" style={{ color: "#1e8e4d", fontWeight: 700 }}>✅ Request received — we'll confirm your temp staff shortly.</p>
                 ) : (
-                  <form onSubmit={requestTemps} style={{ display: "grid", gap: 10 }}>
-                    <div style={{ display: "flex", gap: 8 }}>
+                  <form onSubmit={requestTemps} aria-busy={tempBusy} aria-label={t("Request temp staff","Solicitar personal temporal")} style={{ display: "grid", gap: 10 }}>
+                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                       <label style={{ flex: 1, fontSize: "0.85rem", display: "grid", gap: 4 }}>
                         Service
                         <select value={tempReq.serviceType} onChange={(e) => setTempReq({ ...tempReq, serviceType: e.target.value })} style={pInput}>
@@ -486,7 +486,7 @@ export default function PortalPage() {
                         <input type="number" min="1" max="50" required value={tempReq.cleanersNeeded} onChange={(e) => setTempReq({ ...tempReq, cleanersNeeded: e.target.value })} style={pInput} />
                       </label>
                     </div>
-                    <div style={{ display: "flex", gap: 8 }}>
+                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                       <label style={{ flex: 1, fontSize: "0.85rem", display: "grid", gap: 4 }}>
                         Hours
                         <input type="number" min="1" max="500" step="0.5" required value={tempReq.hoursRequested} onChange={(e) => setTempReq({ ...tempReq, hoursRequested: e.target.value })} style={pInput} />
@@ -500,7 +500,7 @@ export default function PortalPage() {
                       Site address
                       <input required value={tempReq.siteAddress} onChange={(e) => setTempReq({ ...tempReq, siteAddress: e.target.value })} style={pInput} />
                     </label>
-                    <textarea placeholder={t("Job details (optional)","Detalles del trabajo (opcional)")} value={tempReq.jobDetails} onChange={(e) => setTempReq({ ...tempReq, jobDetails: e.target.value })} rows={2} style={pInput} />
+                    <textarea aria-label={t("Staffing job details (optional)","Detalles del personal solicitado (opcional)")} placeholder={t("Job details (optional)","Detalles del trabajo (opcional)")} value={tempReq.jobDetails} onChange={(e) => setTempReq({ ...tempReq, jobDetails: e.target.value })} rows={2} style={pInput} />
                     <button type="submit" disabled={tempBusy || Boolean(portalAction.current)} style={pButton}>{tempBusy ? t("Sending…","Enviando…") : t("Request temp staff","Solicitar personal temporal")}</button>
                   </form>
                 )}
@@ -525,7 +525,7 @@ export default function PortalPage() {
                       ) : ["assigned", "in_progress", "completed"].includes(r.status) ? (
                         <form onSubmit={(e) => confirmHours(e, r.id)} style={{ display: "flex", gap: 8, marginTop: 8 }}>
                           <input
-                            type="number" min="0" step="0.25" required
+                            aria-label={t("Hours worked to confirm","Horas trabajadas por confirmar")} type="number" min="0" step="0.25" required
                             placeholder={t("Hours worked","Horas trabajadas")}
                             value={confirming[r.id] || ""}
                             onChange={(e) => setConfirming({ ...confirming, [r.id]: e.target.value })}
@@ -549,26 +549,26 @@ export default function PortalPage() {
             <section className="panel" style={{ padding: 22, margin: "18px 0" }}>
               <h3 id="portal-contact" style={{ marginTop: 0 }}>{t('Contact us','Contáctenos')}</h3>
               {contactSent ? (
-                <p style={{ color: "#1e8e4d", fontWeight: 700 }}>✅ Message sent — we'll get back to you soon.</p>
+                <p role="status" aria-live="polite" style={{ color: "#1e8e4d", fontWeight: 700 }}>✅ Message sent — we'll get back to you soon.</p>
               ) : (
-                <form onSubmit={sendContact} style={{ display: "grid", gap: 10 }}>
-                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                <form onSubmit={sendContact} aria-busy={contactBusy} aria-label={t("Contact customer service","Contactar al servicio al cliente")} style={{ display: "grid", gap: 10 }}>
+                  <div role="radiogroup" aria-label={t("Reason for contacting us","Motivo de la consulta")} style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                     {[
                       ["general", "💬 General question"],
                       ["service_problem", "⚠️ Problem with service"],
                       ["callback_request", "📞 Please call me"],
                     ].map(([val, label]) => (
                       <label key={val} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: "0.9rem", fontWeight: contact.category === val ? 800 : 400, cursor: "pointer", padding: "8px 12px", borderRadius: 999, border: contact.category === val ? "2px solid var(--brand)" : "1px solid var(--line)", background: contact.category === val ? "var(--bg-soft)" : "transparent" }}>
-                        <input type="radio" name="category" value={val} checked={contact.category === val} onChange={() => setContact({ ...contact, category: val })} style={{ display: "none" }} />
+                        <input type="radio" name="category" value={val} checked={contact.category === val} onChange={() => setContact({ ...contact, category: val })} style={{ accentColor: "var(--brand)", marginRight: 6 }} />
                         {label}
                       </label>
                     ))}
                   </div>
-                  <div style={{ display: "flex", gap: 8 }}>
-                    <input placeholder={t("Your name","Su nombre")} value={contact.name} onChange={(e) => setContact({ ...contact, name: e.target.value })} style={{ ...pInput, flex: 1 }} />
-                    <input placeholder={t("Subject","Asunto")} value={contact.subject} onChange={(e) => setContact({ ...contact, subject: e.target.value })} style={{ ...pInput, flex: 1 }} />
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                    <input aria-label={t("Your name","Su nombre")} autoComplete="name" placeholder={t("Your name","Su nombre")} value={contact.name} onChange={(e) => setContact({ ...contact, name: e.target.value })} style={{ ...pInput, flex: 1 }} />
+                    <input aria-label={t("Subject","Asunto")} placeholder={t("Subject","Asunto")} value={contact.subject} onChange={(e) => setContact({ ...contact, subject: e.target.value })} style={{ ...pInput, flex: 1 }} />
                   </div>
-                  <textarea placeholder={contact.category === "service_problem" ? "Tell us what went wrong — we'll make it right." : contact.category === "callback_request" ? "Best number and time to reach you…" : "How can we help?"} required value={contact.body} onChange={(e) => setContact({ ...contact, body: e.target.value })} rows={3} style={pInput} />
+                  <textarea aria-label={t("Your message to customer service","Su mensaje al servicio al cliente")} placeholder={contact.category === "service_problem" ? "Tell us what went wrong — we'll make it right." : contact.category === "callback_request" ? "Best number and time to reach you…" : "How can we help?"} required value={contact.body} onChange={(e) => setContact({ ...contact, body: e.target.value })} rows={3} style={pInput} />
                   <button type="submit" disabled={contactBusy || Boolean(portalAction.current)} style={pButton}>{contactBusy ? t("Sending…","Enviando…") : t("Send message","Enviar mensaje")}</button>
                 </form>
               )}
