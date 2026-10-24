@@ -23,6 +23,7 @@ export default function AuthenticatedCustomerPortal(){
  const mounted=useRef(false);
  const latestLanguage=useRef(language);
  latestLanguage.current=language;
+ const tr=(en,es)=>latestLanguage.current==="es"?es:en;
  async function refresh({silent=false}={}){
   const sequence=++requestSequence.current;
   if(!silent){setBusy(true);setError("");setLocations([]);setNotice("");}
@@ -32,7 +33,8 @@ export default function AuthenticatedCustomerPortal(){
    if(!mounted.current||sequence!==requestSequence.current)return;
    if(userError||!userState?.user){
     setLocations([]);setLoggedIn(false);setNotice("");
-    if(userError)setError("Could not verify your current session. Please sign in again.");
+    if(userError)setError(tr("Could not verify your current session. Please sign in again.",
+     "No se pudo verificar la sesión actual. Vuelva a iniciar sesión."));
     return;
    }
    // Claiming an identity may write to the database; do it on initial/manual
@@ -41,13 +43,14 @@ export default function AuthenticatedCustomerPortal(){
     const {data:claimed,error:claimError}=await sb.rpc("claim_workteams_customer_identity");
     if(!mounted.current||sequence!==requestSequence.current)return;
     if(claimError||typeof claimed!=="number")
-     throw new Error("Could not verify customer account authorization. Please try again.");
+     throw new Error(tr("Could not verify customer account authorization. Please try again.",
+      "No se pudo verificar la autorización de su cuenta. Inténtelo de nuevo."));
    }
    const {data,error:scopeError}=await sb.rpc("get_my_workteams_customer_identity");
    if(!mounted.current||sequence!==requestSequence.current)return;
    if(scopeError||data?.ok!==true||!Array.isArray(data.locations)){
-    if(data?.ok===false&&data?.error)throw new Error(String(data.error));
-    throw new Error("Customer locations could not be verified. No information was displayed.");
+    throw new Error(tr("Customer locations could not be verified. No information was displayed.",
+     "No se pudieron verificar sus ubicaciones. No se mostró información."));
    }
    setLoggedIn(true);
    setError("");
@@ -62,13 +65,25 @@ export default function AuthenticatedCustomerPortal(){
    if(!mounted.current||sequence!==requestSequence.current)return;
    // Fail closed when authorization is unknown, including network failure.
    setLocations([]);setNotice("");
-   setError(err instanceof Error?err.message:"Customer access unavailable.");
+   setError(err instanceof Error?err.message:tr("Customer access unavailable.",
+    "El acceso de clientes no está disponible."));
   }finally{
    if(mounted.current&&sequence===requestSequence.current)setBusy(false);
   }
  }
  useEffect(()=>{
   mounted.current=true;
+  const params=new URLSearchParams(window.location.search);
+  const supplied=params.get("lang");
+  let preferred="en";
+  try{
+   const saved=window.localStorage.getItem("workteams-customer-portal-language");
+   preferred=supplied==="es"?"es":supplied==="en"?"en":
+    saved==="es"?"es":saved==="en"?"en":
+    navigator.language.toLowerCase().startsWith("es")?"es":"en";
+   window.localStorage.setItem("workteams-customer-portal-language",preferred);
+  }catch{preferred=supplied==="es"?"es":"en";}
+  latestLanguage.current=preferred;setLanguage(preferred);
   void refresh();
   const recheck=()=>{
    if(document.visibilityState==="visible")void refresh({silent:true});
@@ -92,10 +107,11 @@ export default function AuthenticatedCustomerPortal(){
   try{
    const {error:failure}=await supabase().auth.signOut();
    if(failure)throw failure;
-   window.location.assign("/customer-login");
+   window.location.assign("/customer-login?lang="+latestLanguage.current);
   }catch(err){
    setBusy(false);
-   setError(err instanceof Error?err.message:"Could not confirm sign out. Close this tab if using a shared device.");
+   setError(tr("Could not confirm sign out. Close this tab if using a shared device.",
+    "No se pudo confirmar el cierre de sesión. Cierre esta pestaña si comparte el dispositivo."));
   }
  }
  return <main className="site-shell" style={{maxWidth:720,margin:"0 auto"}}>
@@ -104,7 +120,15 @@ export default function AuthenticatedCustomerPortal(){
    <h1>{t("Your approved service locations","Sus ubicaciones autorizadas")}</h1>
    <label htmlFor="customer-portal-language">Language / Idioma</label>
    <select id="customer-portal-language" value={language}
-    onChange={e=>setLanguage(e.target.value==="es"?"es":"en")}>
+    onChange={e=>{
+     const next=e.target.value==="es"?"es":"en";
+     latestLanguage.current=next;setLanguage(next);
+     try{window.localStorage.setItem("workteams-customer-portal-language",next)}catch{}
+     const url=new URL(window.location.href);
+     url.searchParams.set("lang",next);
+     window.history.replaceState({},"",url.toString());
+     void refresh({silent:true});
+    }}>
     <option value="en">English</option><option value="es">Español</option>
    </select>
    <p>{t("Only verified, approved customer accounts can see company locations here. A forwarded service link does not grant customer login access.",
@@ -119,8 +143,8 @@ export default function AuthenticatedCustomerPortal(){
        <h2>{loc.company_name}</h2>
        <p>{loc.contact_name}</p><strong>{loc.location_name}</strong>
        <p style={{fontSize:13}}>{t(
-         "Location access only. Private documents, invoices, employee information and full contracts are not yet available from this customer account.",
-         "Solo acceso a la ubicación. Los documentos privados, las facturas y los datos de empleados no están disponibles aquí."
+         "Only manager-approved reports, work orders, service visits, private PDFs and requests for this location are shown. Invoices, employee records and internal business information remain private.",
+         "Solo se muestran informes, órdenes de trabajo, visitas, archivos PDF privados y solicitudes aprobados para esta ubicación. Las facturas, los expedientes del personal y la información interna siguen siendo privados."
        )}</p>
        <AuthenticatedCustomerQuality
          companyId={loc.company_id} locationId={loc.location_id}

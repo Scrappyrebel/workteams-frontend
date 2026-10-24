@@ -46,3 +46,28 @@ for(const term of [
 assert.ok(sql.includes("'account_linked',exists("),"Manager readiness must come from trusted server status");
 assert.ok(legacy.includes("get_portal_data"),"Keep original token-only portal path unchanged");
 console.log("WorkTeams revoked-session visibility recheck and exact customer pilot readiness regressions passed.");
+
+
+const login=src("app/customer-login/page.js");
+// Language preference survives sign in, password recovery, customer location
+// switches and sign out without changing any company/location authorization.
+for(const term of [
+ "workteams-customer-portal-language",
+ "latestLanguage.current=preferred",
+ "latestLanguage.current=next",
+ 'void refresh({silent:true})',
+ "No se pudieron verificar sus ubicaciones.",
+ "Los expedientes del personal",
+ "setLocations([]);setNotice(\"\")",
+ 'rpc("get_my_workteams_customer_identity")'
+])assert.ok(page.includes(term),"Missing customer portal bilingual/revocation consistency: "+term);
+for(const term of [
+ "workteams-customer-portal-language",
+ "chooseLanguage(next)",
+ 'url.searchParams.set("lang",lang)',
+ "emailRedirectTo:confirmUrl.toString()",
+ 'auth.signInWithPassword'
+])assert.ok(login.includes(term),"Missing bilingual customer login or existing Auth flow: "+term);
+assert.ok(!page.includes("Private documents, invoices, employee information and full contracts are not yet available"),
+ "Customer portal must not misstate availability of manager-approved private PDFs");
+console.log("WorkTeams bilingual customer sign-in, persisted locale and privacy guidance verified.");
