@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import {readFileSync} from "node:fs";
 const read=p=>readFileSync(new URL("../"+p,import.meta.url),"utf8");
 const sql=read("supabase/061_client_portal_published_work_order_status.sql");
+const reset=read("supabase/062_client_portal_reapproval_resets_work_order_grants.sql");
 const detail=read("app/app/[companyId]/work-orders/[id]/page.js");
 const manager=read("components/ClientIdentityContactManager.js");
 const managerPublish=read("components/WorkOrderCustomerPublication.js");
@@ -61,6 +62,10 @@ for(const term of [
  "Órdenes de servicio publicadas",
  "data.work_orders"
 ])assert.ok(customer.includes(term),"Missing authenticated customer status safeguards: "+term);
+assert.ok(reset.includes("can_view_work_orders=false"),"Reapproval must revoke work-order permissions by default");
+assert.ok(reset.includes("can_view_quality=false"),"Reapproval must still revoke private quality permissions");
+assert.ok(reset.includes("can_view_contracts=false"),"Reapproval must still clear other private grants");
+assert.ok(reset.includes("grant execute on function public.approve_workteams_customer_identity_contact"),"Approved manager RPC remains authenticated");
 assert.ok(detail.includes("WorkOrderCustomerPublication"));
 assert.ok(customerPortal.includes("AuthenticatedCustomerWorkOrders"));
 console.log("Published-only work orders, manager approval, exact customer/location grant, private-field exclusion and withdrawal regression passed.");
