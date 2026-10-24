@@ -174,6 +174,7 @@ begin
     select 1 from public.client_portal_identity_links il
     join auth.users au on au.id=il.auth_user_id
     where il.company_id=ct.company_id and il.contact_id=ct.id
+      and il.email_normalized=ct.email_normalized
       and il.status='active' and il.revoked_at is null and il.verified_at is not null
       and au.email_confirmed_at is not null and lower(btrim(au.email))=ct.email_normalized),
   'locations',coalesce((
@@ -181,7 +182,7 @@ begin
      'id',g.location_id,'name',l.name,
      'revoked',g.revoked_at is not null,'basic_portal',g.can_view_requests,
      'quality_access',g.can_view_quality,
-     'work_order_access',g.can_view_contracts,
+     'work_order_access',g.can_view_work_orders,
      'document_access',g.can_view_documents,
      'active',g.revoked_at is null
        and g.can_view_requests=true
