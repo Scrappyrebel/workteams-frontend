@@ -6,6 +6,7 @@ import { supabase } from "../../../../lib/supabase";
 import { useCompany } from "../../../../lib/company-context";
 import { canUseWithRole } from "../../../../lib/tiers";
 import ClientIdentityContactManager from "../../../../components/ClientIdentityContactManager";
+import CustomerDocumentManager from "../../../../components/CustomerDocumentManager";
 
 export default function ClientPortalPage() {
   const { company, member, loading } = useCompany();
@@ -411,6 +412,8 @@ export default function ClientPortalPage() {
             </button>
           </div>}
       </section>
+      {pilotRequested===true&&<CustomerDocumentManager
+        companyId={company?.id} locations={locations} pilotRequested={pilotRequested}/>}
       {pilotRequested===true&&<ClientIdentityContactManager
         companyId={company?.id} locations={locations}
         pilotRequested={pilotRequested} pilotEnabled={pilotEnabled}/>}

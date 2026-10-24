@@ -147,6 +147,29 @@ export default function ClientIdentityContactManager({companyId,locations,pilotR
   }catch(err){setError(err.message||"Could not confirm work-order permissions.")}
   finally{setBusy(false)}
  }
+ async function changeDocumentAccess(contact,location,allow){
+  if(!companyId||!pilotRequested||busy||contact.status!=="active"||location.revoked)return;
+  if(!window.confirm(allow?
+   t("Allow this verified customer to download ONLY privately stored PDFs explicitly published for this exact location? Review each PDF before publishing.",
+     "¿Permitir que este cliente descargue SOLO archivos PDF publicados expresamente para esta ubicación? Revise cada documento antes de publicarlo."):
+   t("Revoke this verified customer's PDF access for this location immediately?",
+     "¿Revocar inmediatamente el acceso de este cliente a los archivos PDF de esta ubicación?")
+  ))return;
+  setBusy(true);setError("");setNotice("");
+  try{
+   const {data,error:e}=await supabase().rpc("set_workteams_customer_document_access",{
+    p_company_id:companyId,p_contact_id:contact.id,p_location_id:location.id,p_allow:allow
+   });
+   if(e||data?.ok!==true||data.document_access!==allow)
+    throw Error(e?.message||"Document access could not be verified.");
+   setNotice(allow?t("Private document permission saved for this customer/location.",
+    "Se autorizó el acceso a documentos privados para este cliente y ubicación."):
+    t("PDF access revoked immediately for this customer/location.",
+     "Acceso a PDF revocado para este cliente y ubicación."));
+   await refresh();
+  }catch(e){setError(e.message||"Could not confirm document permission.")}
+  finally{setBusy(false)}
+ }
  async function copyInvitation(contact,location){
   if(copyBusy||busy||!loaded||pilotEnabled!==true||serverLoginEnabled!==true||
      contact.status!=="active"||location.active!==true||!contact.email)return;
@@ -261,6 +284,14 @@ export default function ClientIdentityContactManager({companyId,locations,pilotR
        onClick={()=>void changeQuality(c,l,!l.quality_access)}>
         {l.quality_access?t("Revoke quality reports","Revocar informes"):
          t("Allow published quality reports","Permitir informes publicados")}
+      </button>}
+      <p style={{fontSize:13,margin:"6px 0"}}>{t("Private PDF access: ","Acceso a documentos PDF: ")}
+       {l.document_access?t("Approved","Autorizado"):t("Private","Privado")}</p>
+      {c.status==="active"&&!l.revoked&&l.basic_portal&&<button type="button"
+       disabled={busy||!loaded}
+       onClick={()=>void changeDocumentAccess(c,l,!l.document_access)}>
+        {l.document_access?t("Revoke private PDFs","Revocar documentos PDF"):
+         t("Allow published private PDFs","Permitir archivos PDF publicados")}
       </button>}
       <p style={{fontSize:13,margin:"6px 0"}}>{t("Published work orders: ","Órdenes publicadas: ")}
        {l.work_order_access?t("Approved","Autorizado"):t("Private","Privado")}</p>
