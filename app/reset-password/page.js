@@ -25,23 +25,36 @@ export default function ResetPasswordPage() {
   const retryHref = isCustomer ?
     `/forgot-password?source=customer&lang=${language}` : "/forgot-password";
 
-  // The reset link carries a recovery session; the client picks it up
-  // from the URL automatically. Only then can the password be changed.
+  // Supabase emits PASSWORD_RECOVERY only for a valid password-recovery
+  // redirect. A normal SIGNED_IN/INITIAL_SESSION is NOT a reset token:
+  // logged-in customers or employees visiting this URL cannot change a
+  // password through this form without following their email recovery link.
   useEffect(() => {
     let cancelled = false;
+    let recoverySeen = false;
+    const { data: { subscription } } = supabase().auth.onAuthStateChange(
+      (event, session) => {
+        if (cancelled || event !== "PASSWORD_RECOVERY" || !session?.user) return;
+        recoverySeen = true;
+        setValid(true);
+        setReady(true);
+      }
+    );
     (async () => {
-      // Give the client a moment to detect the session in the URL.
-      for (let i = 0; i < 10; i++) {
-        const { data: { session } } = await supabase().auth.getSession();
-        if (session) {
-          if (!cancelled) { setValid(true); setReady(true); }
-          return;
-        }
+      // Give Supabase Auth time to consume the recovery redirect on mobile.
+      // Never promote a generic authenticated session into recovery access.
+      for (let i = 0; i < 10 && !recoverySeen; i++) {
         await new Promise((r) => setTimeout(r, 400));
       }
-      if (!cancelled) setReady(true);
+      if (!cancelled && !recoverySeen) {
+        setValid(false);
+        setReady(true);
+      }
     })();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+      subscription.unsubscribe();
+    };
   }, []);
 
   async function savePassword(e) {
@@ -62,8 +75,20 @@ export default function ResetPasswordPage() {
     }
     setLoading(true);
     try {
+      // A successful update requires the actual recovery session. Do not
+      // silently keep the customer logged in with that temporary session.
       const { error } = await supabase().auth.updateUser({ password });
       if (error) throw error;
+      if (isCustomer) {
+        const { error: signOutError } = await supabase().auth.signOut({ scope: "local" });
+        if (signOutError) {
+          setError(t(
+            "Password changed, but we could not close the recovery session. Sign out of your account before using another device.",
+            "La contraseña cambió, pero no se pudo cerrar la sesión de recuperación. Cierre la sesión antes de usar otro dispositivo."
+          ));
+          return;
+        }
+      }
       router.replace(isCustomer ?
         `/customer-login?lang=${language}&reset=1` : "/login");
     } catch (err) {
