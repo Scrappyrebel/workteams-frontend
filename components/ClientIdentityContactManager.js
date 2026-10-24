@@ -2,6 +2,7 @@
 import {useEffect,useRef,useState} from "react";
 import {supabase} from "../lib/supabase";
 import {makeCustomerInvitation} from "../lib/customer-invitation.mjs";
+import {findReadyCustomerContacts} from "../lib/customer-pilot-readiness.mjs";
 
 export default function ClientIdentityContactManager({companyId,locations,pilotRequested,pilotEnabled}){
  const [contacts,setContacts]=useState([]);
@@ -149,12 +150,15 @@ export default function ClientIdentityContactManager({companyId,locations,pilotR
  const approved=contacts.filter(c=>c.status==="active");
  const activeLocations=approved.flatMap(c=>(c.locations||[]).filter(l=>l.active===true));
  const linked=approved.filter(c=>c.account_linked===true);
+ // Readiness must belong to the SAME approved contact/location; combining
+ // one contact's confirmed account with another's grant is a false green.
+ const readyContacts=findReadyCustomerContacts(contacts);
  const readiness=[
   {ok:pilotRequested===true,en:"Company pilot requested",es:"Programa piloto solicitado"},
   {ok:serverLoginEnabled===true&&pilotEnabled===true,en:"Owner activated customer login",es:"Acceso de clientes activado por el propietario"},
   {ok:approved.length>0,en:"At least one customer contact approved",es:"Al menos un contacto autorizado"},
   {ok:activeLocations.length>0,en:"Valid, active service-location grant",es:"Ubicación de servicio autorizada y vigente"},
-  {ok:linked.length>0,en:"Customer account linked to a confirmed email",es:"Cuenta de cliente vinculada a un correo confirmado"}
+  {ok:readyContacts.length>0,en:"A confirmed customer account has an active location grant for that same contact",es:"Una cuenta confirmada tiene un permiso vigente para su propia ubicación"}
  ];
  if(!pilotRequested)return null;
  return <section className="panel" style={{padding:20,margin:"16px 0"}}>
@@ -192,6 +196,10 @@ export default function ClientIdentityContactManager({companyId,locations,pilotR
      <strong>{r.ok?"✓":"○"}</strong> {language==="es"?r.es:r.en}
    </p>)}
    <p><strong>{t("Software readiness","Preparación técnica")}: {readiness.filter(r=>r.ok).length}/{readiness.length}</strong></p>
+   {readyContacts.length===0&&<p role="status" style={{fontSize:13}}>
+     {t("No single approved contact has BOTH a linked confirmed account and an active location. Complete those two steps for the same customer before field testing.",
+      "Ningún contacto autorizado tiene AMBOS: una cuenta confirmada vinculada y una ubicación vigente. Complete los dos pasos con el mismo cliente antes de probar.")}
+   </p>}
    <p style={{fontSize:13}}>{t("Real customer sign-in, request submission, revocation and phone acceptance: NOT VERIFIED until completed on customer devices.",
     "Inicio de sesión real, solicitudes, revocación y pruebas en teléfonos: NO VERIFICADO hasta probarlo con clientes.")}</p>
   </section>
