@@ -291,12 +291,14 @@ export default function ClientPortalPage() {
        reply.toLowerCase().includes("://")||
        reply.toLowerCase().includes("www.")||
        /[.]pdf|[.]docx?|[.]zip/i.test(reply))){
-      setResponseError("Do not paste document links, file paths or attachments into a shared location-link reply.");return;
+      setResponseError("Do not paste document links, file paths or attachments into a customer-visible reply.");return;
     }
     if(reply&& (reply.length<10||reply.length>1200)){
       setResponseError("Write a customer-safe response of 10–1200 characters, or leave it blank.");return;
     }
-    if(!window.confirm("Save this status and response for anyone holding this location's secure customer link? Do not include private staff information or sensitive details."))return;
+    if(!window.confirm(message.customer_contact_id?
+      "Save this status and response for the verified customer who submitted this request? Never include private staff information, unrelated locations or sensitive details.":
+      "Save this status and response for anyone holding this location's secure customer link? Do not include private staff information or sensitive details."))return;
     responseInFlight.current=true;setWorking(true);setResponseError("");setResponseNotice("");
     try{
       const saved=await supabase().from("portal_messages").update({
@@ -309,7 +311,9 @@ export default function ClientPortalPage() {
         throw new Error(saved.error?.message||"The customer response could not be verified.");
       await load();
       if(message.category==="document_copy")setDeliveryConfirmed(p=>({...p,[message.id]:false}));
-      setResponseNotice("Customer-safe status and response saved. The location link can now show the update.");
+      setResponseNotice(message.customer_contact_id?
+        "Response saved. Only this verified contact can view the authenticated request history.":
+        "Customer-safe status and response saved. The exact location link can now show the update.");
     }catch(error){
       setResponseError(error instanceof Error?error.message:"Customer response status unknown. Check history before resending.");
     }finally{
