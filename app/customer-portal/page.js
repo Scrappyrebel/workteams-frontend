@@ -2,6 +2,7 @@
 import Link from "next/link";
 import {useEffect,useState} from "react";
 import {supabase} from "../../lib/supabase";
+import AuthenticatedCustomerRequests from "../../components/AuthenticatedCustomerRequests";
 
 export default function AuthenticatedCustomerPortal(){
  const [language,setLanguage]=useState("en");
@@ -66,6 +67,16 @@ export default function AuthenticatedCustomerPortal(){
          "Location access only. Private documents, invoices, employee information and full contracts are not yet available from this customer account.",
          "Solo acceso a la ubicación. Los documentos privados, las facturas y los datos de empleados no están disponibles aquí."
        )}</p>
+       <AuthenticatedCustomerRequests
+         companyId={loc.company_id} locationId={loc.location_id}
+         language={language}
+         onAuthorizationLost={()=>{
+           setLocations([]);setError(t(
+             "Customer authorization could not be verified. Recheck your account before continuing.",
+             "No se pudieron verificar sus permisos. Revise su cuenta antes de continuar."
+           ));
+         }}/>
+
      </section>)}
     </div>}
    {!busy&&loggedIn&&<div style={{display:"flex",gap:12,flexWrap:"wrap",marginTop:14}}>
