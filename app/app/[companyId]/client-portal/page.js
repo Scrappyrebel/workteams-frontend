@@ -144,7 +144,7 @@ export default function ClientPortalPage() {
       .limit(50);
     if(liveInboxCompany.current!==companyId)return;
     if(messageError){
-      setInboxError("Customer request inbox could not be verified. Refresh to retry.");
+      setInboxError("Client messages are temporarily unavailable. This does not mean there are no messages. Refresh to retry.");
       setMessages([]);setInboxCheckedAt(null);return;
     }
     setInboxError("");setInboxCheckedAt(new Date());
