@@ -1,0 +1,13 @@
+import assert from "node:assert/strict";
+import {readFileSync} from "node:fs";
+const sql=readFileSync(new URL("../supabase/050_client_portal_work_order_sort_hotfix.sql",import.meta.url),"utf8");
+assert.ok(sql.includes("create or replace function public.get_portal_data(tok text)"));
+assert.ok(sql.includes("jsonb_agg(t order by t.created_at desc)"));
+assert.ok(sql.includes("select title, null::text as description, status, priority, due_date, created_at"));
+assert.ok(sql.includes("portal_token_id = pt.id"));
+assert.ok(sql.includes("publication.published = true"));
+assert.ok(sql.includes("publication.customer_summary"));
+assert.ok(!sql.includes("select inspection_date, score, notes"));
+assert.ok(!sql.includes("select title, description, status"));
+assert.ok(!sql.includes("and customer_name = pt.client_name"));
+console.log("WorkTeams customer portal work-order sort repair preserves safe publication and token scoping.");
