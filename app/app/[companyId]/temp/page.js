@@ -325,6 +325,12 @@ export default function TempDashboard() {
       <section className="panel" style={{ padding: 24 }}>
         <p className="kicker">Temp Staffing</p>
         <h1 style={{ marginTop: 4 }}>Agency dashboard</h1>
+        <p style={{ marginTop: 8, fontSize: 14 }}>
+          <a href="temp-pay" style={{ color: "var(--brand-deep)", fontWeight: 700 }}>
+            💵 Temp pay owed →
+          </a>{" "}
+          <span style={{ color: "var(--muted)" }}>what each temp is owed on completed jobs</span>
+        </p>
         <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
           {TABS.map((t) => (
             <button
