@@ -11,7 +11,7 @@ alter table public.portal_messages
  add constraint portal_messages_customer_contact_company_fkey
  foreign key(company_id,customer_contact_id)
  references public.client_portal_contacts(company_id,id)
- on delete set null;
+ on delete set null (customer_contact_id);
 
 create unique index if not exists portal_messages_customer_request_dedupe
  on public.portal_messages(customer_contact_id,customer_request_key)
