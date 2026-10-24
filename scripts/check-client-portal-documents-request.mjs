@@ -4,7 +4,7 @@ const page=readFileSync(new URL("../app/portal/[token]/page.js",import.meta.url)
 for(const token of [
   'href="#portal-documents"',
   'id="portal-documents"',
-  'Documents &amp; Agreements / Documentos y contratos',
+  'Documents & Agreements / Documentos y contratos',
   'only approved contract details and amendment statuses',
   'does not provide private downloadable company files',
   'Request a contract copy / Solicitar copia del contrato',

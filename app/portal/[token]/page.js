@@ -12,6 +12,24 @@ import { formatTime12h } from "../../../lib/dates";
 // no employee details.
 export default function PortalPage() {
   const params = useParams();
+  const [language,setLanguage]=useState("en");
+  const t=(en,es)=>language==="es"?es:en;
+  const localStatus=(raw)=>{
+    const es={received:"Recibida",in_progress:"En proceso",resolved:"Resuelta",
+      assigned:"Asignada",completed:"Completada",cancelled:"Cancelada",
+      pending:"Pendiente",sent:"Enviada",signed:"Firmada",declined:"Rechazada"};
+    const key=String(raw||"").toLowerCase();return language==="es"&&es[key]?es[key]:String(raw||"").replace(/_/g," ");
+  };
+  useEffect(()=>{
+    try{
+      const stored=localStorage.getItem("workteams-client-portal-language");
+      setLanguage(stored==="es"||(!stored&&navigator.language.toLowerCase().startsWith("es"))?"es":"en");
+    }catch{setLanguage(navigator.language.toLowerCase().startsWith("es")?"es":"en")}
+  },[]);
+  const chooseLanguage=(value)=>{
+    setLanguage(value);
+    try{localStorage.setItem("workteams-client-portal-language",value)}catch{}
+  };
   const token = params.token;
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -221,44 +239,52 @@ export default function PortalPage() {
             </span>
             <strong>WorkTeams</strong>
           </Link>
-          <span style={{ marginLeft: "auto", fontSize: "0.82rem", color: "var(--muted)" }}>Client portal</span>
+          <div style={{marginLeft:"auto",display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+             <span style={{fontSize:"0.82rem",color:"var(--muted)"}}>{t("Client portal","Portal del cliente")}</span>
+             <label htmlFor="workteams-client-language" style={{fontSize:"0.82rem"}}>{t("Language","Idioma")}</label>
+             <select id="workteams-client-language" aria-label="Client Portal language / Idioma"
+               value={language} onChange={e=>chooseLanguage(e.target.value==="es"?"es":"en")}
+               style={{padding:"7px 9px",borderRadius:8,border:"1px solid var(--line)"}}>
+               <option value="en">English</option><option value="es">Español</option>
+             </select>
+           </div>
         </div>
       </header>
       <main className="site-shell" style={{ paddingTop: 24, paddingBottom: 40, maxWidth: 640 }}>
-        {loading && <p>Loading…</p>}
+        {loading && <p>{t('Loading…','Cargando…')}</p>}
         {!loading && data && !data.ok && (
           <section className="panel" style={{ padding: 30 }}>
-            <h2 style={{ marginTop: 0 }}>Link unavailable</h2>
+            <h2 style={{ marginTop: 0 }}>{t('Link unavailable','Enlace no disponible')}</h2>
             <p style={{ color: "var(--muted)" }}>{data.error}</p>
           </section>
         )}
         {!loading && data && data.ok && (
           <div>
-            <p className="eyebrow">SERVICE UPDATES</p>
+            <p className="eyebrow">{t('SERVICE UPDATES','ACTUALIZACIONES DEL SERVICIO')}</p>
             <h2 style={{ fontSize: "1.8rem", margin: "4px 0" }}>{data.location_name}</h2>
             {data.location_address && <p style={{ color: "var(--muted)" }}>{data.location_address}</p>}
-            {data.client_name && <p style={{ color: "var(--muted)" }}>Prepared for {data.client_name}</p>}
+            {data.client_name && <p style={{ color: "var(--muted)" }}>{t("Prepared for","Preparado para")} {data.client_name}</p>}
             <nav className="panel" aria-label="Client Portal quick access" style={{ padding: 18, margin: "18px 0" }}>
               <h3 style={{margin:"0 0 10px"}}>Quick Access / Acceso rápido</h3>
               <div style={{display:"flex",gap:12,flexWrap:"wrap"}}>
-                <a href="#portal-visits">Upcoming visits</a>
-                <a href="#portal-inspections">Published quality reports</a>
-                <a href="#portal-documents">Documents &amp; agreements</a>
-                <a href="#portal-work">Open work</a>
-                {contract && <a href="#portal-contract">Contract &amp; scope</a>}
+                <a href="#portal-visits">{t("Upcoming visits","Próximas visitas")}</a>
+                <a href="#portal-inspections">{t("Published quality reports","Informes de calidad publicados")}</a>
+                <a href="#portal-documents">{t("Documents & agreements","Documentos y contratos")}</a>
+                <a href="#portal-work">{t("Open work","Trabajos pendientes")}</a>
+                {contract && <a href="#portal-contract">{t("Contract & scope","Contrato y alcance")}</a>}
                 {data?.amendments?.length > 0 && <a href="#portal-amendments">Contract amendments{dueAmendments>0? ` (${dueAmendments} to sign)` : ""}</a>}
-                <a href="#portal-extra">Extra service</a>
-                {data.temp_enabled && <a href="#portal-temp">Temp staffing</a>}
-                <a href="#portal-contact">Contact us</a>
-                <a href="#portal-customer-requests">My request statuses</a>
+                <a href="#portal-extra">{t("Extra service","Servicio adicional")}</a>
+                {data.temp_enabled && <a href="#portal-temp">{t("Temp staffing","Personal temporal")}</a>}
+                <a href="#portal-contact">{t("Contact us","Contáctenos")}</a>
+                <a href="#portal-customer-requests">{t("My request statuses","Estado de mis solicitudes")}</a>
               </div>
               <p style={{fontSize:"0.85rem",color:"var(--muted)",marginBottom:0}}>Amendments awaiting signature: {dueAmendments} · Temp hours to confirm: {hoursToConfirm}. This secure link is for this location only.</p>
             </nav>
-            {actionError && <div role="alert" className="panel" style={{padding:16,border:"1px solid #b3261e",margin:"12px 0"}}><strong>Action not confirmed</strong><p>{actionError}</p><p style={{fontSize:"0.82rem"}}>If your connection stopped after sending, contact the business before submitting the same request again.</p></div>}
+            {actionError && <div role="alert" className="panel" style={{padding:16,border:"1px solid #b3261e",margin:"12px 0"}}><strong>{t("Action not confirmed","Acción no confirmada")}</strong><p>{actionError}</p><p style={{fontSize:"0.82rem"}}>If your connection stopped after sending, contact the business before submitting the same request again.</p></div>}
 
             <section className="panel" style={{ padding: 22, margin: "18px 0" }}>
-              <h3 id="portal-visits" style={{ marginTop: 0 }}>Upcoming visits</h3>
-              {data.upcoming.length === 0 && <p style={{ color: "var(--muted)" }}>No visits scheduled in the next two weeks.</p>}
+              <h3 id="portal-visits" style={{ marginTop: 0 }}>{t("Upcoming visits","Próximas visitas")}</h3>
+              {data.upcoming.length === 0 && <p style={{ color: "var(--muted)" }}>{t("No visits scheduled in the next two weeks.","No hay visitas programadas en las próximas dos semanas.")}</p>}
               <div style={{ display: "grid", gap: 8 }}>
                 {data.upcoming.map((s, i) => (
                   <div key={i} className="portal-card" style={{ minHeight: 0, padding: "12px 16px" }}>
@@ -272,9 +298,9 @@ export default function PortalPage() {
             </section>
 
             <section className="panel" style={{ padding: 22, margin: "18px 0" }}>
-              <h3 id="portal-inspections" style={{ marginTop: 0 }}>Published quality reports</h3>
+              <h3 id="portal-inspections" style={{ marginTop: 0 }}>{t("Published quality reports","Informes de calidad publicados")}</h3>
               <p style={{fontSize:"0.82rem",color:"var(--muted)"}}>Only quality summaries approved by the business for this location are visible. Inspection notes, photos, internal checklists and employee identities are private.</p>
-              {data.inspections.length === 0 && <p style={{ color: "var(--muted)" }}>No quality reports have been approved for customer sharing yet.</p>}
+              {data.inspections.length === 0 && <p style={{ color: "var(--muted)" }}>{t("No quality reports have been approved for customer sharing yet.","Aún no hay informes de calidad aprobados para compartir.")}</p>}
               <div style={{ display: "grid", gap: 8 }}>
                 {data.inspections.map((x, i) => (
                   <div key={i} className="portal-card" style={{ minHeight: 0, padding: "12px 16px" }}>
@@ -286,13 +312,13 @@ export default function PortalPage() {
             </section>
 
             <section className="panel" style={{ padding: 22, margin: "18px 0" }}>
-              <h3 id="portal-work" style={{ marginTop: 0 }}>Open work</h3>
-              {data.work_orders.length === 0 && <p style={{ color: "var(--muted)" }}>Nothing open right now.</p>}
+              <h3 id="portal-work" style={{ marginTop: 0 }}>{t("Open work","Trabajos pendientes")}</h3>
+              {data.work_orders.length === 0 && <p style={{ color: "var(--muted)" }}>{t("Nothing open right now.","No hay trabajos pendientes.")}</p>}
               <div style={{ display: "grid", gap: 8 }}>
                 {data.work_orders.map((w, i) => (
                   <div key={i} className="portal-card" style={{ minHeight: 0, padding: "12px 16px" }}>
                     <span className="card-kicker">
-                      {w.status === "in_progress" ? "In progress" : "Open"}
+                      {w.status === "in_progress" ? t("In progress","En proceso") : t("Open","Abierto")}
                       {w.priority && w.priority !== "normal" ? ` • ${w.priority}` : ""}
                     </span>
                     <p style={{ margin: "6px 0 0", fontWeight: 700 }}>{w.title}</p>
@@ -308,14 +334,14 @@ export default function PortalPage() {
             </p>
 
             <section className="panel" id="portal-documents" style={{padding:22,margin:"18px 0"}}>
-              <h3 style={{marginTop:0}}>Documents &amp; Agreements / Documentos y contratos</h3>
+              <h3 style={{marginTop:0}}>{t('Documents & Agreements / Documentos y contratos','Documentos y contratos')}</h3>
               <p style={{fontSize:"0.9rem",color:"var(--muted)"}}>
                 This secure location link includes only approved contract details and amendment statuses.
                 It does not provide private downloadable company files or account-wide records.
                 Request a copy of your signed agreement using Customer Service.
               </p>
               <div style={{display:"flex",gap:14,flexWrap:"wrap"}}>
-                {contract?<a href="#portal-contract">Review location contract / Revisar contrato</a>:<span>No contract summary is currently available.</span>}
+                {contract?<a href="#portal-contract">Review location contract / Revisar contrato</a>:<span>{t("No contract summary is currently available.","No hay un resumen de contrato disponible.")}</span>}
                 {data?.amendments?.length>0&&<a href="#portal-amendments">Review amendments / Revisar modificaciones</a>}
                 <button type="button" disabled={Boolean(portalAction.current)}
                   onClick={()=>{
@@ -331,7 +357,7 @@ export default function PortalPage() {
 
             {contract && (
               <section className="panel" style={{ padding: 22, margin: "18px 0" }}>
-                <h3 id="portal-contract" style={{ marginTop: 0 }}>My contract</h3>
+                <h3 id="portal-contract" style={{ marginTop: 0 }}>{t('My contract','Mi contrato')}</h3>
                 <p style={{ fontSize: "0.9rem", color: "var(--muted)" }}>
                   Effective {contract.start_date}
                   {contract.end_date ? ` through ${contract.end_date}` : ""}
@@ -340,7 +366,7 @@ export default function PortalPage() {
                 </p>
                 {Array.isArray(contract.scope_of_work) && contract.scope_of_work.length > 0 && (
                   <>
-                    <p style={{ fontWeight: 700, marginBottom: 6 }}>Scope of work</p>
+                    <p style={{ fontWeight: 700, marginBottom: 6 }}>{t('Scope of work','Alcance del trabajo')}</p>
                     <ul style={{ marginTop: 0, paddingLeft: 20 }}>
                       {contract.scope_of_work.map((s, i) => (
                         <li key={i} style={{ fontSize: "0.9rem" }}>{typeof s === "string" ? s : s.task}</li>
@@ -355,7 +381,7 @@ export default function PortalPage() {
                 {contract.terms_text && (
                   <details style={{ marginTop: 12 }}>
                     <summary style={{ cursor: "pointer", fontWeight: 700, fontSize: "0.9rem", color: "var(--brand-deep)" }}>
-                      View full contract terms
+                      {t('View full contract terms','Ver los términos completos del contrato')}
                     </summary>
                     <div style={{ whiteSpace: "pre-line", fontSize: "0.85rem", lineHeight: 1.6, marginTop: 10, padding: 14, background: "var(--bg-soft)", borderRadius: 8 }}>
                       {contract.terms_text}
@@ -367,7 +393,7 @@ export default function PortalPage() {
 
             {data?.amendments?.length > 0 && (
               <section className="panel" style={{ padding: 22, margin: "18px 0" }}>
-                <h3 id="portal-amendments" style={{ marginTop: 0 }}>Contract amendments</h3>
+                <h3 id="portal-amendments" style={{ marginTop: 0 }}>{t('Contract amendments','Modificaciones del contrato')}</h3>
                 {data.amendments.map((a) => (
                   <div key={a.id} style={{ border: "1px solid var(--line)", borderRadius: 12, padding: 16, marginBottom: 12 }}>
                     <p style={{ fontWeight: 800, margin: "0 0 6px" }}>{a.title}</p>
@@ -396,20 +422,20 @@ export default function PortalPage() {
             {signingAmend && (
               <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50, padding: 16 }}>
                 <form onSubmit={signAmendment} style={{ background: "#fff", borderRadius: 16, padding: 24, maxWidth: 480, width: "100%", display: "grid", gap: 12 }}>
-                  <h3 style={{ margin: 0 }}>Sign amendment</h3>
+                  <h3 style={{ margin: 0 }}>{t('Sign amendment','Firmar modificación')}</h3>
                   <p style={{ fontWeight: 800, margin: 0 }}>{signingAmend.title}</p>
                   <p style={{ fontSize: "0.9rem", whiteSpace: "pre-line", margin: 0 }}>{signingAmend.description}</p>
-                  <input required placeholder="Type your full name to sign" value={signName} onChange={(e) => setSignName(e.target.value)} style={pInput} />
+                  <input required placeholder={t("Type your full name to sign","Escriba su nombre completo para firmar")} value={signName} onChange={(e) => setSignName(e.target.value)} style={pInput} />
                   <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-                    <button type="button" disabled={signBusy} onClick={() => setSigningAmend(null)} style={{ ...pButton, background: "#fff", color: "var(--text)", border: "1px solid var(--line)" }}>Cancel</button>
-                    <button type="submit" disabled={signBusy || Boolean(portalAction.current)} style={pButton}>{signBusy ? "Signing…" : "Sign amendment"}</button>
+                    <button type="button" disabled={signBusy} onClick={() => setSigningAmend(null)} style={{ ...pButton, background: "#fff", color: "var(--text)", border: "1px solid var(--line)" }}>{t('Cancel','Cancelar')}</button>
+                    <button type="submit" disabled={signBusy || Boolean(portalAction.current)} style={pButton}>{signBusy ? t("Signing…","Firmando…") : t("Sign amendment","Firmar modificación")}</button>
                   </div>
                 </form>
               </div>
             )}
 
             <section className="panel" style={{ padding: 22, margin: "18px 0" }}>
-              <h3 id="portal-extra" style={{ marginTop: 0 }}>Request extra service</h3>
+              <h3 id="portal-extra" style={{ marginTop: 0 }}>{t('Request extra service','Solicitar servicio adicional')}</h3>
               {cleanDone ? (
                 <p style={{ color: "#1e8e4d", fontWeight: 700 }}>
                   ✅ Request received — we'll confirm your {cleanDone.kind} clean shortly
@@ -430,15 +456,15 @@ export default function PortalPage() {
                       <input type="date" required value={cleanReq.date} onChange={(e) => setCleanReq({ ...cleanReq, date: e.target.value })} style={pInput} />
                     </label>
                   </div>
-                  <textarea placeholder="Notes (optional)" value={cleanReq.notes} onChange={(e) => setCleanReq({ ...cleanReq, notes: e.target.value })} rows={2} style={pInput} />
-                  <button type="submit" disabled={cleanBusy || Boolean(portalAction.current)} style={pButton}>{cleanBusy ? "Sending…" : "Request service"}</button>
+                  <textarea placeholder={t("Notes (optional)","Notas (opcional)")} value={cleanReq.notes} onChange={(e) => setCleanReq({ ...cleanReq, notes: e.target.value })} rows={2} style={pInput} />
+                  <button type="submit" disabled={cleanBusy || Boolean(portalAction.current)} style={pButton}>{cleanBusy ? t("Sending…","Enviando…") : t("Request service","Solicitar servicio")}</button>
                 </form>
               )}
             </section>
 
             {data.temp_enabled && (
               <section className="panel" style={{ padding: 22, margin: "18px 0" }}>
-                <h3 id="portal-temp" style={{ marginTop: 0 }}>Request temp staff</h3>
+                <h3 id="portal-temp" style={{ marginTop: 0 }}>{t('Request temp staff','Solicitar personal temporal')}</h3>
                 {tempDone ? (
                   <p style={{ color: "#1e8e4d", fontWeight: 700 }}>✅ Request received — we'll confirm your temp staff shortly.</p>
                 ) : (
@@ -474,8 +500,8 @@ export default function PortalPage() {
                       Site address
                       <input required value={tempReq.siteAddress} onChange={(e) => setTempReq({ ...tempReq, siteAddress: e.target.value })} style={pInput} />
                     </label>
-                    <textarea placeholder="Job details (optional)" value={tempReq.jobDetails} onChange={(e) => setTempReq({ ...tempReq, jobDetails: e.target.value })} rows={2} style={pInput} />
-                    <button type="submit" disabled={tempBusy || Boolean(portalAction.current)} style={pButton}>{tempBusy ? "Sending…" : "Request temp staff"}</button>
+                    <textarea placeholder={t("Job details (optional)","Detalles del trabajo (opcional)")} value={tempReq.jobDetails} onChange={(e) => setTempReq({ ...tempReq, jobDetails: e.target.value })} rows={2} style={pInput} />
+                    <button type="submit" disabled={tempBusy || Boolean(portalAction.current)} style={pButton}>{tempBusy ? t("Sending…","Enviando…") : t("Request temp staff","Solicitar personal temporal")}</button>
                   </form>
                 )}
               </section>
@@ -483,14 +509,14 @@ export default function PortalPage() {
 
             {data.temp_enabled && data.temp_requests && data.temp_requests.length > 0 && (
               <section className="panel" style={{ padding: 22, margin: "18px 0" }}>
-                <h3 style={{ marginTop: 0 }}>My temp requests</h3>
+                <h3 style={{ marginTop: 0 }}>{t('My temp requests','Mis solicitudes de personal temporal')}</h3>
                 <div style={{ display: "grid", gap: 8 }}>
                   {data.temp_requests.map((r) => (
                     <div key={r.id} className="portal-card" style={{ minHeight: 0, padding: "12px 16px" }}>
-                      <strong>{r.service_type.replace(/_/g, " ")}</strong>
+                      <strong>{localStatus(r.service_type)}</strong>
                       <div style={{ fontSize: "0.9rem", color: "var(--muted)" }}>
                         {r.cleaners_needed} temp(s) × {r.hours_requested} hr
-                        {r.job_date ? ` · ${r.job_date}` : ""} · {r.status.replace(/_/g, " ")}
+                        {r.job_date ? ` · ${r.job_date}` : ""} · {localStatus(r.status)}
                       </div>
                       {r.hours_confirmed != null ? (
                         <p style={{ color: "#1e8e4d", fontWeight: 700, fontSize: "0.9rem", margin: "8px 0 0" }}>
@@ -500,13 +526,13 @@ export default function PortalPage() {
                         <form onSubmit={(e) => confirmHours(e, r.id)} style={{ display: "flex", gap: 8, marginTop: 8 }}>
                           <input
                             type="number" min="0" step="0.25" required
-                            placeholder="Hours worked"
+                            placeholder={t("Hours worked","Horas trabajadas")}
                             value={confirming[r.id] || ""}
                             onChange={(e) => setConfirming({ ...confirming, [r.id]: e.target.value })}
                             style={{ ...pInput, flex: 1 }}
                           />
                           <button type="submit" disabled={confirmBusy === r.id || Boolean(portalAction.current)} style={{ ...pButton, padding: "11px 18px" }}>
-                            {confirmBusy === r.id ? "Saving…" : "Confirm hours"}
+                            {confirmBusy === r.id ? t("Saving…","Guardando…") : t("Confirm hours","Confirmar horas")}
                           </button>
                         </form>
                       ) : (
@@ -521,7 +547,7 @@ export default function PortalPage() {
             )}
 
             <section className="panel" style={{ padding: 22, margin: "18px 0" }}>
-              <h3 id="portal-contact" style={{ marginTop: 0 }}>Contact us</h3>
+              <h3 id="portal-contact" style={{ marginTop: 0 }}>{t('Contact us','Contáctenos')}</h3>
               {contactSent ? (
                 <p style={{ color: "#1e8e4d", fontWeight: 700 }}>✅ Message sent — we'll get back to you soon.</p>
               ) : (
@@ -539,17 +565,17 @@ export default function PortalPage() {
                     ))}
                   </div>
                   <div style={{ display: "flex", gap: 8 }}>
-                    <input placeholder="Your name" value={contact.name} onChange={(e) => setContact({ ...contact, name: e.target.value })} style={{ ...pInput, flex: 1 }} />
-                    <input placeholder="Subject" value={contact.subject} onChange={(e) => setContact({ ...contact, subject: e.target.value })} style={{ ...pInput, flex: 1 }} />
+                    <input placeholder={t("Your name","Su nombre")} value={contact.name} onChange={(e) => setContact({ ...contact, name: e.target.value })} style={{ ...pInput, flex: 1 }} />
+                    <input placeholder={t("Subject","Asunto")} value={contact.subject} onChange={(e) => setContact({ ...contact, subject: e.target.value })} style={{ ...pInput, flex: 1 }} />
                   </div>
                   <textarea placeholder={contact.category === "service_problem" ? "Tell us what went wrong — we'll make it right." : contact.category === "callback_request" ? "Best number and time to reach you…" : "How can we help?"} required value={contact.body} onChange={(e) => setContact({ ...contact, body: e.target.value })} rows={3} style={pInput} />
-                  <button type="submit" disabled={contactBusy || Boolean(portalAction.current)} style={pButton}>{contactBusy ? "Sending…" : "Send message"}</button>
+                  <button type="submit" disabled={contactBusy || Boolean(portalAction.current)} style={pButton}>{contactBusy ? t("Sending…","Enviando…") : t("Send message","Enviar mensaje")}</button>
                 </form>
               )}
             </section>
 
             <section className="panel" id="portal-customer-requests" style={{padding:22,margin:"18px 0"}}>
-              <h3 style={{marginTop:0}}>My Request Status / Estado de mis solicitudes</h3>
+              <h3 style={{marginTop:0}}>{t('My Request Status / Estado de mis solicitudes','Estado de mis solicitudes')}</h3>
               <p style={{fontSize:"0.85rem",color:"var(--muted)"}}>
                 This link is shared by service location. For privacy, request history shows only
                 date, category, status and customer-approved replies. Original personal messages,
@@ -561,19 +587,19 @@ export default function PortalPage() {
               </div>}
               <button type="button" disabled={historyRefreshing||Boolean(portalAction.current)}
                 onClick={()=>void refreshCustomerRequests()} style={{...pButton,padding:"8px 14px",width:"auto"}}>
-                {historyRefreshing?"Refreshing…":"Refresh request status / Actualizar estado"}
+                {historyRefreshing?t("Refreshing…","Actualizando…"):t("Refresh request status / Actualizar estado","Actualizar estado")}
               </button>
               {!data.customer_requests_error&&Array.isArray(data.customer_requests)&&data.customer_requests.length===0&&
-                <p style={{color:"var(--muted)"}}>No customer service requests have been submitted through this location link.</p>}
+                <p style={{color:"var(--muted)"}}>{t("No customer service requests have been submitted through this location link.","No se han enviado solicitudes desde este enlace de ubicación.")}</p>}
               {!data.customer_requests_error&&Array.isArray(data.customer_requests)&&data.customer_requests.map(r=>(
                 <article key={r.id} style={{border:"1px solid var(--line)",padding:14,borderRadius:12,marginTop:10}}>
-                  <strong>{r.category==="service_problem"?"Service concern":r.category==="callback_request"?"Callback request":"General request"}</strong>
+                  <strong>{r.category==="service_problem"?t("Service concern","Problema con el servicio"):r.category==="callback_request"?t("Callback request","Solicitud de llamada"):t("General request","Solicitud general")}</strong>
                   <p style={{margin:"6px 0",fontSize:"0.85rem",color:"var(--muted)"}}>
-                    {r.created_at?new Date(r.created_at).toLocaleString():"Date unavailable"} · 
-                    {r.status==="resolved"?" Resolved / Resuelto":r.status==="in_progress"?" In progress / En curso":" Received / Recibido"}
+                    {r.created_at?new Date(r.created_at).toLocaleString(language==="es"?"es-US":"en-US"):t("Date unavailable","Fecha no disponible")} · 
+                    {r.status==="resolved"?t(" Resolved / Resuelto"," Resuelto"):r.status==="in_progress"?t(" In progress / En curso"," En curso"):t(" Received / Recibido"," Recibido")}
                   </p>
                   {r.response&&<p style={{whiteSpace:"pre-wrap",margin:"8px 0 0"}}>
-                    <strong>Business response / Respuesta:</strong> {r.response}
+                    <strong>{t("Business response / Respuesta:","Respuesta del negocio:")}</strong> {r.response}
                   </p>}
                 </article>
               ))}
