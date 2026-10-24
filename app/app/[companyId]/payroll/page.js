@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { supabase } from "../../../../lib/supabase";
 import { useCompany } from "../../../../lib/company-context";
+import { resolveEntryPayRate, MEMBER_PAY_RATE_COLUMNS } from "../../../../lib/pay-rate";
 
 function isoDate(d) {
   // Local-timezone YYYY-MM-DD (d is already a local Date or offset).
@@ -64,7 +65,7 @@ export default function PayrollPage() {
     if (isManager) {
       const { data: pay } = await sb
         .from("member_pay")
-        .select("member_id, cleaner_hourly_rate, manager_hourly_rate, hourly_rate")
+        .select(MEMBER_PAY_RATE_COLUMNS)
         .eq("company_id", company.id);
       for (const p of pay || []) payByMember[p.member_id] = p;
     }
@@ -80,7 +81,8 @@ export default function PayrollPage() {
       if (e.proof_override_used) t.overrideShifts += 1;
       if (isManager) {
         const hat = e.clock_in_role === "manager" ? "manager" : "cleaner";
-        const rate = e.pay_rate_applied ?? payByMember[e.member_id]?.[hat === "manager" ? "manager_hourly_rate" : "cleaner_hourly_rate"] ?? payByMember[e.member_id]?.hourly_rate ?? 0;
+        // Shared chain (lib/pay-rate) — Profitability resolves identically.
+        const rate = resolveEntryPayRate(e, payByMember[e.member_id]);
         if (hat === "manager") t.managerHours += hrs; else t.cleanerHours += hrs;
         t.estPay += hrs * rate;
       }
