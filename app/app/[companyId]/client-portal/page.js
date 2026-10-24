@@ -338,7 +338,7 @@ export default function ClientPortalPage() {
         </select>
       </div>
       <p style={{ color: "var(--muted)" }}>
-        Share a read-only link per location. Clients see upcoming visits, recent inspection
+        Share a location-scoped link per site. Clients may request approved contract copies and see upcoming visits, recent inspection
         scores, and open work orders — no login needed, no financial or staff details. Treat each location link as a private access credential. Share only with an authorized contact, never publicly; rotate expired links.
       </p>
 
