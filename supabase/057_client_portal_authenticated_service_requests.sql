@@ -26,6 +26,13 @@ create index if not exists portal_messages_authenticated_customer_history
  on public.portal_messages(company_id,location_id,customer_contact_id,created_at desc)
  where customer_contact_id is not null;
 
+-- Historic table privileges included INSERT for all authenticated actors;
+-- no INSERT RLS policy existed, but remove the grant as defense in depth.
+-- Existing public bearer submissions still use protected server-side service
+-- credentials; managers retain their separately scoped SELECT/UPDATE policy.
+revoke insert on public.portal_messages from authenticated;
+revoke insert on public.portal_messages from anon;
+
 -- Do not grant customers direct SELECT/INSERT on portal_messages. Only the
 -- exact-contact and live-location SECURITY DEFINER RPCs below are exposed.
 create or replace function public.workteams_customer_authorized_location(
