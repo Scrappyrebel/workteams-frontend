@@ -40,7 +40,19 @@ export async function GET(request,{params}){
   if(storageError||!file)return respond({error:"The private PDF could not be retrieved."},503);
   const bytes=await file.arrayBuffer();
   if(bytes.byteLength>8*1024*1024||bytes.byteLength<10)return respond({error:"Private PDF could not be verified."},503);
-  const rawName=String(allowed.file_name||"customer-document.pdf");
+  // Authorization can change while the private object is loading. Recheck
+  // current verified contact, approval, location, publication and expiry
+  // immediately before sending bytes; never serve a former grant or a
+  // document whose storage object changed after the initial authorization.
+  const {data:reauthorized,error:revoked}=await user.rpc(
+   "authorize_workteams_customer_document_download",{p_document_id:id}
+  );
+  if(revoked||reauthorized?.ok!==true||reauthorized.id!==id||
+     reauthorized.company_id!==allowed.company_id||
+     reauthorized.location_id!==allowed.location_id||
+     reauthorized.storage_key!==allowed.storage_key)
+   return respond({error:"Customer document access was withdrawn."},403);
+  const rawName=String(reauthorized.file_name||"customer-document.pdf");
   const fileName=rawName.replace(/[^\p{L}\p{N} ._()-]/gu,"_").slice(0,140).replace(/"/g,"_");
   const encoded=encodeURIComponent(fileName.endsWith(".pdf")?fileName:"document.pdf");
   return new NextResponse(bytes,{status:200,headers:{

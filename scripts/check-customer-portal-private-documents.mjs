@@ -47,6 +47,21 @@ for(const s of [
  'randomUUID()', 'from("workteams_customer_documents").insert',
  'Cache-Control'
 ])assert.ok(upload.includes(s),"Missing trusted upload guard: "+s);
+// A revocation during storage download must prevent responding with bytes.
+// The second server-side authorization is distinct from the React cancellation.
+assert.equal(download.split('"authorize_workteams_customer_document_download"').length-1,2,
+ "Must reauthorize a private PDF after downloading it and before sending it.");
+assert.ok(download.indexOf('const {data:reauthorized,error:revoked}')>
+ download.indexOf('await admin.storage.from(BUCKET).download'),
+ "Reauthorization must run after retrieving the private object.");
+assert.ok(download.indexOf('if(revoked||reauthorized?.ok!==true')<
+ download.indexOf('return new NextResponse(bytes'),
+ "Revoked access must stop the response before bytes are delivered.");
+for(const stable of [
+ 'reauthorized.company_id!==allowed.company_id',
+ 'reauthorized.location_id!==allowed.location_id',
+ 'reauthorized.storage_key!==allowed.storage_key'
+])assert.ok(download.includes(stable),"A switched private document must be denied: "+stable);
 for(const s of [
  'auth.getUser(bearer)','authorize_workteams_customer_document_download',
  'SUPABASE_SERVICE_ROLE_KEY','storage_key.startsWith',
