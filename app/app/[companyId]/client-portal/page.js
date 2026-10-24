@@ -7,6 +7,7 @@ import { useCompany } from "../../../../lib/company-context";
 import { canUseWithRole } from "../../../../lib/tiers";
 import ClientIdentityContactManager from "../../../../components/ClientIdentityContactManager";
 import CustomerDocumentManager from "../../../../components/CustomerDocumentManager";
+import PublishedServiceScheduleManager from "../../../../components/PublishedServiceScheduleManager";
 import {CUSTOMER_INBOX_FILTERS,filterCustomerInbox,summarizeCustomerInbox} from "../../../../lib/customer-inbox-dashboard.mjs";
 
 export default function ClientPortalPage() {
@@ -487,6 +488,7 @@ export default function ClientPortalPage() {
       {pilotRequested===true&&<ClientIdentityContactManager
         companyId={company?.id} locations={locations}
         pilotRequested={pilotRequested} pilotEnabled={pilotEnabled}/>}
+      {pilotRequested===true&&<PublishedServiceScheduleManager companyId={company?.id}/>}
       <h3 id="portal-management-messages">Customer Service inbox &amp; responses</h3>
       <section aria-label="Customer service inbox overview"
         style={{border:"1px solid var(--line,#ccc)",borderRadius:10,padding:14,margin:"12px 0"}}>

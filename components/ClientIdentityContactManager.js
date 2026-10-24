@@ -170,6 +170,30 @@ export default function ClientIdentityContactManager({companyId,locations,pilotR
   }catch(e){setError(e.message||"Could not confirm document permission.")}
   finally{setBusy(false)}
  }
+ async function changeScheduleAccess(contact,location,allow){
+  if(!companyId||!pilotRequested||busy||contact.status!=="active"||location.active!==true)return;
+  const confirmText=allow?
+   t("Allow this verified customer to see only manager-published visit dates and times for this exact location? Internal shifts and staff stay private.",
+     "¿Permitir que este cliente vea solo las visitas publicadas para esta ubicación? Los turnos internos y empleados permanecen privados."):
+   t("Remove this customer's published schedule permission for this location immediately?",
+     "¿Revocar inmediatamente el acceso del cliente al calendario publicado de esta ubicación?");
+  if(!window.confirm(confirmText))return;
+  setBusy(true);setError("");setNotice("");
+  try{
+   const {data,error:e}=await supabase().rpc("set_workteams_customer_schedule_access",{
+    p_company_id:companyId,p_contact_id:contact.id,p_location_id:location.id,p_allow:allow
+   });
+   if(e||data?.ok!==true||data.schedule_access!==allow)
+    throw Error(e?.message||"The schedule permission could not be confirmed.");
+   setNotice(allow?
+    t("Published visits approved for this contact and location.",
+      "Visitas publicadas autorizadas para este contacto y ubicación."):
+    t("Schedule permission revoked for this contact and location.",
+      "Se revocó el permiso del calendario para este contacto y ubicación."));
+   await refresh();
+  }catch(err){setError(err.message||"Schedule permission is unverified.")}
+  finally{setBusy(false)}
+ }
  async function copyInvitation(contact,location){
   if(copyBusy||busy||!loaded||pilotEnabled!==true||serverLoginEnabled!==true||
      contact.status!=="active"||location.active!==true||!contact.email)return;
@@ -272,6 +296,14 @@ export default function ClientIdentityContactManager({companyId,locations,pilotR
       <p style={{fontSize:13,margin:"4px 0"}}>{l.active===true?
        t("Approved location active","Ubicación autorizada activa"):
        t("Location grant unavailable or expired","Permiso de ubicación no vigente")}</p>
+      <p style={{fontSize:13,margin:"6px 0"}}>{t("Published visits: ","Visitas publicadas: ")}
+       {l.schedule_access?t("Approved","Autorizadas"):t("Private","Privadas")}</p>
+      {c.status==="active"&&l.active===true&&<button type="button"
+       disabled={busy||!loaded}
+       onClick={()=>void changeScheduleAccess(c,l,!l.schedule_access)}>
+       {l.schedule_access?t("Revoke upcoming visits","Revocar visitas"):
+        t("Allow published visits","Permitir visitas publicadas")}
+      </button>}
       <p style={{fontSize:13,margin:"6px 0"}}>{t("Published quality access: ","Acceso a informes de calidad: ")}
        {l.quality_access?t("Approved","Autorizado"):t("Private","Privado")}</p>
       {c.status==="active"&&l.active===true&&pilotEnabled===true&&serverLoginEnabled===true&&
