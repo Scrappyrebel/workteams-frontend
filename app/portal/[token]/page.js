@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import { formatTime12h } from "../../../lib/dates";
 
@@ -31,8 +31,24 @@ export default function PortalPage() {
   const [signingAmend, setSigningAmend] = useState(null);
   const [signName, setSignName] = useState("");
   const [signBusy, setSignBusy] = useState(false);
+  const portalAction = useRef("");
+  const [actionError, setActionError] = useState("");
+  // A shared synchronous guard prevents double clicks and conflicting writes.
+  function beginAction(name) {
+    if (portalAction.current || loading || data?.ok !== true) return false;
+    portalAction.current = name;
+    setActionError("");
+    return true;
+  }
+  function finishAction(name) {
+    if (portalAction.current === name) portalAction.current = "";
+  }
+
 
   useEffect(() => {
+    let cancelled = false;
+    setLoading(true);setData(null);setContract(null);setContactSent(false);
+    setCleanDone(null);setTempDone(false);setActionError("");
     (async () => {
       try {
         const res = await fetch("/api/portal/lookup", {
@@ -41,6 +57,7 @@ export default function PortalPage() {
           body: JSON.stringify({ token }),
         });
         const result = await res.json();
+        if(cancelled)return;
         setData(result && typeof result.ok === "boolean"
           ? result
           : { ok: false, error: "Could not load this page. Please try again later." });
@@ -48,117 +65,118 @@ export default function PortalPage() {
           setTempReq((t) => ({ ...t, siteAddress: t.siteAddress || result.location_address }));
         }
       } catch {
-        setData({ ok: false, error: "Could not load this page. Please try again later." });
+        if(!cancelled)setData({ ok: false, error: "Could not load this page. Please try again later." });
       }
-      setLoading(false);
+      if(!cancelled)setLoading(false);
     })();
     fetch(`/api/portal/service?token=${encodeURIComponent(token)}`)
       .then((r) => r.json())
-      .then((j) => { if (j.contract) setContract(j.contract); })
+      .then((j) => { if (!cancelled && j.contract) setContract(j.contract); })
       .catch(() => {});
+    return () => { cancelled = true; };
   }, [token]);
 
   async function sendContact(e) {
     e.preventDefault();
-    if (!contact.body.trim()) { alert("Please write your message first."); return; }
+    if (!contact.body.trim()) { setActionError("Please write your message first."); return; }
+    if(!beginAction("contact"))return;
     setContactBusy(true);
     try {
       const res = await fetch("/api/portal/contact", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
+        method: "POST",headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ token, ...contact }),
       });
       const j = await res.json();
-      if (!res.ok) throw new Error(j.error || "Could not send");
+      if (!res.ok || j.ok !== true) throw new Error(j.error || "Message status could not be confirmed.");
       setContactSent(true);
       setContact({ name: "", subject: "", body: "", category: "general" });
     } catch (err) {
-      alert(err.message);
+      setActionError(err instanceof Error ? err.message : "Message status unknown. Ask the business before resending.");
+    } finally {
+      setContactBusy(false);finishAction("contact");
     }
-    setContactBusy(false);
   }
 
   async function signAmendment(e) {
     e.preventDefault();
-    if (!signingAmend || !signName.trim()) { alert("Please type your name to sign."); return; }
-    if (!window.confirm("Sign this amendment? This makes the changes part of your contract.")) return;
+    if (!signingAmend || !signName.trim()) { setActionError("Please type your name to sign."); return; }
+    if (portalAction.current || !window.confirm("Sign this amendment? This makes the changes part of your contract.")) return;
+    if(!beginAction("sign"))return;
     setSignBusy(true);
     try {
       const res = await fetch("/api/amendments/sign", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
+        method: "POST",headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ sign_token: signingAmend.sign_token, name: signName.trim() }),
       });
       const j = await res.json();
-      if (!res.ok) throw new Error(j.error || "Could not sign");
-      alert("Amendment signed! Thank you.");
+      if (!res.ok || j.ok !== true) throw new Error(j.error || "Signature status could not be confirmed.");
       setSigningAmend(null);
       setSignName("");
       window.location.reload();
     } catch (err) {
-      alert(err.message);
+      setActionError(err instanceof Error ? err.message : "Signature status unknown. Ask the business before signing again.");
+    } finally {
+      setSignBusy(false);finishAction("sign");
     }
-    setSignBusy(false);
   }
 
   async function requestClean(e) {
     e.preventDefault();
-    if (!cleanReq.date) { alert("Pick a date for the extra service."); return; }
+    if (!cleanReq.date) { setActionError("Pick a date for the extra service."); return; }
+    if(!beginAction("service"))return;
     setCleanBusy(true);
     try {
       const res = await fetch("/api/portal/service", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
+        method: "POST",headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ token, ...cleanReq }),
       });
       const j = await res.json();
-      if (!res.ok) throw new Error(j.error || "Could not submit");
+      if (!res.ok || j.ok !== true) throw new Error(j.error || "Service request could not be confirmed.");
       setCleanDone({ kind: cleanReq.kind, price: j.price });
       setCleanReq({ kind: "extra", date: "", notes: "" });
     } catch (err) {
-      alert(err.message);
-    }
-    setCleanBusy(false);
+      setActionError(err instanceof Error ? err.message : "Service status unknown. Check with the business before retrying.");
+    } finally { setCleanBusy(false);finishAction("service"); }
   }
 
   async function requestTemps(e) {
     e.preventDefault();
+    if(!beginAction("temp"))return;
     setTempBusy(true);
     try {
       const res = await fetch("/api/portal/temp", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
+        method: "POST",headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ token, action: "request", ...tempReq }),
       });
       const j = await res.json();
-      if (!res.ok) throw new Error(j.error || "Could not submit");
+      if (!res.ok || j.ok !== true) throw new Error(j.error || "Temp staffing request could not be confirmed.");
       setTempDone(true);
     } catch (err) {
-      alert(err.message);
-    }
-    setTempBusy(false);
+      setActionError(err instanceof Error ? err.message : "Temp request status unknown. Contact the business before resending.");
+    } finally { setTempBusy(false);finishAction("temp"); }
   }
 
   async function confirmHours(e, requestId) {
     e.preventDefault();
     const hours = parseFloat(confirming[requestId]);
-    if (!Number.isFinite(hours) || hours < 0) { alert("Enter the hours worked."); return; }
+    if (!Number.isFinite(hours) || hours < 0) { setActionError("Enter the hours worked."); return; }
+    if(!beginAction("hours"))return;
     setConfirmBusy(requestId);
     try {
       const res = await fetch("/api/portal/temp", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
+        method: "POST",headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ token, action: "confirm_hours", requestId, hours }),
       });
       const j = await res.json();
-      if (!res.ok) throw new Error(j.error || "Could not confirm");
+      if (!res.ok || j.ok !== true) throw new Error(j.error || "Hours confirmation could not be verified.");
       window.location.reload();
     } catch (err) {
-      alert(err.message);
-      setConfirmBusy(null);
-    }
+      setActionError(err instanceof Error ? err.message : "Hours confirmation status unknown. Check before retrying.");
+    } finally { setConfirmBusy(null);finishAction("hours"); }
   }
 
+  const dueAmendments = Array.isArray(data?.amendments) ? data.amendments.filter(a => a.status === "sent").length : 0;
+  const hoursToConfirm = Array.isArray(data?.temp_requests) ? data.temp_requests.filter(r => r.hours_confirmed == null && ["assigned","in_progress","completed"].includes(r.status)).length : 0;
   const money = (n) => (n == null ? "priced on request" : "$" + Number(n).toFixed(2));
 
   return (
@@ -196,9 +214,24 @@ export default function PortalPage() {
             <h2 style={{ fontSize: "1.8rem", margin: "4px 0" }}>{data.location_name}</h2>
             {data.location_address && <p style={{ color: "var(--muted)" }}>{data.location_address}</p>}
             {data.client_name && <p style={{ color: "var(--muted)" }}>Prepared for {data.client_name}</p>}
+            <nav className="panel" aria-label="Client Portal quick access" style={{ padding: 18, margin: "18px 0" }}>
+              <h3 style={{margin:"0 0 10px"}}>Quick Access / Acceso rápido</h3>
+              <div style={{display:"flex",gap:12,flexWrap:"wrap"}}>
+                <a href="#portal-visits">Upcoming visits</a>
+                <a href="#portal-inspections">Quality reports</a>
+                <a href="#portal-work">Open work</a>
+                {contract && <a href="#portal-contract">Contract &amp; scope</a>}
+                {data?.amendments?.length > 0 && <a href="#portal-amendments">Contract amendments{dueAmendments>0? ` (${dueAmendments} to sign)` : ""}</a>}
+                <a href="#portal-extra">Extra service</a>
+                {data.temp_enabled && <a href="#portal-temp">Temp staffing</a>}
+                <a href="#portal-contact">Contact us</a>
+              </div>
+              <p style={{fontSize:"0.85rem",color:"var(--muted)",marginBottom:0}}>Amendments awaiting signature: {dueAmendments} · Temp hours to confirm: {hoursToConfirm}. This secure link is for this location only.</p>
+            </nav>
+            {actionError && <div role="alert" className="panel" style={{padding:16,border:"1px solid #b3261e",margin:"12px 0"}}><strong>Action not confirmed</strong><p>{actionError}</p><p style={{fontSize:"0.82rem"}}>If your connection stopped after sending, contact the business before submitting the same request again.</p></div>}
 
             <section className="panel" style={{ padding: 22, margin: "18px 0" }}>
-              <h3 style={{ marginTop: 0 }}>Upcoming visits</h3>
+              <h3 id="portal-visits" style={{ marginTop: 0 }}>Upcoming visits</h3>
               {data.upcoming.length === 0 && <p style={{ color: "var(--muted)" }}>No visits scheduled in the next two weeks.</p>}
               <div style={{ display: "grid", gap: 8 }}>
                 {data.upcoming.map((s, i) => (
@@ -213,7 +246,7 @@ export default function PortalPage() {
             </section>
 
             <section className="panel" style={{ padding: 22, margin: "18px 0" }}>
-              <h3 style={{ marginTop: 0 }}>Recent quality scores</h3>
+              <h3 id="portal-inspections" style={{ marginTop: 0 }}>Recent quality scores</h3>
               {data.inspections.length === 0 && <p style={{ color: "var(--muted)" }}>No inspections recorded yet.</p>}
               <div style={{ display: "grid", gap: 8 }}>
                 {data.inspections.map((x, i) => (
@@ -226,7 +259,7 @@ export default function PortalPage() {
             </section>
 
             <section className="panel" style={{ padding: 22, margin: "18px 0" }}>
-              <h3 style={{ marginTop: 0 }}>Open work</h3>
+              <h3 id="portal-work" style={{ marginTop: 0 }}>Open work</h3>
               {data.work_orders.length === 0 && <p style={{ color: "var(--muted)" }}>Nothing open right now.</p>}
               <div style={{ display: "grid", gap: 8 }}>
                 {data.work_orders.map((w, i) => (
@@ -249,7 +282,7 @@ export default function PortalPage() {
 
             {contract && (
               <section className="panel" style={{ padding: 22, margin: "18px 0" }}>
-                <h3 style={{ marginTop: 0 }}>My contract</h3>
+                <h3 id="portal-contract" style={{ marginTop: 0 }}>My contract</h3>
                 <p style={{ fontSize: "0.9rem", color: "var(--muted)" }}>
                   Effective {contract.start_date}
                   {contract.end_date ? ` through ${contract.end_date}` : ""}
@@ -285,7 +318,7 @@ export default function PortalPage() {
 
             {data?.amendments?.length > 0 && (
               <section className="panel" style={{ padding: 22, margin: "18px 0" }}>
-                <h3 style={{ marginTop: 0 }}>Contract amendments</h3>
+                <h3 id="portal-amendments" style={{ marginTop: 0 }}>Contract amendments</h3>
                 {data.amendments.map((a) => (
                   <div key={a.id} style={{ border: "1px solid var(--line)", borderRadius: 12, padding: 16, marginBottom: 12 }}>
                     <p style={{ fontWeight: 800, margin: "0 0 6px" }}>{a.title}</p>
@@ -302,7 +335,7 @@ export default function PortalPage() {
                         ✅ Signed by {a.signed_name} on {new Date(a.signed_at).toLocaleDateString()}
                       </p>
                     ) : a.status === "sent" ? (
-                      <button onClick={() => setSigningAmend(a)} style={{ ...pButton, padding: "10px 20px" }}>
+                      <button disabled={Boolean(portalAction.current)} onClick={() => setSigningAmend(a)} style={{ ...pButton, padding: "10px 20px" }}>
                         Review & sign
                       </button>
                     ) : null}
@@ -319,15 +352,15 @@ export default function PortalPage() {
                   <p style={{ fontSize: "0.9rem", whiteSpace: "pre-line", margin: 0 }}>{signingAmend.description}</p>
                   <input required placeholder="Type your full name to sign" value={signName} onChange={(e) => setSignName(e.target.value)} style={pInput} />
                   <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-                    <button type="button" onClick={() => setSigningAmend(null)} style={{ ...pButton, background: "#fff", color: "var(--text)", border: "1px solid var(--line)" }}>Cancel</button>
-                    <button type="submit" disabled={signBusy} style={pButton}>{signBusy ? "Signing…" : "Sign amendment"}</button>
+                    <button type="button" disabled={signBusy} onClick={() => setSigningAmend(null)} style={{ ...pButton, background: "#fff", color: "var(--text)", border: "1px solid var(--line)" }}>Cancel</button>
+                    <button type="submit" disabled={signBusy || Boolean(portalAction.current)} style={pButton}>{signBusy ? "Signing…" : "Sign amendment"}</button>
                   </div>
                 </form>
               </div>
             )}
 
             <section className="panel" style={{ padding: 22, margin: "18px 0" }}>
-              <h3 style={{ marginTop: 0 }}>Request extra service</h3>
+              <h3 id="portal-extra" style={{ marginTop: 0 }}>Request extra service</h3>
               {cleanDone ? (
                 <p style={{ color: "#1e8e4d", fontWeight: 700 }}>
                   ✅ Request received — we'll confirm your {cleanDone.kind} clean shortly
@@ -349,14 +382,14 @@ export default function PortalPage() {
                     </label>
                   </div>
                   <textarea placeholder="Notes (optional)" value={cleanReq.notes} onChange={(e) => setCleanReq({ ...cleanReq, notes: e.target.value })} rows={2} style={pInput} />
-                  <button type="submit" disabled={cleanBusy} style={pButton}>{cleanBusy ? "Sending…" : "Request service"}</button>
+                  <button type="submit" disabled={cleanBusy || Boolean(portalAction.current)} style={pButton}>{cleanBusy ? "Sending…" : "Request service"}</button>
                 </form>
               )}
             </section>
 
             {data.temp_enabled && (
               <section className="panel" style={{ padding: 22, margin: "18px 0" }}>
-                <h3 style={{ marginTop: 0 }}>Request temp staff</h3>
+                <h3 id="portal-temp" style={{ marginTop: 0 }}>Request temp staff</h3>
                 {tempDone ? (
                   <p style={{ color: "#1e8e4d", fontWeight: 700 }}>✅ Request received — we'll confirm your temp staff shortly.</p>
                 ) : (
@@ -393,7 +426,7 @@ export default function PortalPage() {
                       <input required value={tempReq.siteAddress} onChange={(e) => setTempReq({ ...tempReq, siteAddress: e.target.value })} style={pInput} />
                     </label>
                     <textarea placeholder="Job details (optional)" value={tempReq.jobDetails} onChange={(e) => setTempReq({ ...tempReq, jobDetails: e.target.value })} rows={2} style={pInput} />
-                    <button type="submit" disabled={tempBusy} style={pButton}>{tempBusy ? "Sending…" : "Request temp staff"}</button>
+                    <button type="submit" disabled={tempBusy || Boolean(portalAction.current)} style={pButton}>{tempBusy ? "Sending…" : "Request temp staff"}</button>
                   </form>
                 )}
               </section>
@@ -423,7 +456,7 @@ export default function PortalPage() {
                             onChange={(e) => setConfirming({ ...confirming, [r.id]: e.target.value })}
                             style={{ ...pInput, flex: 1 }}
                           />
-                          <button type="submit" disabled={confirmBusy === r.id} style={{ ...pButton, padding: "11px 18px" }}>
+                          <button type="submit" disabled={confirmBusy === r.id || Boolean(portalAction.current)} style={{ ...pButton, padding: "11px 18px" }}>
                             {confirmBusy === r.id ? "Saving…" : "Confirm hours"}
                           </button>
                         </form>
@@ -439,7 +472,7 @@ export default function PortalPage() {
             )}
 
             <section className="panel" style={{ padding: 22, margin: "18px 0" }}>
-              <h3 style={{ marginTop: 0 }}>Contact us</h3>
+              <h3 id="portal-contact" style={{ marginTop: 0 }}>Contact us</h3>
               {contactSent ? (
                 <p style={{ color: "#1e8e4d", fontWeight: 700 }}>✅ Message sent — we'll get back to you soon.</p>
               ) : (
@@ -461,7 +494,7 @@ export default function PortalPage() {
                     <input placeholder="Subject" value={contact.subject} onChange={(e) => setContact({ ...contact, subject: e.target.value })} style={{ ...pInput, flex: 1 }} />
                   </div>
                   <textarea placeholder={contact.category === "service_problem" ? "Tell us what went wrong — we'll make it right." : contact.category === "callback_request" ? "Best number and time to reach you…" : "How can we help?"} required value={contact.body} onChange={(e) => setContact({ ...contact, body: e.target.value })} rows={3} style={pInput} />
-                  <button type="submit" disabled={contactBusy} style={pButton}>{contactBusy ? "Sending…" : "Send message"}</button>
+                  <button type="submit" disabled={contactBusy || Boolean(portalAction.current)} style={pButton}>{contactBusy ? "Sending…" : "Send message"}</button>
                 </form>
               )}
             </section>
