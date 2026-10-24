@@ -296,5 +296,4 @@ begin
   'customer_login_enabled',(
     select s.enabled from public.client_portal_identity_settings s
     where s.company_id=p_company_id));
-end $function$
-
+end $function$;
