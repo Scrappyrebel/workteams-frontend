@@ -142,6 +142,9 @@ export default function PortalPage() {
       setData(previous=>previous?.ok===true?{
         ...previous,customer_requests:payload.customer_requests,customer_requests_error:null
       }:previous);
+      // A resolved copy request may be submitted again after verified refresh.
+      if(!payload.customer_requests.some(r=>r.category==="document_copy"&&r.status!=="resolved"))
+        setCopySubmitted(false);
     }catch(error){
       if(currentPortalToken.current!==token)return;
       // Unknown network failure cannot establish that this bearer link is
@@ -397,7 +400,7 @@ export default function PortalPage() {
               <p style={{fontSize:"0.9rem",color:"var(--muted)"}}>
                 This secure location link includes only approved contract details and amendment statuses.
                 It does not provide private downloadable company files or account-wide records.
-                Request a copy of your signed agreement using Customer Service.
+                Use the request button below to ask management for a signed copy. You can track its status on this location link.
               </p>
               <div style={{display:"flex",gap:14,flexWrap:"wrap"}}>
                 {contract?<a href="#portal-contract">Review location contract / Revisar contrato</a>:<span>{t("No contract summary is currently available.","No hay un resumen de contrato disponible.")}</span>}
