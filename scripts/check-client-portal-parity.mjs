@@ -59,7 +59,7 @@ assert.ok(api.includes("checkRateLimit"));
 assert.ok(!portal.includes("NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY"));
 console.log("WorkTeams customer-portal cross-app parity and token isolation safeguards verified.");
 
-const firstLoad=block(portal,"  useEffect(() => {\\n    let cancelled = false;","  async function refreshCustomerRequests(");
+const firstLoad=portal.slice(portal.indexOf("    let cancelled = false;"),portal.indexOf("  async function refreshCustomerRequests("));
 const lookupGate=firstLoad.indexOf("if(!res.ok||result?.ok!==true)");
 const contractFetch=firstLoad.indexOf("const contractRes=await fetch(");
 assert.ok(lookupGate>0&&contractFetch>lookupGate,"signed contract must load after valid exact-location token lookup");
