@@ -3,6 +3,7 @@ import Link from "next/link";
 import {useEffect,useState} from "react";
 import {supabase} from "../../lib/supabase";
 import AuthenticatedCustomerRequests from "../../components/AuthenticatedCustomerRequests";
+import AuthenticatedCustomerQuality from "../../components/AuthenticatedCustomerQuality";
 
 export default function AuthenticatedCustomerPortal(){
  const [language,setLanguage]=useState("en");
@@ -67,6 +68,9 @@ export default function AuthenticatedCustomerPortal(){
          "Location access only. Private documents, invoices, employee information and full contracts are not yet available from this customer account.",
          "Solo acceso a la ubicación. Los documentos privados, las facturas y los datos de empleados no están disponibles aquí."
        )}</p>
+       <AuthenticatedCustomerQuality
+         companyId={loc.company_id} locationId={loc.location_id}
+         language={language}/>
        <AuthenticatedCustomerRequests
          companyId={loc.company_id} locationId={loc.location_id}
          language={language}
