@@ -20,7 +20,7 @@ export default function ClientIdentityContactManager({companyId,locations,pilotR
   const {data,error:e}=await supabase().rpc("list_workteams_customer_identity_contacts",{
    p_company_id:companyId
   });
-  if(e||!data?.ok||!Array.isArray(data.contacts)||data.customer_login_enabled!==false){
+  if(e||!data?.ok||!Array.isArray(data.contacts)||typeof data.customer_login_enabled!=="boolean"){
    setContacts([]);setError(t("Approved contacts could not be verified. No changes were made.",
     "No fue posible verificar los contactos. No se modificó ningún registro."));
   }else setContacts(data.contacts);
@@ -34,7 +34,7 @@ export default function ClientIdentityContactManager({companyId,locations,pilotR
     p_company_id:companyId
    }).then(({data,error:e})=>{
     if(!active)return;
-    if(e||!data?.ok||!Array.isArray(data.contacts)||data.customer_login_enabled!==false)
+    if(e||!data?.ok||!Array.isArray(data.contacts)||typeof data.customer_login_enabled!=="boolean")
      setError("Customer contact list could not be verified.");
     else setContacts(data.contacts);
     setLoaded(true);
@@ -56,7 +56,7 @@ export default function ClientIdentityContactManager({companyId,locations,pilotR
     p_company_id:companyId,p_email:email.trim().toLowerCase(),
     p_name:name.trim(),p_language:language,p_location_id:locationId
    });
-   if(e||data?.ok!==true||data.customer_login_enabled!==false)throw Error(e?.message||"Approval was not confirmed.");
+   if(e||data?.ok!==true||typeof data.customer_login_enabled!=="boolean")throw Error(e?.message||"Approval was not confirmed.");
    setNotice(t("Contact and one location approved. Customer account login remains disabled.",
     "Se aprobó el contacto y una ubicación. El inicio de sesión continúa desactivado."));
    setEmail("");setName("");await refresh();
@@ -72,7 +72,7 @@ export default function ClientIdentityContactManager({companyId,locations,pilotR
    const {data,error:e}=await supabase().rpc("revoke_workteams_customer_identity_contact",{
     p_company_id:companyId,p_contact_id:id
    });
-   if(e||data?.ok!==true||data.customer_login_enabled!==false)throw Error(e?.message||"Revocation was not confirmed.");
+   if(e||data?.ok!==true||typeof data.customer_login_enabled!=="boolean")throw Error(e?.message||"Revocation was not confirmed.");
    setNotice(t("Contact revoked. Previously linked access is blocked.",
     "Contacto revocado. Se ha bloqueado el acceso vinculado."));
    await refresh();
