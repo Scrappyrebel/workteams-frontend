@@ -26,6 +26,8 @@ export default function ClientPortalPage() {
 
   const [messages, setMessages] = useState([]);
   const [pilotRequested,setPilotRequested]=useState(null);
+  const [pilotEnabled,setPilotEnabled]=useState(null);
+  const [pilotCanActivate,setPilotCanActivate]=useState(false);
   const [pilotBusy,setPilotBusy]=useState(false);
   const [pilotError,setPilotError]=useState("");
   const [pilotNotice,setPilotNotice]=useState("");
@@ -41,16 +43,20 @@ export default function ClientPortalPage() {
     });
     if(livePilotCompany.current!==companyId)return;
     if(error||data?.ok!==true||typeof data.pilot_requested!=="boolean"||
-      data.customer_login_enabled!==false){
-      setPilotRequested(null);
+      typeof data.customer_login_enabled!=="boolean"||
+      typeof data.can_activate!=="boolean"){
+      setPilotRequested(null);setPilotEnabled(null);setPilotCanActivate(false);
       setPilotError("Authenticated customer pilot status could not be confirmed. Refresh before making changes.");
       return;
     }
     setPilotRequested(data.pilot_requested);
+    setPilotEnabled(data.customer_login_enabled);
+    setPilotCanActivate(data.can_activate);
   }
   async function updatePilot(requested){
     const companyId=company?.id;
-    if(!companyId||!isManager||pilotBusy||pilotRequested===null)return;
+    if(!companyId||!isManager||pilotBusy||pilotRequested===null||pilotEnabled===null||
+       (!requested&&pilotEnabled))return;
     const question=requested?
       "Request the authenticated customer portal pilot for this company? This does not activate logins or share records.":
       "Withdraw this company from the authenticated customer portal pilot?";
@@ -62,16 +68,46 @@ export default function ClientPortalPage() {
       });
       if(livePilotCompany.current!==companyId)return;
       if(error||data?.ok!==true||data.pilot_requested!==requested||
-        data.customer_login_enabled!==false)
+        typeof data.customer_login_enabled!=="boolean")
         throw new Error(error?.message||"The pilot preference could not be verified.");
       setPilotRequested(requested);
+      setPilotEnabled(data.customer_login_enabled);
       setPilotNotice(requested?
-        "Pilot request saved. Authenticated customer login remains disabled; no invitations or customer data were shared.":
+        "Pilot request saved. Login is only activated with a separate owner confirmation.":
         "Pilot request withdrawn. Existing location links and customer data are unchanged.");
     }catch(err){
       if(livePilotCompany.current===companyId){
         setPilotRequested(null);
         setPilotError(err instanceof Error?err.message:"Pilot request status is unknown. Please refresh.");
+      }
+    }finally{setPilotBusy(false)}
+  }
+
+  async function changeCustomerLogin(nextEnabled){
+    const companyId=company?.id;
+    if(!companyId||!pilotCanActivate||!pilotRequested||pilotBusy||
+       pilotEnabled===null||pilotEnabled===nextEnabled)return;
+    const phrase=nextEnabled?"ACTIVATE":"DISABLE";
+    const typed=window.prompt(nextEnabled?
+      "Customer logins will be available only to previously approved verified emails and locations. No private files, contracts or billing are released. Type ACTIVATE to enable this company's customer location list.":
+      "All existing customer account sessions will immediately lose location access. Type DISABLE to switch off customer logins.", "");
+    if(typed!==phrase)return;
+    setPilotBusy(true);setPilotError("");setPilotNotice("");
+    try{
+      const {data,error}=await supabase().rpc("set_workteams_customer_login_activation",{
+        p_company_id:companyId,p_enabled:nextEnabled,p_confirmation:typed
+      });
+      if(livePilotCompany.current!==companyId)return;
+      if(error||data?.ok!==true||data.customer_login_enabled!==nextEnabled)
+        throw new Error(error?.message||"Could not verify customer login activation.");
+      setPilotEnabled(nextEnabled);
+      setPilotNotice(nextEnabled?
+        "Verified customer login activated for this company. Only approved contacts and locations can be listed. Private records remain unavailable.":
+        "Customer login disabled immediately for this company. Previously shared location links remain unchanged.");
+    }catch(err){
+      if(livePilotCompany.current===companyId){
+        setPilotEnabled(null);setPilotError(err instanceof Error?err.message:
+          "Activation result is unknown. Refresh before making any other changes.");
       }
     }finally{setPilotBusy(false)}
   }
@@ -112,9 +148,9 @@ export default function ClientPortalPage() {
   useEffect(() => {
     if (!loading && company && allowed && isManager){
       load();
-      setPilotRequested(null);setPilotNotice("");
+      setPilotRequested(null);setPilotEnabled(null);setPilotCanActivate(false);setPilotNotice("");
       void loadPilot();
-    }else setPilotRequested(null);
+    }else{setPilotRequested(null);setPilotEnabled(null);setPilotCanActivate(false);}
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loading, company, allowed]);
 
@@ -337,7 +373,9 @@ export default function ClientPortalPage() {
           not create accounts, invite customers, enable downloads, share invoices or
           change the access available through existing location links.
         </p>
-        <p role="status"><strong>Authenticated customer login: disabled / Desactivado</strong></p>
+        <p role="status"><strong>Authenticated customer login:
+         {pilotEnabled===true?" enabled / Activado":pilotEnabled===false?
+         " disabled / Desactivado":" checking / Verificando"}</strong></p>
         {pilotError&&<p role="alert" style={{color:"#b3261e"}}>{pilotError}</p>}
         {pilotNotice&&<p role="status">{pilotNotice}</p>}
         {pilotRequested===null?
@@ -347,11 +385,25 @@ export default function ClientPortalPage() {
             <span><strong>{pilotRequested?
               "Pilot requested / Prueba solicitada":
               "Not requested / No solicitado"}</strong></span>
-            <button type="button" style={button} disabled={pilotBusy||working}
+            <button type="button" style={button} disabled={pilotBusy||working||(pilotRequested&&pilotEnabled===true)}
               onClick={()=>void updatePilot(!pilotRequested)}>
               {pilotBusy?"Saving…":pilotRequested?
                 "Withdraw pilot request / Cancelar solicitud":
                 "Request pilot / Solicitar prueba"}
+            </button>
+          </div>}
+        {pilotRequested===true&&pilotCanActivate&&pilotEnabled!==null&&
+          <div style={{borderTop:"1px solid var(--line)",marginTop:16,paddingTop:12}}>
+            <p style={{fontSize:"0.85rem"}}>
+              Owner-only / Solo propietario. Activating opens only the verified
+              company's assigned location-name list. Private billing, contracts,
+              documents, signatures and staff remain inaccessible.
+            </p>
+            <button type="button" disabled={pilotBusy||working}
+              style={button} onClick={()=>void changeCustomerLogin(!pilotEnabled)}>
+              {pilotEnabled?
+                "Disable customer logins now / Desactivar accesos":
+                "Activate verified customer logins / Activar accesos verificados"}
             </button>
           </div>}
       </section>
