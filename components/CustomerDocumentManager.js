@@ -13,6 +13,8 @@ export default function CustomerDocumentManager({companyId,locations,pilotReques
  const [loading,setLoading]=useState(false);
  const [error,setError]=useState("");
  const [notice,setNotice]=useState("");
+ const [language,setLanguage]=useState("en");
+ const t=(en,es)=>language==="es"?es:en;
  const fileRef=useRef(null);
  const selected=locations?.some(l=>l.id===locationId);
  // A late response must never show documents under a newly selected tenant or location.
@@ -36,12 +38,12 @@ export default function CustomerDocumentManager({companyId,locations,pilotReques
    });
    if(!isCurrentDocumentRequest(requestId,requestSeq.current,scope,scopeRef.current))return;
    if(e||data?.ok!==true||!Array.isArray(data.documents)){
-    setError("Private documents could not be verified. Please retry.");
+    setError(t("Private documents could not be verified. Please retry.","No se pudieron verificar los documentos privados. Inténtelo de nuevo."));
     setDocs([]);
    }else{setDocs(data.documents);setLoadedScope(scope)}
   }catch(e){
    if(isCurrentDocumentRequest(requestId,requestSeq.current,scope,scopeRef.current)){
-    setDocs([]);setError("Private documents could not be verified. Please retry.");
+    setDocs([]);setError(t("Private documents could not be verified. Please retry.","No se pudieron verificar los documentos privados. Inténtelo de nuevo."));
    }
   }finally{
    if(isCurrentDocumentRequest(requestId,requestSeq.current,scope,scopeRef.current))
@@ -61,12 +63,12 @@ export default function CustomerDocumentManager({companyId,locations,pilotReques
   e.preventDefault();
   if(!currentScope||!file||busy||loading)return;
   const operationScope=currentScope;
-  if(!window.confirm("Upload this PDF privately for this company's selected service location? The file will NOT be visible to customers unless separately published and customer document access is approved."))return;
+  if(!window.confirm(t("Upload this PDF privately for this company's selected service location? The file will NOT be visible to customers unless separately published and customer document access is approved.","¿Guardar este PDF de forma privada en la ubicación seleccionada? No será visible hasta publicarlo y autorizar al cliente.")))return;
   setBusy(true);setError("");setNotice("");
   try{
    const {data:session,error:sessionError}=await supabase().auth.getSession();
    const token=session?.session?.access_token;
-   if(sessionError||!token)throw Error("Sign in as a company manager to upload documents.");
+   if(sessionError||!token)throw Error(t("Sign in as a company manager to upload documents.","Inicie sesión como gerente para subir documentos."));
    const form=new FormData();
    form.append("company_id",companyId);form.append("location_id",locationId);
    form.append("title",title.trim());form.append("document",file);
@@ -76,20 +78,20 @@ export default function CustomerDocumentManager({companyId,locations,pilotReques
    const out=await res.json();
    if(scopeRef.current!==operationScope)return;
    if(!res.ok||out?.ok!==true||out.published!==false)
-    throw Error(out?.error||"The private PDF upload could not be verified.");
+    throw Error(out?.error||t("The private PDF upload could not be verified.","No se pudo verificar la carga del PDF privado."));
    setTitle("");setFile(null);
    if(fileRef.current)fileRef.current.value="";
-   setNotice("PDF uploaded privately and UNPUBLISHED. Review the title and choose Publish only when approved for customers.");
+   setNotice(t("PDF uploaded privately and UNPUBLISHED. Review the title and choose Publish only when approved for customers.","PDF cargado de forma privada y SIN PUBLICAR. Revise el título antes de publicarlo."));
    await refresh();
-  }catch(e){if(scopeRef.current===operationScope)setError(e.message||"PDF upload was not confirmed.")}
+  }catch(e){if(scopeRef.current===operationScope)setError(e.message||t("PDF upload was not confirmed.","No se confirmó la carga del PDF."))}
   finally{setBusy(false)}
  }
  async function publish(doc,makePublic){
   if(busy||loading||!currentScope||!visibleDocs.some(d=>d.id===doc.id))return;
   const operationScope=currentScope;
   const question=makePublic?
-   "Publish this PDF for approved verified customer accounts at this service location? Only contacts with separate document permission can download. Review the PDF for sensitive information first.":
-   "Withdraw this PDF immediately from all customer account downloads?";
+   t("Publish this PDF for approved verified customer accounts at this service location? Only contacts with separate document permission can download. Review the PDF for sensitive information first.","¿Publicar este PDF para los clientes verificados de esta ubicación? Solo los contactos autorizados podrán descargarlo. Revise cualquier información confidencial."):
+   t("Withdraw this PDF immediately from all customer account downloads?","¿Retirar este PDF inmediatamente de las descargas de todos los clientes?");
   if(!window.confirm(question)||scopeRef.current!==operationScope)return;
   setBusy(true);setError("");setNotice("");
   try{
@@ -99,42 +101,43 @@ export default function CustomerDocumentManager({companyId,locations,pilotReques
    });
    if(scopeRef.current!==operationScope)return;
    if(e||data?.ok!==true||data.published!==makePublic)
-    throw Error(e?.message||"Document publication was not verified.");
-   setNotice(makePublic?"PDF publication saved. Approved customers with document permission may download.":"Publication withdrawn; future downloads are blocked.");
+    throw Error(e?.message||t("Document publication was not verified.","No se pudo verificar la publicación del documento."));
+   setNotice(makePublic?t("PDF publication saved. Approved customers with document permission may download.","Publicación guardada. Los clientes autorizados pueden descargar el PDF."):t("Publication withdrawn; future downloads are blocked.","Publicación retirada; se bloquearon las descargas futuras."));
    await refresh();
-  }catch(e){if(scopeRef.current===operationScope)setError(e.message||"Publication change could not be confirmed.")}
+  }catch(e){if(scopeRef.current===operationScope)setError(e.message||t("Publication change could not be confirmed.","No se pudo confirmar el cambio de publicación."))}
   finally{setBusy(false)}
  }
  if(!pilotRequested)return null;
  return <section className="panel" style={{padding:20,margin:"16px 0"}}>
-  <h3>Customer documents — private PDF center / Documentos privados</h3>
-  <p style={{fontSize:14}}>Manager-only. PDF files stay private until explicitly published. Customers also need an independent document grant. Only verified accounts can download; shared service-location links cannot.</p>
-  <label htmlFor="doc-company-location">Service location / Ubicación</label>
+  <h3>{t("Customer documents — private PDF center","Documentos de clientes — centro privado de PDF")}</h3>
+  <label htmlFor="manager-doc-language">{t("Language","Idioma")}{" "}<select id="manager-doc-language" aria-label="Document manager language / Idioma" value={language} onChange={e=>setLanguage(e.target.value==="es"?"es":"en")}><option value="en">English</option><option value="es">Español</option></select></label>
+  <p style={{fontSize:14}}>{t("Managers only. PDFs remain private until published. Verified customers need separate document grants; shared location links cannot download.","Solo gerentes. Los PDF permanecen privados hasta su publicación. Los clientes verificados necesitan permisos individuales; los enlaces de ubicación no permiten descargas.")}</p>
+  <label htmlFor="doc-company-location">{t("Service location","Ubicación del servicio")}</label>
   <select id="doc-company-location" value={locationId} onChange={e=>setLocationId(e.target.value)}>
-   <option value="">Select a company location</option>
+   <option value="">{t("Select a company location","Seleccione una ubicación")}</option>
    {(locations||[]).map(l=><option key={l.id} value={l.id}>{l.name}</option>)}
   </select>
   {selected&&<>
    <form onSubmit={e=>void upload(e)} style={{display:"grid",gap:10,marginTop:12}}>
-    <label htmlFor="doc-title">Customer-safe document title</label>
+    <label htmlFor="doc-title">{t("Customer-safe document title","Título apropiado para clientes")}</label>
     <input id="doc-title" type="text" required minLength={3} maxLength={120}
      value={title} onChange={e=>setTitle(e.target.value)}/>
-    <label htmlFor="doc-pdf">Private PDF — maximum 8 MB</label>
+    <label htmlFor="doc-pdf">{t("Private PDF — maximum 8 MB","PDF privado — máximo 8 MB")}</label>
     <input id="doc-pdf" ref={fileRef} type="file" accept=".pdf,application/pdf"
      required onChange={e=>setFile(e.target.files?.[0]||null)}/>
     <button type="submit" disabled={busy||loading||!file||title.trim().length<3}>
-     {busy?"Saving…":"Upload PRIVATE PDF"}
+     {busy?t("Saving…","Guardando…"):t("Upload PRIVATE PDF","Cargar PDF PRIVADO")}
     </button>
    </form>
    {error&&<p role="alert" style={{color:"#b3261e"}}>{error}</p>}
    {notice&&<p role="status">{notice}</p>}
-   <h4>Private and published PDFs</h4>
+   <h4>{t("Private and published PDFs","PDF privados y publicados")}</h4>
    <button type="button" disabled={busy||loading} onClick={()=>void refresh()}>
-    Refresh document list
+    {t("Refresh document list","Actualizar documentos")}
    </button>
-   {loading&&<p role="status">Checking company documents…</p>}
-   {!loading&&!error&&loadedScope===currentScope&&visibleDocs.length===0&&<p>No PDF documents have been added here.</p>}
-   <label htmlFor="doc-expiry-days">Published download expiry / Vencimiento del acceso</label>
+   {loading&&<p role="status">{t("Checking company documents…","Verificando documentos de la empresa…")}</p>}
+   {!loading&&!error&&loadedScope===currentScope&&visibleDocs.length===0&&<p>{t("No PDF documents have been added here.","Aún no se han añadido documentos PDF.")}</p>}
+   <label htmlFor="doc-expiry-days">{t("Published download expiry","Vencimiento de descargas publicadas")}</label>
    <select id="doc-expiry-days" value={expiryDays} onChange={e=>setExpiryDays(e.target.value)}>
     <option value="30">30 days / días</option>
     <option value="90">90 days / días</option>
@@ -142,9 +145,9 @@ export default function CustomerDocumentManager({companyId,locations,pilotReques
    </select>
    {visibleDocs.map(doc=><div key={doc.id} style={{borderTop:"1px solid var(--line,#ccc)",padding:"12px 0"}}>
     <strong>{doc.title}</strong>
-    <p style={{fontSize:13}}>{doc.file_name} · {doc.published?"PUBLISHED":"PRIVATE"} · {doc.expires_at?"Expires "+new Date(doc.expires_at).toLocaleDateString():"No expiry set"}</p>
+    <p style={{fontSize:13}}>{doc.file_name} · {doc.published?t("PUBLISHED","PUBLICADO"):t("PRIVATE","PRIVADO")} · {doc.expires_at?t("Expires ","Vence el ")+new Date(doc.expires_at).toLocaleDateString(language==="es"?"es-US":"en-US"):t("No expiry set","Sin vencimiento")}</p>
     <button type="button" disabled={busy||loading} onClick={()=>void publish(doc,!doc.published)}>
-     {doc.published?"Withdraw / Retirar":"Publish after review / Publicar"}
+     {doc.published?t("Withdraw","Retirar"):t("Publish after review","Publicar tras revisar")}
     </button>
    </div>)}
   </>}
