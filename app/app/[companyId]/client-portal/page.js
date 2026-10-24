@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { supabase } from "../../../../lib/supabase";
 import { useCompany } from "../../../../lib/company-context";
 import { canUseWithRole } from "../../../../lib/tiers";
@@ -12,6 +12,11 @@ export default function ClientPortalPage() {
   const [tokens, setTokens] = useState([]);
   const [working, setWorking] = useState(false);
   const [loadError, setLoadError] = useState("");
+  const [responseDrafts,setResponseDrafts]=useState({});
+  const [statusDrafts,setStatusDrafts]=useState({});
+  const [responseError,setResponseError]=useState("");
+  const [responseNotice,setResponseNotice]=useState("");
+  const responseInFlight=useRef(false);
 
   const isManager = member && (member.role === "owner" || member.role === "admin");
   const allowed = canUseWithRole(company?.effectiveTier || company?.tier, "portal", member?.role);
@@ -39,6 +44,16 @@ export default function ClientPortalPage() {
       .limit(50);
     if(messageError){setLoadError("Client messages are temporarily unavailable. This does not mean there are no messages.");setMessages([]);return}
     setMessages(msgs || []);
+    setResponseDrafts(previous=>{
+      const next={...previous};
+      for(const m of msgs||[])if(next[m.id]===undefined)next[m.id]=m.customer_response||"";
+      return next;
+    });
+    setStatusDrafts(previous=>{
+      const next={...previous};
+      for(const m of msgs||[])if(next[m.id]===undefined)next[m.id]=m.customer_status||"received";
+      return next;
+    });
   }
 
   useEffect(() => {
@@ -140,8 +155,41 @@ export default function ClientPortalPage() {
   }
 
   async function markRead(id) {
-    const { error } = await supabase().from("portal_messages").update({ read_at: new Date().toISOString() }).eq("id", id);
-    if (!error) load();
+    if(working||responseInFlight.current)return;
+    const {error}=await supabase().from("portal_messages")
+      .update({read_at:new Date().toISOString()}).eq("id",id).eq("company_id",company.id);
+    if(error)setResponseError("Could not confirm that message was marked read.");
+    else await load();
+  }
+
+  async function saveCustomerResponse(message){
+    if(responseInFlight.current||working||!isManager||!company?.id)return;
+    const status=statusDrafts[message.id]||message.customer_status||"received";
+    const reply=String(responseDrafts[message.id]??message.customer_response??"").trim();
+    if(!["received","in_progress","resolved"].includes(status)){
+      setResponseError("Choose a valid customer request status.");return;
+    }
+    if(reply&& (reply.length<10||reply.length>1200)){
+      setResponseError("Write a customer-safe response of 10–1200 characters, or leave it blank.");return;
+    }
+    if(!window.confirm("Save this status and response for anyone holding this location's secure customer link? Do not include private staff information or sensitive details."))return;
+    responseInFlight.current=true;setWorking(true);setResponseError("");setResponseNotice("");
+    try{
+      const saved=await supabase().from("portal_messages").update({
+        customer_status:status,customer_response:reply||null,
+        customer_responded_at:reply?new Date().toISOString():null
+      }).eq("id",message.id).eq("company_id",company.id)
+      .select("id,customer_status,customer_response,customer_responded_at").single();
+      if(saved.error||!saved.data||saved.data.customer_status!==status||
+        (saved.data.customer_response||"")!==reply)
+        throw new Error(saved.error?.message||"The customer response could not be verified.");
+      await load();
+      setResponseNotice("Customer-safe status and response saved. The location link can now show the update.");
+    }catch(error){
+      setResponseError(error instanceof Error?error.message:"Customer response status unknown. Check history before resending.");
+    }finally{
+      responseInFlight.current=false;setWorking(false);
+    }
   }
 
   if (loading || !company) return <p>Loading…</p>;
@@ -191,7 +239,10 @@ export default function ClientPortalPage() {
       {loadError&&<section className="panel" role="alert" style={{padding:16,border:"1px solid #b3261e",margin:"12px 0"}}>
         <strong>Portal status incomplete</strong><p>{loadError}</p><button type="button" disabled={working} style={button} onClick={() => void load()}>Retry customer portal status</button>
       </section>}
-      <h3 id="portal-management-messages">Customer Service inbox</h3>
+      <h3 id="portal-management-messages">Customer Service inbox &amp; responses</h3>
+      {responseError&&<p role="alert" style={{color:"#b3261e"}}>{responseError}</p>}
+      {responseNotice&&<p role="status">{responseNotice}</p>}
+      <p style={{fontSize:"0.85rem",color:"var(--muted)"}}>Customers holding a location link can see only request category, date, status and the approved response—not private original messages or sender names. Do not enter internal notes, sensitive details or employee information.</p>
       <div style={{ display: "grid", gap: 10, margin: "18px 0 28px" }}>
         {!loadError && messages.length === 0 && <p style={{ color: "var(--muted)" }}>No client messages yet.</p>}
         {messages.map((m) => (
@@ -204,6 +255,25 @@ export default function ClientPortalPage() {
             </span>
             {m.subject && <p style={{ fontWeight: 700, margin: "6px 0 0" }}>{m.subject}</p>}
             <p style={{ margin: "6px 0 0", whiteSpace: "pre-wrap" }}>{m.body}</p>
+            <div style={{marginTop:12,paddingTop:12,borderTop:"1px solid var(--line)"}}>
+              <label htmlFor={`status-${m.id}`} style={{display:"block",fontWeight:700,marginBottom:6}}>Customer-facing request status</label>
+              <select id={`status-${m.id}`} value={statusDrafts[m.id]??m.customer_status??"received"}
+                onChange={e=>setStatusDrafts(p=>({...p,[m.id]:e.target.value}))}
+                disabled={working} style={{width:"100%",padding:10,borderRadius:8}}>
+                <option value="received">Received / Recibido</option>
+                <option value="in_progress">In progress / En curso</option>
+                <option value="resolved">Resolved / Resuelto</option>
+              </select>
+              <label htmlFor={`response-${m.id}`} style={{display:"block",fontWeight:700,margin:"10px 0 6px"}}>Reply visible to the customer link (optional)</label>
+              <textarea id={`response-${m.id}`} rows={3} maxLength={1200}
+                value={responseDrafts[m.id]??m.customer_response??""}
+                onChange={e=>setResponseDrafts(p=>({...p,[m.id]:e.target.value}))}
+                disabled={working} placeholder="Write only customer-safe follow-up information." 
+                style={{width:"100%",padding:10,borderRadius:8,resize:"vertical"}} />
+              <button type="button" disabled={working} onClick={()=>void saveCustomerResponse(m)}
+                style={{...button,marginTop:8}}>Save customer update</button>
+              {m.customer_responded_at&&<p style={{fontSize:"0.8rem",color:"var(--muted)"}}>Last customer reply: {new Date(m.customer_responded_at).toLocaleString()}</p>}
+            </div>
             {!m.read_at && (
               <button onClick={() => markRead(m.id)} style={{ ...button, marginTop: 8, fontSize: "0.85rem", padding: "7px 14px" }}>
                 Mark as read

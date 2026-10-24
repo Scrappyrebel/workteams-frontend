@@ -26,7 +26,16 @@ export async function POST(req) {
       console.error("portal lookup failed", error.message);
       return NextResponse.json({ ok: false, error: "Could not load this page. Please try again later." });
     }
-    return NextResponse.json(data);
+    if(data?.ok!==true)return NextResponse.json(data);
+    // Request history is whitelisted by a separate exact-token RPC.
+    // Failure must never be mistaken for an empty inbox.
+    const history=await sb.rpc("get_client_portal_request_history",{tok:token});
+    if(history.error||history.data?.ok!==true||!Array.isArray(history.data.requests)){
+      console.error("portal customer request history unavailable",history.error?.message||"invalid result");
+      return NextResponse.json({...data,customer_requests:[],
+        customer_requests_error:"Request status is temporarily unavailable. Please try again."});
+    }
+    return NextResponse.json({...data,customer_requests:history.data.requests,customer_requests_error:null});
   } catch (e) {
     console.error("portal lookup error", e);
     return NextResponse.json({ ok: false, error: "Could not load this page. Please try again later." });
