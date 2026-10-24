@@ -60,20 +60,26 @@ export async function POST(req) {
     if (!rl.ok) return portalResponse({ error: "Too many requests. Try again shortly." }, { status: 429 });
 
     const { token, kind, date, notes } = await req.json();
-    if (!token || !["extra", "heavy"].includes(kind) || !date) {
-      return portalResponse({ error: "Service type and date are required." }, { status: 400 });
+    if(typeof token!=="string"||!token||token.length>128||
+       !["extra","heavy"].includes(kind)||
+       typeof date!=="string"||!/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(date)||
+       Number.isNaN(Date.parse(date))||new Date(date).toISOString().slice(0,10)!==date||
+       (notes!==undefined&&notes!==null&&
+         (typeof notes!=="string"||notes.length>2000))){
+      return portalResponse({error:"A valid service, date and note (up to 2000 characters) are required."},{status:400});
     }
     const client = sb();
-    const { data: pt } = await client
+    const { data: pt, error: tokenError } = await client
       .from("portal_tokens")
       .select("id, company_id, location_id, expires_at")
       .eq("token", token)
       .maybeSingle();
+    if(tokenError)return portalResponse({error:"Location access could not be verified."},{status:503});
     if (!pt) return portalResponse({ error: "Not found" }, { status: 404 });
     if (pt.expires_at && new Date(pt.expires_at) < new Date()) {
       return portalResponse({ error: "This link has expired." }, { status: 410 });
     }
-    const { data: c } = await client
+    const { data: c, error: contractError } = await client
       .from("contracts")
       .select("extra_clean_price, heavy_clean_price")
       .eq("company_id", pt.company_id)
@@ -82,7 +88,14 @@ export async function POST(req) {
       .order("signed_at", { ascending: false })
       .limit(1)
       .maybeSingle();
-    const price = kind === "extra" ? c?.extra_clean_price : c?.heavy_clean_price;
+    if(contractError)return portalResponse({error:"Contract pricing could not be verified."},{status:503});
+    const rawPrice=kind==="extra"?c?.extra_clean_price:c?.heavy_clean_price;
+    // Do not label an unapproved/unpriced request an agreed-price work order.
+    if(rawPrice===null||rawPrice===undefined||rawPrice===""||
+       !Number.isFinite(Number(rawPrice))||Number(rawPrice)<0){
+      return portalResponse({error:"No signed contract rate is available for this service. Contact the business for a quote."},{status:409});
+    }
+    const price=Number(rawPrice);
     const { error } = await client.from("work_orders").insert({
       company_id: pt.company_id,
       location_id: pt.location_id,
