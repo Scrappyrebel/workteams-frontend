@@ -2,6 +2,7 @@
 import {useEffect,useRef,useState} from "react";
 import {supabase} from "../lib/supabase";
 import {makeCustomerInvitation} from "../lib/customer-invitation.mjs";
+import {findReadyCustomerContacts} from "../lib/customer-pilot-readiness.mjs";
 
 export default function ClientIdentityContactManager({companyId,locations,pilotRequested,pilotEnabled}){
  const [contacts,setContacts]=useState([]);
@@ -151,7 +152,7 @@ export default function ClientIdentityContactManager({companyId,locations,pilotR
  const linked=approved.filter(c=>c.account_linked===true);
  // Readiness must belong to the SAME approved contact/location; combining
  // one contact's confirmed account with another's grant is a false green.
- const readyContacts=linked.filter(c=>(c.locations||[]).some(l=>l.active===true));
+ const readyContacts=findReadyCustomerContacts(contacts);
  const readiness=[
   {ok:pilotRequested===true,en:"Company pilot requested",es:"Programa piloto solicitado"},
   {ok:serverLoginEnabled===true&&pilotEnabled===true,en:"Owner activated customer login",es:"Acceso de clientes activado por el propietario"},
