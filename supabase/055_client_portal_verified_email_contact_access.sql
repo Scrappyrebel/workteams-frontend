@@ -78,11 +78,16 @@ begin
  -- Grant only basic location membership/summary (no documents, contracts,
  -- signing, quality publications, invoices, employee or payment records).
  insert into public.client_portal_location_grants(
-  company_id,contact_id,location_id,can_view_requests,approved_by,revoked_at)
- values(p_company_id,v_id,p_location_id,true,auth.uid(),null)
+  company_id,contact_id,location_id,can_view_requests,can_view_contracts,
+  can_view_quality,can_view_documents,can_request_services,can_sign,
+  approved_by,revoked_at)
+ values(p_company_id,v_id,p_location_id,true,false,false,false,false,false,
+        auth.uid(),null)
  on conflict(company_id,contact_id,location_id) do update set
-  can_view_requests=true,revoked_at=null,approved_by=excluded.approved_by,
-  updated_at=now();
+  can_view_requests=true,
+  can_view_contracts=false,can_view_quality=false,
+  can_view_documents=false,can_request_services=false,can_sign=false,
+  revoked_at=null,approved_by=excluded.approved_by,updated_at=now();
  insert into public.client_portal_identity_management_events(
   company_id,actor_user_id,event_type)
  values(p_company_id,auth.uid(),'contact_approved');
