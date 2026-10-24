@@ -6,6 +6,7 @@ import { supabase } from "../../../../lib/supabase";
 import { useCompany } from "../../../../lib/company-context";
 import { useClockedIn } from "../../../../lib/use-clocked-in";
 import { canUseWithRole } from "../../../../lib/tiers";
+import { resolveEntryPayRate, MEMBER_PAY_RATE_COLUMNS } from "../../../../lib/pay-rate";
 import { chicagoToday, chicagoDaysAgo } from "../../../../lib/dates";
 
 const RANGES = [
@@ -101,24 +102,29 @@ export default function ProfitabilityPage() {
       expTotals[e.location_id] = (expTotals[e.location_id] || 0) + Number(e.amount);
     }
 
-    // Labor cost: time entries with clock_out × member hourly rate.
+    // Labor cost: closed time entries × each entry's effective pay rate.
+    // The rate MUST come from the shared chain in lib/pay-rate — the same
+    // resolution the Payroll report uses (clock-in snapshot → per-hat dual
+    // rate → legacy hourly_rate). This page previously read only the legacy
+    // hourly_rate column, which the dual-rate Team editor no longer
+    // maintains, so labor priced at $0/stale and profit was overstated.
     let timeQ = sb
       .from("time_entries")
-      .select("location_id, clock_in, clock_out, member_id")
+      .select("location_id, clock_in, clock_out, member_id, clock_in_role, pay_rate_applied")
       .eq("company_id", company.id)
       .not("clock_out", "is", null);
     if (since) timeQ = timeQ.gte("clock_in", since + "T00:00:00");
     const { data: entries } = await timeQ;
     // Pay rates live in member_pay (owner/admin-only table).
-    const { data: pay } = await sb.from("member_pay").select("member_id, hourly_rate").eq("company_id", company.id);
-    const rates = {};
-    for (const p of pay || []) rates[p.member_id] = Number(p.hourly_rate) || 0;
+    const { data: pay } = await sb.from("member_pay").select(MEMBER_PAY_RATE_COLUMNS).eq("company_id", company.id);
+    const payByMember = {};
+    for (const p of pay || []) payByMember[p.member_id] = p;
     let laborTotals = {};
     for (const e of entries || []) {
       if (!e.location_id) continue;
       const hours = (new Date(e.clock_out) - new Date(e.clock_in)) / 3600000;
       if (hours <= 0) continue;
-      laborTotals[e.location_id] = (laborTotals[e.location_id] || 0) + hours * (rates[e.member_id] || 0);
+      laborTotals[e.location_id] = (laborTotals[e.location_id] || 0) + hours * resolveEntryPayRate(e, payByMember[e.member_id]);
     }
 
     const out = locList.map((l) => {
@@ -198,8 +204,9 @@ export default function ProfitabilityPage() {
       <p className="eyebrow">PROFITABILITY</p>
       <h2 style={{ fontSize: "1.8rem" }}>Job profitability</h2>
       <p style={{ color: "var(--muted)", fontSize: "0.9rem" }}>
-        Revenue from accepted bids + manual entries. Cost = clocked hours × each member's
-        hourly rate + manual expenses. Informational only — WorkTeams never runs payroll.
+        Revenue from accepted bids + manual entries. Cost = clocked hours × each shift's
+        pay rate (the same rate the payroll report uses) + manual expenses. Informational
+        only — WorkTeams never runs payroll.
       </p>
 
       <div style={{ display: "flex", gap: 6, flexWrap: "wrap", margin: "14px 0" }}>
