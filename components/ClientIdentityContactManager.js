@@ -122,6 +122,31 @@ export default function ClientIdentityContactManager({companyId,locations,pilotR
   }catch(e){setError(e.message||"Cannot verify quality permissions.")}
   finally{setBusy(false)}
  }
+ async function changeWorkOrderAccess(contact,location,allow){
+  if(!companyId||!pilotRequested||busy||contact.status!=="active"||location.revoked)return;
+  const question=allow?
+    t("Allow this contact to view ONLY work orders separately published with customer-safe titles for this exact location? Internal notes, employees and prices remain private.",
+      "¿Permitir a este cliente consultar SOLO órdenes publicadas para esta ubicación con títulos seguros? Las notas, empleados y precios internos seguirán privados."):
+    t("Remove this contact's customer work-order permission immediately?",
+      "¿Revocar inmediatamente el acceso del cliente a las órdenes de trabajo?");
+  if(!window.confirm(question))return;
+  setBusy(true);setError("");setNotice("");
+  try{
+   const {data,error:e}=await supabase().rpc("set_workteams_customer_work_order_access",{
+    p_company_id:companyId,p_contact_id:contact.id,
+    p_location_id:location.id,p_allow:allow
+   });
+   if(e||data?.ok!==true||data.work_order_access!==allow)
+    throw Error(e?.message||"The work-order permission could not be confirmed.");
+   setNotice(allow?
+    t("Published work-order access approved for this contact and location.",
+      "Acceso autorizado a órdenes publicadas para este contacto y ubicación."):
+    t("Work-order access revoked for this contact and location.",
+      "Se revocó el acceso a órdenes de trabajo."));
+   await refresh();
+  }catch(err){setError(err.message||"Could not confirm work-order permissions.")}
+  finally{setBusy(false)}
+ }
  async function copyInvitation(contact,location){
   if(copyBusy||busy||!loaded||pilotEnabled!==true||serverLoginEnabled!==true||
      contact.status!=="active"||location.active!==true||!contact.email)return;
@@ -236,6 +261,14 @@ export default function ClientIdentityContactManager({companyId,locations,pilotR
        onClick={()=>void changeQuality(c,l,!l.quality_access)}>
         {l.quality_access?t("Revoke quality reports","Revocar informes"):
          t("Allow published quality reports","Permitir informes publicados")}
+      </button>}
+      <p style={{fontSize:13,margin:"6px 0"}}>{t("Published work orders: ","Órdenes publicadas: ")}
+       {l.work_order_access?t("Approved","Autorizado"):t("Private","Privado")}</p>
+      {c.status==="active"&&!l.revoked&&l.basic_portal&&<button type="button"
+       disabled={busy||!loaded}
+       onClick={()=>void changeWorkOrderAccess(c,l,!l.work_order_access)}>
+        {l.work_order_access?t("Revoke published work orders","Revocar órdenes publicadas"):
+         t("Allow published work orders","Permitir órdenes publicadas")}
       </button>}
     </div>)}
    </div>
