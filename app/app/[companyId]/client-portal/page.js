@@ -15,6 +15,7 @@ export default function ClientPortalPage() {
   const [loadError, setLoadError] = useState("");
   const [responseDrafts,setResponseDrafts]=useState({});
   const [statusDrafts,setStatusDrafts]=useState({});
+  const [deliveryConfirmed,setDeliveryConfirmed]=useState({});
   const [responseError,setResponseError]=useState("");
   const [responseNotice,setResponseNotice]=useState("");
   const responseInFlight=useRef(false);
@@ -23,6 +24,56 @@ export default function ClientPortalPage() {
   const allowed = canUseWithRole(company?.effectiveTier || company?.tier, "portal", member?.role);
 
   const [messages, setMessages] = useState([]);
+  const [pilotRequested,setPilotRequested]=useState(null);
+  const [pilotBusy,setPilotBusy]=useState(false);
+  const [pilotError,setPilotError]=useState("");
+  const [pilotNotice,setPilotNotice]=useState("");
+  const livePilotCompany=useRef(company?.id);
+  livePilotCompany.current=company?.id;
+
+  async function loadPilot(){
+    const companyId=company?.id;
+    if(!companyId||!isManager)return;
+    setPilotError("");
+    const {data,error}=await supabase().rpc("get_workteams_client_portal_pilot_status",{
+      p_company_id:companyId
+    });
+    if(livePilotCompany.current!==companyId)return;
+    if(error||data?.ok!==true||typeof data.pilot_requested!=="boolean"||
+      data.customer_login_enabled!==false){
+      setPilotRequested(null);
+      setPilotError("Authenticated customer pilot status could not be confirmed. Refresh before making changes.");
+      return;
+    }
+    setPilotRequested(data.pilot_requested);
+  }
+  async function updatePilot(requested){
+    const companyId=company?.id;
+    if(!companyId||!isManager||pilotBusy||pilotRequested===null)return;
+    const question=requested?
+      "Request the authenticated customer portal pilot for this company? This does not activate logins or share records.":
+      "Withdraw this company from the authenticated customer portal pilot?";
+    if(!window.confirm(question))return;
+    setPilotBusy(true);setPilotError("");setPilotNotice("");
+    try{
+      const {data,error}=await supabase().rpc("set_workteams_client_portal_pilot_request",{
+        p_company_id:companyId,p_requested:requested
+      });
+      if(livePilotCompany.current!==companyId)return;
+      if(error||data?.ok!==true||data.pilot_requested!==requested||
+        data.customer_login_enabled!==false)
+        throw new Error(error?.message||"The pilot preference could not be verified.");
+      setPilotRequested(requested);
+      setPilotNotice(requested?
+        "Pilot request saved. Authenticated customer login remains disabled; no invitations or customer data were shared.":
+        "Pilot request withdrawn. Existing location links and customer data are unchanged.");
+    }catch(err){
+      if(livePilotCompany.current===companyId){
+        setPilotRequested(null);
+        setPilotError(err instanceof Error?err.message:"Pilot request status is unknown. Please refresh.");
+      }
+    }finally{setPilotBusy(false)}
+  }
 
   async function load() {
     setLoadError("");
@@ -58,7 +109,11 @@ export default function ClientPortalPage() {
   }
 
   useEffect(() => {
-    if (!loading && company && allowed && isManager) load();
+    if (!loading && company && allowed && isManager){
+      load();
+      setPilotRequested(null);setPilotNotice("");
+      void loadPilot();
+    }else setPilotRequested(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loading, company, allowed]);
 
@@ -191,6 +246,16 @@ export default function ClientPortalPage() {
     if(!["received","in_progress","resolved"].includes(status)){
       setResponseError("Choose a valid customer request status.");return;
     }
+    if(message.category==="document_copy"&&status==="resolved"&&
+       (!deliveryConfirmed[message.id]||!reply)){
+      setResponseError("Verify the recipient and deliver the document privately before marking a contract copy request resolved. Add a customer-safe confirmation message.");return;
+    }
+    if(message.category==="document_copy"&&(
+       reply.toLowerCase().includes("://")||
+       reply.toLowerCase().includes("www.")||
+       /[.]pdf|[.]docx?|[.]zip/i.test(reply))){
+      setResponseError("Do not paste document links, file paths or attachments into a shared location-link reply.");return;
+    }
     if(reply&& (reply.length<10||reply.length>1200)){
       setResponseError("Write a customer-safe response of 10–1200 characters, or leave it blank.");return;
     }
@@ -206,6 +271,7 @@ export default function ClientPortalPage() {
         (saved.data.customer_response||"")!==reply)
         throw new Error(saved.error?.message||"The customer response could not be verified.");
       await load();
+      if(message.category==="document_copy")setDeliveryConfirmed(p=>({...p,[message.id]:false}));
       setResponseNotice("Customer-safe status and response saved. The location link can now show the update.");
     }catch(error){
       setResponseError(error instanceof Error?error.message:"Customer response status unknown. Check history before resending.");
@@ -261,6 +327,33 @@ export default function ClientPortalPage() {
       {loadError&&<section className="panel" role="alert" style={{padding:16,border:"1px solid #b3261e",margin:"12px 0"}}>
         <strong>Portal status incomplete</strong><p>{loadError}</p><button type="button" disabled={working} style={button} onClick={() => void load()}>Retry customer portal status</button>
       </section>}
+      <section className="panel" id="portal-identity-pilot"
+        style={{padding:22,margin:"18px 0",border:"1px solid var(--line)"}}>
+        <h3 style={{marginTop:0}}>Authenticated Customer Portal pilot / Prueba del portal con inicio de sesión</h3>
+        <p style={{fontSize:"0.9rem",color:"var(--muted)"}}>
+          WorkTeams currently uses private links for individual locations. A separate,
+          verified customer-account system is being built. Requesting the pilot does
+          not create accounts, invite customers, enable downloads, share invoices or
+          change the access available through existing location links.
+        </p>
+        <p role="status"><strong>Authenticated customer login: disabled / Desactivado</strong></p>
+        {pilotError&&<p role="alert" style={{color:"#b3261e"}}>{pilotError}</p>}
+        {pilotNotice&&<p role="status">{pilotNotice}</p>}
+        {pilotRequested===null?
+          <button type="button" style={button} disabled={pilotBusy}
+            onClick={()=>void loadPilot()}>Recheck pilot status / Revisar estado</button>:
+          <div style={{display:"flex",flexWrap:"wrap",alignItems:"center",gap:12}}>
+            <span><strong>{pilotRequested?
+              "Pilot requested / Prueba solicitada":
+              "Not requested / No solicitado"}</strong></span>
+            <button type="button" style={button} disabled={pilotBusy||working}
+              onClick={()=>void updatePilot(!pilotRequested)}>
+              {pilotBusy?"Saving…":pilotRequested?
+                "Withdraw pilot request / Cancelar solicitud":
+                "Request pilot / Solicitar prueba"}
+            </button>
+          </div>}
+      </section>
       <h3 id="portal-management-messages">Customer Service inbox &amp; responses</h3>
       {responseError&&<p role="alert" style={{color:"#b3261e"}}>{responseError}</p>}
       {responseNotice&&<p role="status">{responseNotice}</p>}
@@ -275,6 +368,9 @@ export default function ClientPortalPage() {
               {" • "}{new Date(m.created_at).toLocaleString()}
               {m.emailed_at ? " • emailed ✅" : ""}
             </span>
+            {m.category==="document_copy"&&<p style={{fontWeight:700,color:"var(--brand-deep)",margin:"8px 0"}}>
+              Signed contract copy request — verify recipient and deliver privately
+            </p>}
             {m.subject && <p style={{ fontWeight: 700, margin: "6px 0 0" }}>{m.subject}</p>}
             <p style={{ margin: "6px 0 0", whiteSpace: "pre-wrap" }}>{m.body}</p>
             <div style={{marginTop:12,paddingTop:12,borderTop:"1px solid var(--line)"}}>
@@ -286,6 +382,17 @@ export default function ClientPortalPage() {
                 <option value="in_progress">In progress / En curso</option>
                 <option value="resolved">Resolved / Resuelto</option>
               </select>
+              {m.category==="document_copy"&&<p style={{fontSize:"0.84rem",color:"var(--muted)"}}>
+                Never attach the signed contract or paste a download URL into this shared-link reply.
+                Verify the actual intended recipient through a separately trusted channel, deliver the document securely outside WorkTeams,
+                then record the customer-safe confirmation and mark this request resolved.
+              </p>}
+              {m.category==="document_copy"&&(statusDrafts[m.id]??m.customer_status)==="resolved"&&
+                <label style={{display:"flex",gap:8,alignItems:"flex-start",margin:"10px 0"}}>
+                  <input type="checkbox" checked={deliveryConfirmed[m.id]===true}
+                    disabled={working} onChange={e=>setDeliveryConfirmed(p=>({...p,[m.id]:e.target.checked}))}/>
+                  <span>I verified the recipient and securely delivered this copy outside the shared client link.</span>
+                </label>}
               <label htmlFor={`response-${m.id}`} style={{display:"block",fontWeight:700,margin:"10px 0 6px"}}>Reply visible to the customer link (optional)</label>
               <textarea id={`response-${m.id}`} rows={3} maxLength={1200}
                 value={responseDrafts[m.id]??m.customer_response??""}
@@ -315,7 +422,7 @@ export default function ClientPortalPage() {
         </select>
       </div>
       <p style={{ color: "var(--muted)" }}>
-        Share a read-only link per location. Clients see upcoming visits, recent inspection
+        Share a location-scoped link per site. Clients may request approved contract copies and see upcoming visits, recent inspection
         scores, and open work orders — no login needed, no financial or staff details. Treat each location link as a private access credential. Share only with an authorized contact, never publicly; rotate expired links.
       </p>
 

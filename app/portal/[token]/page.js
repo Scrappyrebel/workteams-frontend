@@ -41,6 +41,10 @@ export default function PortalPage() {
   const [contact, setContact] = useState({ name: "", subject: "", body: "", category: "general" });
   const [contactSent, setContactSent] = useState(false);
   const [contactBusy, setContactBusy] = useState(false);
+  const [copyName,setCopyName]=useState("");
+  const [copyBusy,setCopyBusy]=useState(false);
+  const [copySubmitted,setCopySubmitted]=useState(false);
+  const [copyNotice,setCopyNotice]=useState("");
   const [historyRefreshing,setHistoryRefreshing]=useState(false);
   const [cleanReq, setCleanReq] = useState({ kind: "extra", date: "", notes: "" });
   const [cleanBusy, setCleanBusy] = useState(false);
@@ -72,6 +76,7 @@ export default function PortalPage() {
     let cancelled = false;
     setLoading(true);setData(null);setContract(null);setContactSent(false);
     setCleanDone(null);setTempDone(false);setActionError("");
+    setCopySubmitted(false);setCopyNotice("");setCopyName("");
     (async () => {
       try {
         const res = await fetch("/api/portal/lookup", {
@@ -137,6 +142,9 @@ export default function PortalPage() {
       setData(previous=>previous?.ok===true?{
         ...previous,customer_requests:payload.customer_requests,customer_requests_error:null
       }:previous);
+      // A resolved copy request may be submitted again after verified refresh.
+      if(!payload.customer_requests.some(r=>r.category==="document_copy"&&r.status!=="resolved"))
+        setCopySubmitted(false);
     }catch(error){
       if(currentPortalToken.current!==token)return;
       // Unknown network failure cannot establish that this bearer link is
@@ -168,6 +176,29 @@ export default function PortalPage() {
     } finally {
       setContactBusy(false);finishAction("contact");
     }
+  }
+
+  async function requestContractCopy() {
+    if(!beginAction("document"))return;
+    setCopyBusy(true);setCopyNotice("");
+    try {
+      const res=await fetch("/api/portal/contact",{
+        method:"POST",headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({token,category:"document_copy",name:copyName.trim()})
+      });
+      const result=await res.json();
+      if(currentPortalToken.current!==token)return;
+      if(!res.ok||result?.ok!==true)
+        throw new Error(result?.error||t("Contract copy request could not be confirmed.","No se pudo confirmar la solicitud de copia del contrato."));
+      setCopySubmitted(true);
+      setCopyNotice(result.already_pending?
+        t("A contract copy request is already pending. You can check its status below.","Ya existe una solicitud de copia pendiente. Puede consultar su estado abajo."):
+        t("Contract copy requested. Management will verify the recipient and arrange secure delivery outside this link. Follow the status below.","Se solicitó una copia del contrato. La gerencia verificará al destinatario y coordinará una entrega segura fuera de este enlace. Consulte el estado abajo."));
+      void refreshCustomerRequests(true);
+    }catch(err){
+      if(currentPortalToken.current===token)setActionError(err instanceof Error?err.message:
+        t("Request status unknown. Check with the business before retrying.","Estado desconocido. Consulte a la empresa antes de intentarlo otra vez."));
+    }finally{setCopyBusy(false);finishAction("document")}
   }
 
   async function signAmendment(e) {
@@ -369,21 +400,27 @@ export default function PortalPage() {
               <p style={{fontSize:"0.9rem",color:"var(--muted)"}}>
                 This secure location link includes only approved contract details and amendment statuses.
                 It does not provide private downloadable company files or account-wide records.
-                Request a copy of your signed agreement using Customer Service.
+                Use the request button below to ask management for a signed copy. You can track its status on this location link.
               </p>
               <div style={{display:"flex",gap:14,flexWrap:"wrap"}}>
                 {contract?<a href="#portal-contract">Review location contract / Revisar contrato</a>:<span>{t("No contract summary is currently available.","No hay un resumen de contrato disponible.")}</span>}
                 {data?.amendments?.length>0&&<a href="#portal-amendments">Review amendments / Revisar modificaciones</a>}
-                <button type="button" disabled={Boolean(portalAction.current)}
-                  onClick={()=>{
-                    setContactSent(false);
-                    setContact(previous=>({...previous,subject:"Request a copy of my signed contract",body:"Please contact me with a secure copy of my approved agreement for this service location.",category:"general"}));
-                    document.getElementById("portal-contact")?.scrollIntoView({behavior:"smooth"});
-                  }}
-                  style={{...pButton,padding:"8px 16px",width:"auto"}}>
-                  Request a contract copy / Solicitar copia del contrato
-                </button>
+                <div style={{display:"grid",gap:8,minWidth:220,maxWidth:"100%"}}>
+                  <label htmlFor="portal-contract-copy-name">{t("Your name (optional, helps verify delivery)","Su nombre (opcional; facilita verificar la entrega)")}</label>
+                  <input id="portal-contract-copy-name" type="text" autoComplete="name"
+                    value={copyName} onChange={e=>setCopyName(e.target.value)}
+                    maxLength={120} style={pInput} disabled={copyBusy}/>
+                  <button type="button"
+                    disabled={copyBusy||Boolean(portalAction.current)||copySubmitted||
+                      data?.customer_requests?.some(r=>r.category==="document_copy"&&r.status!=="resolved")}
+                    onClick={()=>void requestContractCopy()}
+                    style={{...pButton,padding:"8px 16px",width:"auto"}}>
+                    {copyBusy?t("Sending request…","Enviando solicitud…"):t("Request a contract copy","Solicitar copia del contrato")}
+                  </button>
+                </div>
               </div>
+              {copyNotice&&<p role="status" style={{marginTop:10}}>{copyNotice}</p>}
+              <p style={{fontSize:"0.82rem",color:"var(--muted)"}}>{t("No private document is sent through this shared link. Management will verify the recipient and deliver it securely outside WorkTeams.","No se envían documentos privados mediante este enlace compartido. La gerencia verificará al destinatario y realizará la entrega de forma segura fuera de WorkTeams.")}</p>
             </section>
 
             {contract && (
@@ -624,7 +661,7 @@ export default function PortalPage() {
                 <p style={{color:"var(--muted)"}}>{t("No customer service requests have been submitted through this location link.","No se han enviado solicitudes desde este enlace de ubicación.")}</p>}
               {!data.customer_requests_error&&Array.isArray(data.customer_requests)&&data.customer_requests.map(r=>(
                 <article key={r.id} style={{border:"1px solid var(--line)",padding:14,borderRadius:12,marginTop:10}}>
-                  <strong>{r.category==="service_problem"?t("Service concern","Problema con el servicio"):r.category==="callback_request"?t("Callback request","Solicitud de llamada"):t("General request","Solicitud general")}</strong>
+                  <strong>{r.category==="service_problem"?t("Service concern","Problema con el servicio"):r.category==="callback_request"?t("Callback request","Solicitud de llamada"):r.category==="document_copy"?t("Signed contract copy","Copia del contrato firmado"):t("General request","Solicitud general")}</strong>
                   <p style={{margin:"6px 0",fontSize:"0.85rem",color:"var(--muted)"}}>
                     {r.created_at?new Date(r.created_at).toLocaleString(language==="es"?"es-US":"en-US"):t("Date unavailable","Fecha no disponible")} · 
                     {r.status==="resolved"?t(" Resolved / Resuelto"," Resuelto"):r.status==="in_progress"?t(" In progress / En curso"," En curso"):t(" Received / Recibido"," Recibido")}
