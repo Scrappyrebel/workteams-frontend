@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { supabase } from "../../../../lib/supabase";
 import { useCompany } from "../../../../lib/company-context";
 import { canUseWithRole } from "../../../../lib/tiers";
+import ClientIdentityContactManager from "../../../../components/ClientIdentityContactManager";
 
 export default function ClientPortalPage() {
   const { company, member, loading } = useCompany();
@@ -354,6 +355,8 @@ export default function ClientPortalPage() {
             </button>
           </div>}
       </section>
+      {pilotRequested===true&&<ClientIdentityContactManager
+        companyId={company?.id} locations={locations} pilotRequested={pilotRequested}/>}
       <h3 id="portal-management-messages">Customer Service inbox &amp; responses</h3>
       {responseError&&<p role="alert" style={{color:"#b3261e"}}>{responseError}</p>}
       {responseNotice&&<p role="status">{responseNotice}</p>}
