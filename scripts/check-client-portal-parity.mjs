@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import {readFileSync} from "node:fs";
 const portal=readFileSync(new URL("../app/portal/[token]/page.js",import.meta.url),"utf8");
+const contractRoute=readFileSync(new URL("../app/api/portal/service/route.js",import.meta.url),"utf8");
 const manager=readFileSync(new URL("../app/app/[companyId]/client-portal/page.js",import.meta.url),"utf8");
 const api=readFileSync(new URL("../app/api/portal/lookup/route.js",import.meta.url),"utf8");
 function block(source,start,end){
@@ -32,7 +33,7 @@ assert.ok(portal.includes("Service request could not be confirmed."));
 assert.ok(portal.includes("Signature status could not be confirmed."));
 assert.ok(portal.includes("Hours confirmation could not be verified."));
 assert.ok(portal.includes("cancelled = true"));
-assert.ok(portal.includes("if(cancelled)return"));
+assert.ok(portal.includes("if(cancelled||currentPortalToken.current!==token)return"));
 assert.ok(portal.includes("data?.ok !== true"));
 assert.ok(portal.includes('role="alert"'));
 assert.ok(portal.includes("This secure link is for this location only."));
@@ -57,3 +58,19 @@ assert.ok(api.includes('sb.rpc("get_portal_data"'));
 assert.ok(api.includes("checkRateLimit"));
 assert.ok(!portal.includes("NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY"));
 console.log("WorkTeams customer-portal cross-app parity and token isolation safeguards verified.");
+
+const firstLoad=portal.slice(portal.indexOf("    let cancelled = false;"),portal.indexOf("  async function refreshCustomerRequests("));
+const lookupGate=firstLoad.indexOf("if(!res.ok||result?.ok!==true)");
+const contractFetch=firstLoad.indexOf("const contractRes=await fetch(");
+assert.ok(lookupGate>0&&contractFetch>lookupGate,"signed contract must load after valid exact-location token lookup");
+for(const snippet of ["currentPortalToken.current!==token","contractRes.ok","currentPortalToken.current===token&&contractJson?.contract",'cache:"no-store"']){
+ assert.ok(firstLoad.includes(snippet),"missing protected contract fetch: "+snippet);
+}
+for(const snippet of ["portal-contract:","token.length > 128","if(tokenError)","if(contractError)","Cache-Control"]){
+ assert.ok(contractRoute.includes(snippet),"contract API protection missing: "+snippet);
+}
+for(const phrase of ["Please write your message first.","Sign this amendment? This makes the changes part of your contract.",
+ "Service request could not be confirmed.","Hours confirmation could not be verified."]){
+ assert.ok(portal.includes('t("'+phrase+'","'),"customer action not bilingual: "+phrase);
+}
+console.log("WorkTeams token-first contract access and bilingual customer transactions protected.");
