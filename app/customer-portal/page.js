@@ -32,10 +32,14 @@ export default function AuthenticatedCustomerPortal(){
     if(userError)setError("Could not verify your current session. Please sign in again.");
     return;
    }
-   const {data:claimed,error:claimError}=await sb.rpc("claim_workteams_customer_identity");
-   if(!mounted.current||sequence!==requestSequence.current)return;
-   if(claimError||typeof claimed!=="number")
-    throw new Error("Could not verify customer account authorization. Please try again.");
+   // Claiming an identity may write to the database; do it on initial/manual
+   // entry only. Visibility/poll checks are read-only and verify existing scope.
+   if(!silent){
+    const {data:claimed,error:claimError}=await sb.rpc("claim_workteams_customer_identity");
+    if(!mounted.current||sequence!==requestSequence.current)return;
+    if(claimError||typeof claimed!=="number")
+     throw new Error("Could not verify customer account authorization. Please try again.");
+   }
    const {data,error:scopeError}=await sb.rpc("get_my_workteams_customer_identity");
    if(!mounted.current||sequence!==requestSequence.current)return;
    if(scopeError||data?.ok!==true||!Array.isArray(data.locations)){
@@ -78,9 +82,18 @@ export default function AuthenticatedCustomerPortal(){
   };
  },[]);
  async function signOut(){
-  setLocations([]);setLoggedIn(false);
-  await supabase().auth.signOut();
-  window.location.assign("/customer-login");
+  // Invalidate every pre-signout RPC: a late successful response must not
+  // repopulate a previous company's records while navigation is pending.
+  requestSequence.current++;
+  setLocations([]);setLoggedIn(false);setNotice("");setError("");setBusy(true);
+  try{
+   const {error:failure}=await supabase().auth.signOut();
+   if(failure)throw failure;
+   window.location.assign("/customer-login");
+  }catch(err){
+   setBusy(false);
+   setError(err instanceof Error?err.message:"Could not confirm sign out. Close this tab if using a shared device.");
+  }
  }
  return <main className="site-shell" style={{maxWidth:720,margin:"0 auto"}}>
   <section className="panel" style={{padding:24}}>
@@ -113,7 +126,11 @@ export default function AuthenticatedCustomerPortal(){
          companyId={loc.company_id} locationId={loc.location_id}
          language={language}
          onAuthorizationLost={()=>{
-           setLocations([]);setError(t(
+           // Reject a stale account refresh already in flight when a child
+           // RPC proves that the currently displayed location is unauthorized.
+           requestSequence.current++;
+           setLocations([]);setNotice("");setBusy(false);
+           setError(t(
              "Customer authorization could not be verified. Recheck your account before continuing.",
              "No se pudieron verificar sus permisos. Revise su cuenta antes de continuar."
            ));
