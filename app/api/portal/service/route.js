@@ -9,18 +9,22 @@ const sb = () =>
 // summary, scope of work, and extra-clean pricing for the client to reference.
 export async function GET(req) {
   const token = new URL(req.url).searchParams.get("token");
-  if (!token) return NextResponse.json({ error: "Missing token" }, { status: 400 });
+  if (!token || typeof token !== "string" || token.length > 128)
+    return NextResponse.json({ error: "Invalid location link" }, { status: 400 });
+  const limit = checkRateLimit(`portal-contract:${clientIp(req)}`, { limit: 30, windowMs: 60_000 });
+  if(!limit.ok)return NextResponse.json({error:"Too many requests. Try again shortly."},{status:429});
   const client = sb();
-  const { data: pt } = await client
+  const { data: pt, error: tokenError } = await client
     .from("portal_tokens")
     .select("id, company_id, location_id, expires_at")
     .eq("token", token)
     .maybeSingle();
+  if(tokenError)return NextResponse.json({error:"Location access could not be verified."},{status:503});
   if (!pt) return NextResponse.json({ error: "Not found" }, { status: 404 });
   if (pt.expires_at && new Date(pt.expires_at) < new Date()) {
     return NextResponse.json({ error: "This link has expired." }, { status: 410 });
   }
-  const { data: c } = await client
+  const { data: c, error: contractError } = await client
     .from("contracts")
     .select("client_name, start_date, end_date, visits_per_week, price_per_visit, yearly_increase_pct, extra_clean_price, heavy_clean_price, scope_of_work, terms_text, signed_at")
     .eq("company_id", pt.company_id)
@@ -29,8 +33,9 @@ export async function GET(req) {
     .order("signed_at", { ascending: false })
     .limit(1)
     .maybeSingle();
-  if (!c) return NextResponse.json({ contract: null });
-  return NextResponse.json({ contract: c });
+  if(contractError)return NextResponse.json({error:"Contract access could not be verified."},{status:503});
+  if (!c) return NextResponse.json({ contract: null }, {headers:{"Cache-Control":"private, no-store"}});
+  return NextResponse.json({ contract: c }, {headers:{"Cache-Control":"private, no-store"}});
 }
 
 // Public: client requests an extra or heavy clean. Creates a work order for
