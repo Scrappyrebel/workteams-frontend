@@ -40,7 +40,7 @@ for(const term of [
  "grant execute on function public.get_workteams_authenticated_service_schedule(uuid,uuid)",
  "from public,anon,authenticated"
 ])assert.ok(sql.includes(term),"Missing schedule security requirement: "+term);
-for(const phrase of ["set_workteams_customer_service_visit_publication","p_company_id:company","p_shift_id:visit.id","p_publish:publish","Withdraw visit / Retirar visita","Publish visit / Publicar visita"])
+for(const phrase of ["set_workteams_customer_service_visit_publication","p_company_id:company","p_shift_id:visit.id","p_publish:publish",'t("Withdraw visit","Retirar visita")','t("Publish visit","Publicar visita")'])
  assert.ok(manager.includes(phrase),"Missing manager action: "+phrase);
 for(const phrase of ["set_workteams_customer_schedule_access","changeScheduleAccess(c,l,!l.schedule_access)","l.schedule_access","p_contact_id:contact.id","p_location_id:location.id"])
  assert.ok(access.includes(phrase),"Missing per-contact grant: "+phrase);
@@ -52,3 +52,21 @@ assert.ok(!sql.includes("s.member_id as"),"Never publish employee staffing");
 assert.ok(!sql.includes("s.notes as"),"Never expose private shift notes");
 assert.ok(!sql.includes("grant select on public.client_portal_service_schedule_publications to authenticated"));
 console.log("Verified Customer Portal manager-published visits, exact-location permission and no staffing disclosure regression passed.");
+
+for(const phrase of [
+ 'latestLanguage.current=language',
+ 'if(!active.current||companyRef.current!==company)return',
+ 'active.current=false',
+ 'No se pudieron verificar las próximas visitas.',
+ 'No se pudo verificar el cambio de horario.',
+ 't("Upcoming service visits","Próximas visitas de servicio")',
+ 't("Refresh upcoming visits","Actualizar próximas visitas")',
+ 't("No scheduled visits for the next 30 days.',
+ 't("Customer-safe public note (optional, 5–300 characters)"'
+])assert.ok(manager.includes(phrase),"Missing bilingual/revoked manager schedule workflow: "+phrase);
+for(const unsafe of ['throw Error(e?.message','setError(e.message','Upcoming shifts could not be verified. No publication changes were made."];']){
+ assert.ok(!manager.includes(unsafe),"Customer manager must not expose raw SQL errors: "+unsafe);
+}
+assert.ok(managerPage.includes('PublishedServiceScheduleManager companyId={company?.id} language={managerLanguage}'),
+ "All manager subpanels must use the same selected language");
+console.log("Published service visit manager full Spanish copy, company-scope async reads and safe failure control verified.");

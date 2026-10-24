@@ -24,3 +24,13 @@ assert.ok(!source.includes('>Customer Service inbox &amp; responses</h3>'));
 assert.ok(!source.includes('>Client portal links</h2>'));
 assert.ok(!source.includes('>Copy link</button>'));
 console.log("WorkTeams customer management bilingual messages, private-link controls, owner-only pilot and customer-safe response regression PASSED.");
+
+const schedule=readFileSync(new URL("../components/PublishedServiceScheduleManager.js",import.meta.url),"utf8");
+const contacts=readFileSync(new URL("../components/ClientIdentityContactManager.js",import.meta.url),"utf8");
+assert.ok(schedule.includes('language="en"')&&schedule.includes('const t=(en,es)=>latestLanguage.current==="es"?es:en;'));
+assert.ok(source.includes('language={managerLanguage}'),"Manager language must reach published visits");
+assert.ok(contacts.includes('const liveT=(en,es)=>latestLanguage.current==="es"?es:en;'));
+assert.ok(contacts.includes('.catch(()=>{'),"Contact onboarding must handle rejected network requests");
+assert.ok(contacts.includes("No se pudo verificar la lista de contactos de clientes."));
+assert.ok(!contacts.includes('setError("Customer contact list could not be verified.")'));
+console.log("WorkTeams manager publish/contact views share safe bilingual failure and loading behavior.");
