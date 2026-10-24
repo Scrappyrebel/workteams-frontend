@@ -83,7 +83,7 @@ export default function CustomerLogin(){
    {error&&<p role="alert" style={{color:"#b3261e"}}>{error}</p>}
    {notice&&<p role="status">{notice}</p>}
    <p><Link href="/forgot-password">{t("Forgot password?","¿Olvidó su contraseña?")}</Link></p>
-   <p><Link href="/portal">{t("Use your existing location link instead","Utilice su enlace de ubicación existente")}</Link></p>
+   <p><Link href="/">{t("Use your existing location link instead","Utilice su enlace de ubicación existente")}</Link></p>
   </section>
  </main>;
 }
