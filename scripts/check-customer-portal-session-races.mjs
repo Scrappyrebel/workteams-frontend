@@ -13,8 +13,8 @@ for(const requirement of [
  "window.setInterval(recheck,60000)",
  "window.clearInterval(poll)",
  "setLocations([]);setNotice(\"\");setBusy(false)",
- "setError(err instanceof Error?err.message:\"Customer access unavailable.\")",
- "window.location.assign(\"/customer-login\")"
+ "setError(err instanceof Error?err.message:tr(",
+ "window.location.assign(\"/customer-login?lang=\"+latestLanguage.current)"
 ])assert.ok(s.includes(requirement),"Missing revocation or session-race protection: "+requirement);
 const signout=s.slice(s.indexOf("async function signOut(){"),s.indexOf("return <main",s.indexOf("async function signOut(){")));
 assert.ok(signout.indexOf("requestSequence.current++")>=0);
