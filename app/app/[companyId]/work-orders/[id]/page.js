@@ -7,6 +7,7 @@ import { supabase } from "../../../../../lib/supabase";
 import { useCompany } from "../../../../../lib/company-context";
 import { useClockedIn, requireClockedIn } from "../../../../../lib/use-clocked-in";
 import { canUseWithRole } from "../../../../../lib/tiers";
+import WorkOrderCustomerPublication from "../../../../../components/WorkOrderCustomerPublication";
 
 const STATUS_LABELS = {
   open: "Open",
@@ -188,6 +189,8 @@ export default function WorkOrderDetailPage() {
         </section>
       )}
 
+      {isManager&&<WorkOrderCustomerPublication
+        orderId={order.id} companyId={company.id} canManage={isManager}/>}
       {/* Updates / comments */}
       <section className="panel" style={{ padding: 22, margin: "18px 0" }}>
         <h3 style={{ marginTop: 0 }}>Updates</h3>
