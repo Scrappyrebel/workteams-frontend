@@ -6,6 +6,8 @@ const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
 export default function TempApply() {
   const [available, setAvailable] = useState(null);
+  const [agencyId, setAgencyId] = useState(null);
+  const [agencyError, setAgencyError] = useState("");
   const [catalog, setCatalog] = useState([]);
   const [agencyLanes, setAgencyLanes] = useState(["cleaning"]);
   const [submitting, setSubmitting] = useState(false);
@@ -45,9 +47,15 @@ export default function TempApply() {
   useEffect(() => {
     (async () => {
       try {
-        const r = await fetch("/api/temp/config");
+        // Same agency pinning as the booking page: ?agency=<company_id>
+        // names the agency; the resolved id is echoed back and sent with
+        // the application so it lands on that agency, not a guess.
+        const linked = new URLSearchParams(window.location.search).get("agency");
+        const r = await fetch(linked ? `/api/temp/config?agency=${encodeURIComponent(linked)}` : "/api/temp/config");
         const j = await r.json();
         setAvailable(!!j.available);
+        setAgencyId(j.available ? j.agencyId || linked : null);
+        setAgencyError(j.available ? "" : j.agencyError || "");
         if (j.available) {
           if (j.staffingCatalog?.length) setCatalog(j.staffingCatalog);
           if (j.staffingTypes?.length) {
@@ -119,6 +127,7 @@ export default function TempApply() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           ...form,
+          companyId: agencyId || undefined,
           availability: form.availabilityDays.length
             ? `Days: ${form.availabilityDays.join(", ")}${form.earliestStart ? `, ${form.earliestStart}–${form.latestEnd || "?"}` : ""}`
             : "",
@@ -151,8 +160,8 @@ export default function TempApply() {
     return (
       <main className="site-shell">
         <section className="panel" style={{ padding: 30 }}>
-          <h2>Applications aren't open right now</h2>
-          <p style={{ color: "var(--muted)" }}>Please check back soon.</p>
+          <h2>{agencyError ? "We can't open that application link" : "Applications aren't open right now"}</h2>
+          <p style={{ color: "var(--muted)" }}>{agencyError || "Please check back soon."}</p>
         </section>
       </main>
     );

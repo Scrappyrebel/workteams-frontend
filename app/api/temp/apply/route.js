@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { checkRateLimit, clientIp } from "../../../../lib/rate-limit";
+import { resolveTempAgencyCompanyId } from "../../../../lib/temp-agency";
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -33,15 +34,18 @@ export async function POST(req) {
     }
 
     const db = createClient(SUPABASE_URL, SERVICE_KEY);
-    const { data: cfg } = await db
-      .from("temp_agency_config")
-      .select("company_id")
-      .eq("enabled", true)
-      .limit(1)
-      .maybeSingle();
-    if (!cfg) {
-      return NextResponse.json({ error: "Applications are not open right now." }, { status: 503 });
+    // Same agency resolution as bookings (lib/temp-agency): the optional
+    // companyId in the body pins the application to its agency; without
+    // one it resolves only while exactly one agency is enabled.
+    const resolved = await resolveTempAgencyCompanyId(db, b.companyId);
+    if (!resolved.ok) {
+      const msg =
+        resolved.code === "unavailable"
+          ? "Applications are not open right now."
+          : resolved.error;
+      return NextResponse.json({ error: msg }, { status: resolved.status });
     }
+    const cfg = { company_id: resolved.companyId };
 
     // One application per email per agency.
     const { data: existing } = await db

@@ -3,6 +3,10 @@ import Stripe from "stripe";
 import { createClient } from "@supabase/supabase-js";
 import { checkRateLimit, clientIp } from "../../../../lib/rate-limit";
 import { getAppUrl } from "../../../../lib/app-url";
+import {
+  resolveTempAgencyCompanyId,
+  getTempAgencyConfig,
+} from "../../../../lib/temp-agency";
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -14,7 +18,12 @@ const VALID_TYPES = new Set([
 
 // Public: create a temp job request + Stripe Checkout (pay per booking).
 // Body: { serviceType, cleanersNeeded, hoursRequested, jobDate?, scheduleNotes?,
-//         siteAddress, customerName, customerEmail, customerPhone?, jobDetails? }
+//         siteAddress, customerName, customerEmail, customerPhone?, jobDetails?,
+//         companyId? }
+// companyId names the agency explicitly (sent by the booking page from its
+// ?agency= link / the config it loaded). It is resolved by
+// lib/temp-agency: pinned to that company, or — for link-less legacy
+// callers — only while exactly one agency is enabled. Never first-row-wins.
 export async function POST(req) {
   try {
     const rl = checkRateLimit(`temp-book:${clientIp(req)}`, { limit: 10, windowMs: 60_000 });
@@ -44,12 +53,16 @@ export async function POST(req) {
     }
 
     const db = createClient(SUPABASE_URL, SERVICE_KEY);
-    const { data: cfg } = await db
-      .from("temp_agency_config")
-      .select("company_id, base_hourly_rate, service_rates")
-      .eq("enabled", true)
-      .limit(1)
-      .maybeSingle();
+    const resolved = await resolveTempAgencyCompanyId(db, b.companyId);
+    if (!resolved.ok) {
+      return NextResponse.json({ error: resolved.error }, { status: resolved.status });
+    }
+    const companyId = resolved.companyId;
+    const cfg = await getTempAgencyConfig(
+      db,
+      companyId,
+      "company_id, base_hourly_rate, service_rates"
+    );
     if (!cfg) {
       return NextResponse.json({ error: "Temp staffing is not available right now." }, { status: 503 });
     }
@@ -66,7 +79,7 @@ export async function POST(req) {
 
     // POINT 2 booking fields. Tolerant: falls back if 048 hasn't run.
     const full = {
-      company_id: cfg.company_id,
+      company_id: companyId,
       service_type: serviceType,
       cleaners_needed: cleanersNeeded,
       hours_requested: hoursRequested,
@@ -129,9 +142,13 @@ export async function POST(req) {
           quantity: 1,
         },
       ],
-      metadata: { temp_job_request_id: job.id, company_id: cfg.company_id },
+      // The webhook credits a booking only when this metadata's company
+      // matches the booking row AND the session is the one recorded on it.
+      metadata: { temp_job_request_id: job.id, company_id: companyId },
       success_url: `${appUrl}/temp/book/success?session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${appUrl}/temp/book?cancelled=1`,
+      cancel_url: resolved.pinned
+        ? `${appUrl}/temp/book?agency=${companyId}&cancelled=1`
+        : `${appUrl}/temp/book?cancelled=1`,
     });
 
     await db

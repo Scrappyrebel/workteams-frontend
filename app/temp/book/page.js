@@ -4,6 +4,8 @@ import { useEffect, useState } from "react";
 
 export default function TempBook() {
   const [cfg, setCfg] = useState(null);
+  const [agencyId, setAgencyId] = useState(null);
+  const [agencyError, setAgencyError] = useState("");
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
@@ -31,9 +33,16 @@ export default function TempBook() {
   useEffect(() => {
     (async () => {
       try {
-        const r = await fetch("/api/temp/config");
+        // The agency link names its company (?agency=<company_id>); the
+        // config response echoes the resolved id back as agencyId and the
+        // submit below pins the booking to it, so the agency whose rates
+        // were shown is the agency that gets the booking.
+        const linked = new URLSearchParams(window.location.search).get("agency");
+        const r = await fetch(linked ? `/api/temp/config?agency=${encodeURIComponent(linked)}` : "/api/temp/config");
         const j = await r.json();
         setCfg(j.available ? j : null);
+        setAgencyId(j.available ? j.agencyId || linked : null);
+        setAgencyError(j.available ? "" : j.agencyError || "");
       } catch {
         setCfg(null);
       } finally {
@@ -66,7 +75,7 @@ export default function TempBook() {
       const r = await fetch("/api/temp/book", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(form),
+        body: JSON.stringify({ ...form, companyId: agencyId || undefined }),
       });
       const j = await r.json();
       if (!r.ok) {
@@ -94,8 +103,8 @@ export default function TempBook() {
     return (
       <main className="site-shell wt2-t-site">
         <section className="panel" style={{ padding: 30 }}>
-          <h2>Temp staffing isn't available right now</h2>
-          <p style={{ color: "var(--muted)" }}>Please check back soon.</p>
+          <h2>{agencyError ? "We can't open that booking link" : "Temp staffing isn't available right now"}</h2>
+          <p style={{ color: "var(--muted)" }}>{agencyError || "Please check back soon."}</p>
         </section>
       </main>
     );

@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { checkRateLimit, clientIp } from "../../../../lib/rate-limit";
+import {
+  resolveTempAgencyCompanyId,
+  getTempAgencyConfig,
+} from "../../../../lib/temp-agency";
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -30,6 +34,9 @@ export const SERVICE_TYPES = [
 ];
 
 // Public: returns the temp agency's bookable config (rates only — no PII).
+// The agency is named by ?agency=<company_id> (see lib/temp-agency for the
+// resolution rules); the response echoes it back as agencyId so the caller
+// can pin its booking/application POST to the same company.
 export async function GET(req) {
   try {
     const rl = checkRateLimit(`temp-config:${clientIp(req)}`, { limit: 30, windowMs: 60_000 });
@@ -37,22 +44,24 @@ export async function GET(req) {
       return NextResponse.json({ error: "Too many requests." }, { status: 429 });
     }
     const db = createClient(SUPABASE_URL, SERVICE_KEY);
-    let { data: cfg } = await db
-      .from("temp_agency_config")
-      .select("company_id, base_hourly_rate, service_rates, hire_track_options, conversion_fee, staffing_types")
-      .eq("enabled", true)
-      .limit(1)
-      .maybeSingle();
-    if (!cfg) {
-      // Pre-048 fallback: staffing_types column doesn't exist yet.
-      const retry = await db
-        .from("temp_agency_config")
-        .select("company_id, base_hourly_rate, service_rates, hire_track_options, conversion_fee")
-        .eq("enabled", true)
-        .limit(1)
-        .maybeSingle();
-      cfg = retry.data;
+    const requested = new URL(req.url).searchParams.get("agency");
+    const resolved = await resolveTempAgencyCompanyId(db, requested);
+    if (!resolved.ok) {
+      // Plain "nothing enabled" keeps the historic shape; a bad or
+      // ambiguous agency link surfaces its reason to the page.
+      if (resolved.code === "unavailable") {
+        return NextResponse.json({ available: false }, { status: 200 });
+      }
+      return NextResponse.json(
+        { available: false, agencyError: resolved.error },
+        { status: 200 }
+      );
     }
+    const cfg = await getTempAgencyConfig(
+      db,
+      resolved.companyId,
+      "company_id, base_hourly_rate, service_rates, hire_track_options, conversion_fee, staffing_types"
+    );
     if (!cfg) {
       return NextResponse.json({ available: false }, { status: 200 });
     }
@@ -72,6 +81,7 @@ export async function GET(req) {
     } catch { /* pre-048 */ }
     return NextResponse.json({
       available: true,
+      agencyId: cfg.company_id,
       agencyName: co?.name || "Temp Staffing",
       baseHourlyRate: Number(cfg.base_hourly_rate),
       serviceRates: mergeServiceRates(cfg.service_rates),

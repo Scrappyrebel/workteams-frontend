@@ -733,7 +733,7 @@ export default function TempDashboard() {
             <button type="submit" className="btn-primary" style={{ padding: 12 }}>Save</button>
           </form>
           <p style={{ fontSize: 13, color: "var(--muted)", marginTop: 12 }}>
-            Public booking: /temp/book · Temp applications: /temp/apply
+            {`Your public links — always share these (they carry your company, so bookings and applications can't land on another agency): /temp/book?agency=${company.id} · /temp/apply?agency=${company.id}`}
           </p>
         </section>
       )}
