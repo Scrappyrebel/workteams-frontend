@@ -10,6 +10,7 @@ import { isProductOwner } from "../lib/product";
 import { roleRank } from "../lib/roles";
 import { ensurePush, enablePush } from "../lib/push-client";
 import { supabase } from "../lib/supabase";
+import { canViewCommission, loadCommissionSettings } from "../lib/commission";
 
 const NAV = [
   { key: "dashboard", label: "Dashboard", href: (c) => `/app/${c}`, minRole: null },
@@ -52,6 +53,24 @@ export default function AppShell({ company, member, children }) {
   // Temp staffing module: only the temp agency company gets the tab.
   // Everyone else never sees it (gated second-company feature).
   const [isTempAgency, setIsTempAgency] = useState(false);
+  // Sales commissions: nav link appears only when the company's
+  // commission mode + this member's role allow it (mode 'off' = no
+  // trace for anyone). Loaded tolerantly — a missing settings table
+  // (pre-migration) reads as mode 'off'.
+  const [commissionVisible, setCommissionVisible] = useState(false);
+
+  useEffect(() => {
+    if (!company?.id || !member) {
+      setCommissionVisible(false);
+      return;
+    }
+    let stop = false;
+    (async () => {
+      const settings = await loadCommissionSettings(supabase(), company.id);
+      if (!stop) setCommissionVisible(canViewCommission(settings, member));
+    })();
+    return () => { stop = true; };
+  }, [company?.id, member]);
 
   useEffect(() => {
     isProductOwner().then(setIsOwner);
@@ -148,6 +167,15 @@ export default function AppShell({ company, member, children }) {
       key: "tempstaffing",
       label: "🧹 Temp Staffing",
       href: (c) => `/app/${c}/temp`,
+    });
+  }
+  // Commission tab: only when the per-company commission settings say
+  // this member may see commission surfaces at all.
+  if (commissionVisible) {
+    links.push({
+      key: "commissions",
+      label: "💰 Commissions",
+      href: (c) => `/app/${c}/commissions`,
     });
   }
   const linksMapped = links.map((item) => {

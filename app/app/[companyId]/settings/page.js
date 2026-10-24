@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { useCompany } from "../../../../lib/company-context";
 import { supabase } from "../../../../lib/supabase";
 import { DEFAULT_TZ } from "../../../../lib/dates";
@@ -158,6 +159,20 @@ export default function SettingsPage() {
           {saving ? "Saving…" : "Save settings"}
         </button>
       </form>
+      <div className="card" style={{ marginTop: 16 }}>
+        <label style={{ fontWeight: 700 }}>Commission &amp; Bonus</label>
+        <p style={{ color: "var(--muted)", fontSize: "0.9rem", margin: "8px 0" }}>
+          Owner-only controls for the sales commission / bonus tool: turn it off entirely, keep it
+          private to you as the owner, or share the plan with your managers. This Settings page is
+          owner-only, so this link never appears for employees.
+        </p>
+        <Link
+          href={`/app/${company.id}/settings/commission`}
+          style={{ color: "var(--brand-deep)", fontWeight: 700 }}
+        >
+          Open commission &amp; bonus settings →
+        </Link>
+      </div>
     </div>
   );
 }
