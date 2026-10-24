@@ -27,11 +27,11 @@ for(const phrase of [
  'get_workteams_client_portal_pilot_status',
  'set_workteams_client_portal_pilot_request',
  'p_company_id:companyId,p_requested:requested',
- 'if(!companyId||!isManager||pilotBusy||pilotRequested===null)return',
- 'data.customer_login_enabled!==false',
+ 'if(!companyId||!isManager||pilotBusy||pilotRequested===null||pilotEnabled===null||',
+ 'typeof data.customer_login_enabled!=="boolean"',
  'setPilotRequested(null)',
- 'authenticated customer login remains disabled',
- 'Authenticated customer login: disabled',
+ 'Login is only activated with a separate owner confirmation.',
+ 'Authenticated customer login:',
  'Request pilot / Solicitar prueba',
  'Withdraw pilot request / Cancelar solicitud'
 ])assert.ok(manager.toLowerCase().includes(phrase.toLowerCase()),"Missing guarded manager UI: "+phrase);
