@@ -11,6 +11,7 @@ export default function ClientPortalPage() {
   const [locations, setLocations] = useState([]);
   const [tokens, setTokens] = useState([]);
   const [working, setWorking] = useState(false);
+  const [loadError, setLoadError] = useState("");
 
   const isManager = member && (member.role === "owner" || member.role === "admin");
   const allowed = canUseWithRole(company?.effectiveTier || company?.tier, "portal", member?.role);
@@ -18,21 +19,25 @@ export default function ClientPortalPage() {
   const [messages, setMessages] = useState([]);
 
   async function load() {
+    setLoadError("");
     const sb = supabase();
-    const { data: locs } = await sb.from("locations").select("id, name").eq("company_id", company.id).order("name");
+    const { data: locs, error: locError } = await sb.from("locations").select("id, name").eq("company_id", company.id).order("name");
+    if(locError){setLoadError("Could not confirm service locations. Try refreshing.");return}
     setLocations(locs || []);
-    const { data: toks } = await sb
+    const { data: toks, error: tokenError } = await sb
       .from("portal_tokens")
       .select("id, location_id, token, client_name, expires_at, created_at")
       .eq("company_id", company.id)
       .order("created_at", { ascending: false });
+    if(tokenError){setLoadError("Could not confirm active client links. Try refreshing.");setTokens([]);return}
     setTokens(toks || []);
-    const { data: msgs } = await sb
+    const { data: msgs, error: messageError } = await sb
       .from("portal_messages")
       .select("*, locations(name)")
       .eq("company_id", company.id)
       .order("created_at", { ascending: false })
       .limit(50);
+    if(messageError){setLoadError("Client messages are temporarily unavailable. This does not mean there are no messages.");setMessages([]);return}
     setMessages(msgs || []);
   }
 
@@ -111,10 +116,17 @@ export default function ClientPortalPage() {
   }
 
   async function revoke(id) {
-    if (!confirm("Revoke this client link? It will stop working immediately.")) return;
-    const { error } = await supabase().from("portal_tokens").delete().eq("id", id);
-    if (error) alert("Could not revoke: " + error.message);
-    else load();
+    if(working || !confirm("Revoke this client link? It will stop working immediately.")) return;
+    setWorking(true);
+    try {
+      const { error } = await supabase().from("portal_tokens").delete().eq("id", id).eq("company_id", company.id);
+      if (error) throw error;
+      await load();
+    } catch (error) {
+      setLoadError(error instanceof Error ? error.message : "The client link could not be revoked.");
+    } finally {
+      setWorking(false);
+    }
   }
 
   async function copyLink(token) {
@@ -156,14 +168,32 @@ export default function ClientPortalPage() {
   }
 
   const tokenByLocation = {};
-  for (const t of tokens) tokenByLocation[t.location_id] = t;
+  for (const t of tokens) if(!tokenByLocation[t.location_id]) tokenByLocation[t.location_id] = t;
+  const now = Date.now();
+  const linkExpired = (t) => !!t?.expires_at && new Date(t.expires_at).getTime() <= now;
+  const activeLinks = locations.filter(l => tokenByLocation[l.id] && !linkExpired(tokenByLocation[l.id])).length;
+  const expiredLinks = locations.filter(l => tokenByLocation[l.id] && linkExpired(tokenByLocation[l.id])).length;
+  const missingLinks = locations.filter(l => !tokenByLocation[l.id]).length;
+  const unreadMessages = messages.filter(m => !m.read_at).length;
 
   return (
     <div>
       <p className="eyebrow">CLIENT PORTAL</p>
       <h2 style={{ fontSize: "1.8rem" }}>Client messages</h2>
+      <nav className="panel" aria-label="Client Portal management quick access" style={{padding:16,margin:"16px 0"}}>
+        <strong>Quick Access / Acceso rápido</strong>
+        <div style={{display:"flex",flexWrap:"wrap",gap:12,marginTop:8}}>
+          <a href="#portal-management-messages">Client messages</a>
+          <a href="#portal-management-links">Location links</a>
+        </div>
+        <p style={{fontSize:"0.85rem",marginBottom:0}}>Unread messages: {loadError?"Unavailable":unreadMessages} · Active links: {activeLinks} · Expired: {expiredLinks} · Not generated: {missingLinks}</p>
+      </nav>
+      {loadError&&<section className="panel" role="alert" style={{padding:16,border:"1px solid #b3261e",margin:"12px 0"}}>
+        <strong>Portal status incomplete</strong><p>{loadError}</p><button type="button" disabled={working} style={button} onClick={() => void load()}>Retry customer portal status</button>
+      </section>}
+      <h3 id="portal-management-messages">Customer Service inbox</h3>
       <div style={{ display: "grid", gap: 10, margin: "18px 0 28px" }}>
-        {messages.length === 0 && <p style={{ color: "var(--muted)" }}>No client messages yet.</p>}
+        {!loadError && messages.length === 0 && <p style={{ color: "var(--muted)" }}>No client messages yet.</p>}
         {messages.map((m) => (
           <div key={m.id} className="portal-card" style={{ minHeight: 0, padding: "14px 18px", opacity: m.read_at ? 0.75 : 1 }}>
             <span className="card-kicker">
@@ -183,7 +213,7 @@ export default function ClientPortalPage() {
         ))}
       </div>
 
-      <h2 style={{ fontSize: "1.8rem" }}>Client portal links</h2>
+      <h2 id="portal-management-links" style={{ fontSize: "1.8rem" }}>Client portal links</h2>
       <p style={{ color: "var(--muted)" }}>
         Share a read-only link per location. Clients see upcoming visits, recent inspection
         scores, and open work orders — no login needed, no financial or staff details.
@@ -199,7 +229,7 @@ export default function ClientPortalPage() {
               {t ? (
                 <div style={{ marginTop: 10 }}>
                   <p style={{ color: "var(--success-ink)", fontWeight: 700, fontSize: "0.9rem" }}>
-                    ✅ Link active
+                    {linkExpired(t) ? "⚠️ Link expired — rotate before sharing" : "✅ Link active"}
                   </p>
                   <p style={{ fontSize: "0.85rem", color: "var(--muted)", wordBreak: "break-all" }}>
                     {typeof window !== "undefined" ? `${window.location.origin}/portal/${t.token}` : ""}
@@ -212,7 +242,7 @@ export default function ClientPortalPage() {
                   <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
                     <button onClick={() => copyLink(t.token)} style={button}>Copy link</button>
                     <button onClick={() => regenerate(t)} disabled={working} style={button}>New link</button>
-                    <button onClick={() => revoke(t.id)} style={dangerButton}>Revoke</button>
+                    <button onClick={() => revoke(t.id)} disabled={working} style={dangerButton}>Revoke</button>
                   </div>
                 </div>
               ) : (
