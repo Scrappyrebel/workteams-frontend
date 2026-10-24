@@ -24,6 +24,56 @@ export default function ClientPortalPage() {
   const allowed = canUseWithRole(company?.effectiveTier || company?.tier, "portal", member?.role);
 
   const [messages, setMessages] = useState([]);
+  const [pilotRequested,setPilotRequested]=useState(null);
+  const [pilotBusy,setPilotBusy]=useState(false);
+  const [pilotError,setPilotError]=useState("");
+  const [pilotNotice,setPilotNotice]=useState("");
+  const livePilotCompany=useRef(company?.id);
+  livePilotCompany.current=company?.id;
+
+  async function loadPilot(){
+    const companyId=company?.id;
+    if(!companyId||!isManager)return;
+    setPilotError("");
+    const {data,error}=await supabase().rpc("get_workteams_client_portal_pilot_status",{
+      p_company_id:companyId
+    });
+    if(livePilotCompany.current!==companyId)return;
+    if(error||data?.ok!==true||typeof data.pilot_requested!=="boolean"||
+      data.customer_login_enabled!==false){
+      setPilotRequested(null);
+      setPilotError("Authenticated customer pilot status could not be confirmed. Refresh before making changes.");
+      return;
+    }
+    setPilotRequested(data.pilot_requested);
+  }
+  async function updatePilot(requested){
+    const companyId=company?.id;
+    if(!companyId||!isManager||pilotBusy||pilotRequested===null)return;
+    const question=requested?
+      "Request the authenticated customer portal pilot for this company? This does not activate logins or share records.":
+      "Withdraw this company from the authenticated customer portal pilot?";
+    if(!window.confirm(question))return;
+    setPilotBusy(true);setPilotError("");setPilotNotice("");
+    try{
+      const {data,error}=await supabase().rpc("set_workteams_client_portal_pilot_request",{
+        p_company_id:companyId,p_requested:requested
+      });
+      if(livePilotCompany.current!==companyId)return;
+      if(error||data?.ok!==true||data.pilot_requested!==requested||
+        data.customer_login_enabled!==false)
+        throw new Error(error?.message||"The pilot preference could not be verified.");
+      setPilotRequested(requested);
+      setPilotNotice(requested?
+        "Pilot request saved. Authenticated customer login remains disabled; no invitations or customer data were shared.":
+        "Pilot request withdrawn. Existing location links and customer data are unchanged.");
+    }catch(err){
+      if(livePilotCompany.current===companyId){
+        setPilotRequested(null);
+        setPilotError(err instanceof Error?err.message:"Pilot request status is unknown. Please refresh.");
+      }
+    }finally{setPilotBusy(false)}
+  }
 
   async function load() {
     setLoadError("");
@@ -59,7 +109,11 @@ export default function ClientPortalPage() {
   }
 
   useEffect(() => {
-    if (!loading && company && allowed && isManager) load();
+    if (!loading && company && allowed && isManager){
+      load();
+      setPilotRequested(null);setPilotNotice("");
+      void loadPilot();
+    }else setPilotRequested(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loading, company, allowed]);
 
@@ -273,6 +327,33 @@ export default function ClientPortalPage() {
       {loadError&&<section className="panel" role="alert" style={{padding:16,border:"1px solid #b3261e",margin:"12px 0"}}>
         <strong>Portal status incomplete</strong><p>{loadError}</p><button type="button" disabled={working} style={button} onClick={() => void load()}>Retry customer portal status</button>
       </section>}
+      <section className="panel" id="portal-identity-pilot"
+        style={{padding:22,margin:"18px 0",border:"1px solid var(--line)"}}>
+        <h3 style={{marginTop:0}}>Authenticated Customer Portal pilot / Prueba del portal con inicio de sesión</h3>
+        <p style={{fontSize:"0.9rem",color:"var(--muted)"}}>
+          WorkTeams currently uses private links for individual locations. A separate,
+          verified customer-account system is being built. Requesting the pilot does
+          not create accounts, invite customers, enable downloads, share invoices or
+          change the access available through existing location links.
+        </p>
+        <p role="status"><strong>Authenticated customer login: disabled / Desactivado</strong></p>
+        {pilotError&&<p role="alert" style={{color:"#b3261e"}}>{pilotError}</p>}
+        {pilotNotice&&<p role="status">{pilotNotice}</p>}
+        {pilotRequested===null?
+          <button type="button" style={button} disabled={pilotBusy}
+            onClick={()=>void loadPilot()}>Recheck pilot status / Revisar estado</button>:
+          <div style={{display:"flex",flexWrap:"wrap",alignItems:"center",gap:12}}>
+            <span><strong>{pilotRequested?
+              "Pilot requested / Prueba solicitada":
+              "Not requested / No solicitado"}</strong></span>
+            <button type="button" style={button} disabled={pilotBusy||working}
+              onClick={()=>void updatePilot(!pilotRequested)}>
+              {pilotBusy?"Saving…":pilotRequested?
+                "Withdraw pilot request / Cancelar solicitud":
+                "Request pilot / Solicitar prueba"}
+            </button>
+          </div>}
+      </section>
       <h3 id="portal-management-messages">Customer Service inbox &amp; responses</h3>
       {responseError&&<p role="alert" style={{color:"#b3261e"}}>{responseError}</p>}
       {responseNotice&&<p role="status">{responseNotice}</p>}
