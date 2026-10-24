@@ -57,7 +57,7 @@ for(const term of [
  "latestLanguage.current=next",
  'void refresh({silent:true})',
  "No se pudieron verificar sus ubicaciones.",
- "Los expedientes del personal",
+ "los expedientes del personal",
  "setLocations([]);setNotice(\"\")",
  'rpc("get_my_workteams_customer_identity")'
 ])assert.ok(page.includes(term),"Missing customer portal bilingual/revocation consistency: "+term);
