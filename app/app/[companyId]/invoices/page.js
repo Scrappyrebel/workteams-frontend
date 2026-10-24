@@ -48,7 +48,7 @@ export default function InvoicesPage() {
 
   async function load() {
     const sb = supabase();
-    // Migration 060 creates the invoices table. Until the owner runs it,
+    // Migration 061 creates the invoices table. Until the owner runs it,
     // the query errors — show a calm "not switched on yet" state instead
     // of breaking the page (the app must work before the migration).
     const { data, error: invError } = await sb
@@ -159,7 +159,7 @@ export default function InvoicesPage() {
             <strong>Invoicing isn't switched on for this database yet.</strong>
           </p>
           <p style={{ color: "var(--muted)", marginBottom: 0 }}>
-            A one-time database update (migration 060) creates the invoice tables. Until the
+            A one-time database update (migration 061) creates the invoice tables. Until the
             owner runs it, this page stays empty — nothing else in the app is affected.
           </p>
         </section>

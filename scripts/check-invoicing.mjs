@@ -3,18 +3,18 @@ import assert from "node:assert/strict";
 import { readFileSync, existsSync } from "node:fs";
 const read = (p) => readFileSync(p, "utf8");
 
-// Customer invoicing (migration 060) invariants. Invoicing is a financial
+// Customer invoicing (migration 061) invariants. Invoicing is a financial
 // surface: owner/admin ONLY at the RLS level, payments are immutable
 // originals corrected by void-with-reason, issued invoices are never
 // edited or hard-deleted, totals/paid state are trigger-derived, and the
 // app must stay calm before the owner runs the migration.
 
-const SQL_PATH = "supabase/060_invoicing.sql";
+const SQL_PATH = "supabase/061_invoicing.sql";
 const TABLES = ["invoices", "invoice_line_items", "invoice_payments", "invoice_counters"];
 const sql = read(SQL_PATH);
 const sqlLower = sql.toLowerCase();
 
-test("Migration 060 creates the four invoicing tables with RLS on", () => {
+test("Migration 061 creates the four invoicing tables with RLS on", () => {
   for (const t of TABLES) {
     assert.ok(
       sqlLower.includes(`create table if not exists public.${t}`),
@@ -132,7 +132,7 @@ test("UI: nav is manager-only and both pages gate on owner/admin and degrade pre
     assert.ok(existsSync(p), `${p} must exist`);
     const src = read(p);
     assert.ok(src.includes('"owner"') && src.includes('"admin"'), `${p} must gate on owner/admin roles`);
-    assert.ok(src.includes("060"), `${p} must handle the pre-migration state (migration 060 note)`);
+    assert.ok(src.includes("061"), `${p} must handle the pre-migration state (migration 061 note)`);
     assert.ok(!src.includes("time_entries") && !src.includes("shift_videos") && !src.includes("comm_book"),
       `${p} must not touch the protected time clock / video / book surfaces`);
   }

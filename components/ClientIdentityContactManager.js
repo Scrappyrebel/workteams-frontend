@@ -1,8 +1,10 @@
 "use client";
-import {useEffect,useState} from "react";
+import {useEffect,useRef,useState} from "react";
 import {supabase} from "../lib/supabase";
+import {makeCustomerInvitation} from "../lib/customer-invitation.mjs";
+import {findReadyCustomerContacts} from "../lib/customer-pilot-readiness.mjs";
 
-export default function ClientIdentityContactManager({companyId,locations,pilotRequested}){
+export default function ClientIdentityContactManager({companyId,locations,pilotRequested,pilotEnabled}){
  const [contacts,setContacts]=useState([]);
  const [email,setEmail]=useState("");
  const [name,setName]=useState("");
@@ -12,36 +14,50 @@ export default function ClientIdentityContactManager({companyId,locations,pilotR
  const [error,setError]=useState("");
  const [notice,setNotice]=useState("");
  const [loaded,setLoaded]=useState(false);
+ const [serverLoginEnabled,setServerLoginEnabled]=useState(null);
+ const [copyBusy,setCopyBusy]=useState(false);
+ const currentCompany=useRef(companyId);
+ currentCompany.current=companyId;
  const t=(en,es)=>language==="es"?es:en;
 
  async function refresh(){
-  if(!companyId||!pilotRequested)return;
-  setError("");setLoaded(false);
+  const id=companyId;
+  if(!id||!pilotRequested)return;
+  setError("");setLoaded(false);setServerLoginEnabled(null);
   const {data,error:e}=await supabase().rpc("list_workteams_customer_identity_contacts",{
-   p_company_id:companyId
+   p_company_id:id
   });
-  if(e||!data?.ok||!Array.isArray(data.contacts)||typeof data.customer_login_enabled!=="boolean"){
-   setContacts([]);setError(t("Approved contacts could not be verified. No changes were made.",
+  if(currentCompany.current!==id)return;
+  if(e||data?.ok!==true||!Array.isArray(data.contacts)||typeof data.customer_login_enabled!=="boolean"){
+   setContacts([]);setServerLoginEnabled(null);
+   setError(t("Approved contacts could not be verified. No changes were made.",
     "No fue posible verificar los contactos. No se modificó ningún registro."));
-  }else setContacts(data.contacts);
+  }else{
+   setContacts(data.contacts);
+   setServerLoginEnabled(data.customer_login_enabled);
+  }
   setLoaded(true);
  }
  useEffect(()=>{
   let active=true;
-  setContacts([]);setLoaded(false);setError("");setNotice("");
+  setContacts([]);setLoaded(false);setServerLoginEnabled(null);setError("");setNotice("");
   if(pilotRequested&&companyId){
    supabase().rpc("list_workteams_customer_identity_contacts",{
     p_company_id:companyId
    }).then(({data,error:e})=>{
     if(!active)return;
-    if(e||!data?.ok||!Array.isArray(data.contacts)||typeof data.customer_login_enabled!=="boolean")
+    if(e||data?.ok!==true||!Array.isArray(data.contacts)||typeof data.customer_login_enabled!=="boolean"){
+     setContacts([]);setServerLoginEnabled(null);
      setError("Customer contact list could not be verified.");
-    else setContacts(data.contacts);
+    }else{
+     setContacts(data.contacts);
+     setServerLoginEnabled(data.customer_login_enabled);
+    }
     setLoaded(true);
    });
   }
   return ()=>{active=false};
- },[companyId,pilotRequested]);
+ },[companyId,pilotRequested,pilotEnabled]);
 
  async function approve(e){
   e.preventDefault();
@@ -57,8 +73,11 @@ export default function ClientIdentityContactManager({companyId,locations,pilotR
     p_name:name.trim(),p_language:language,p_location_id:locationId
    });
    if(e||data?.ok!==true||typeof data.customer_login_enabled!=="boolean")throw Error(e?.message||"Approval was not confirmed.");
-   setNotice(t("Contact and one location approved. Customer account login remains disabled.",
-    "Se aprobó el contacto y una ubicación. El inicio de sesión continúa desactivado."));
+   setNotice(data.customer_login_enabled?
+    t("Contact and location approved. If the owner enabled customer login, you may copy the invitation below.",
+      "Contacto y ubicación aprobados. Si el propietario activó el acceso, puede copiar la invitación."):
+    t("Contact and location approved; customer login is still disabled until the owner activates it.",
+      "Contacto y ubicación aprobados; el acceso seguirá desactivado hasta que lo active el propietario."));
    setEmail("");setName("");await refresh();
   }catch(err){setError(err.message||"Could not approve this contact.")}finally{setBusy(false)}
  }
@@ -103,6 +122,44 @@ export default function ClientIdentityContactManager({companyId,locations,pilotR
   }catch(e){setError(e.message||"Cannot verify quality permissions.")}
   finally{setBusy(false)}
  }
+ async function copyInvitation(contact,location){
+  if(copyBusy||busy||!loaded||pilotEnabled!==true||serverLoginEnabled!==true||
+     contact.status!=="active"||location.active!==true||!contact.email)return;
+  setCopyBusy(true);setNotice("");setError("");
+  try{
+   const message=makeCustomerInvitation({
+     origin:window.location.origin,email:contact.email,
+     locationName:location.name,language:contact.language
+   });
+   if(!navigator.clipboard?.writeText)
+     throw new Error("clipboard_unavailable");
+   await navigator.clipboard.writeText(message);
+   setNotice(t("Invitation copied. No email or customer account was created or sent. Send it only to the approved contact.",
+    "Invitación copiada. No se creó ni envió ningún correo o cuenta. Compártala únicamente con el contacto autorizado."));
+  }catch(e){
+   const message=makeCustomerInvitation({
+     origin:window.location.origin,email:contact.email,
+     locationName:location.name,language:contact.language
+   });
+   window.prompt(t("Automatic copy was unavailable. Select and copy this invitation manually:",
+    "No se pudo copiar automáticamente. Seleccione y copie esta invitación:"),message);
+   setNotice(t("Manual copy dialog opened. Nothing was sent automatically.",
+    "Se abrió el diálogo para copiar manualmente. No se envió nada automáticamente."));
+  }finally{setCopyBusy(false)}
+ }
+ const approved=contacts.filter(c=>c.status==="active");
+ const activeLocations=approved.flatMap(c=>(c.locations||[]).filter(l=>l.active===true));
+ const linked=approved.filter(c=>c.account_linked===true);
+ // Readiness must belong to the SAME approved contact/location; combining
+ // one contact's confirmed account with another's grant is a false green.
+ const readyContacts=findReadyCustomerContacts(contacts);
+ const readiness=[
+  {ok:pilotRequested===true,en:"Company pilot requested",es:"Programa piloto solicitado"},
+  {ok:serverLoginEnabled===true&&pilotEnabled===true,en:"Owner activated customer login",es:"Acceso de clientes activado por el propietario"},
+  {ok:approved.length>0,en:"At least one customer contact approved",es:"Al menos un contacto autorizado"},
+  {ok:activeLocations.length>0,en:"Valid, active service-location grant",es:"Ubicación de servicio autorizada y vigente"},
+  {ok:readyContacts.length>0,en:"A confirmed customer account has an active location grant for that same contact",es:"Una cuenta confirmada tiene un permiso vigente para su propia ubicación"}
+ ];
  if(!pilotRequested)return null;
  return <section className="panel" style={{padding:20,margin:"16px 0"}}>
   <h3>{t("Verified Customer Contacts — Pilot preparation","Contactos verificados — Preparación del programa piloto")}</h3>
@@ -130,6 +187,22 @@ export default function ClientIdentityContactManager({companyId,locations,pilotR
   </form>
   <p role="status" style={{fontWeight:600}}>{notice}</p>
   {error&&<p role="alert" style={{color:"#b3261e"}}>{error}</p>}
+  <section aria-label="Customer pilot readiness" style={{border:"1px solid var(--line,#bbb)",borderRadius:8,padding:12,margin:"16px 0"}}>
+   <h4>{t("Customer pilot readiness","Preparación del programa piloto")}</h4>
+   <p style={{fontSize:13}}>{t(
+    "These checks use the current manager-authorized server response. They do not prove a real iPhone or Android customer has tested the portal.",
+    "Estas verificaciones provienen del servidor autorizado. No demuestran pruebas reales de clientes en iPhone o Android.")}</p>
+   {readiness.map((r,i)=><p key={i} style={{margin:"5px 0"}}>
+     <strong>{r.ok?"✓":"○"}</strong> {language==="es"?r.es:r.en}
+   </p>)}
+   <p><strong>{t("Software readiness","Preparación técnica")}: {readiness.filter(r=>r.ok).length}/{readiness.length}</strong></p>
+   {readyContacts.length===0&&<p role="status" style={{fontSize:13}}>
+     {t("No single approved contact has BOTH a linked confirmed account and an active location. Complete those two steps for the same customer before field testing.",
+      "Ningún contacto autorizado tiene AMBOS: una cuenta confirmada vinculada y una ubicación vigente. Complete los dos pasos con el mismo cliente antes de probar.")}
+   </p>}
+   <p style={{fontSize:13}}>{t("Real customer sign-in, request submission, revocation and phone acceptance: NOT VERIFIED until completed on customer devices.",
+    "Inicio de sesión real, solicitudes, revocación y pruebas en teléfonos: NO VERIFICADO hasta probarlo con clientes.")}</p>
+  </section>
   <h4>{t("Company contacts","Contactos de la empresa")}</h4>
   <button type="button" disabled={busy} onClick={()=>void refresh()}>
    {t("Refresh verified contacts","Actualizar contactos")}
@@ -139,13 +212,25 @@ export default function ClientIdentityContactManager({companyId,locations,pilotR
   {contacts.map(c=><div key={c.id} style={{borderTop:"1px solid var(--border,#ccc)",padding:"12px 0"}}>
    <strong>{c.name||"Customer"}</strong> — <span>{c.email}</span>
    <p style={{margin:"4px 0"}}>{t("Status","Estado")}: {c.status}</p>
+   <p style={{fontSize:13}}>
+    {t("Verified customer account: ","Cuenta verificada de cliente: ")}
+    <strong>{c.account_linked?t("Linked","Vinculada"):t("Not yet linked","Aún sin vincular")}</strong>
+   </p>
    <div style={{display:"grid",gap:8,margin:"10px 0"}}>
     {(c.locations||[]).length===0&&<p>{t("No approved locations","No hay ubicaciones autorizadas")}</p>}
     {(c.locations||[]).map(l=><div key={l.id}
       style={{border:"1px solid var(--line,#ccc)",padding:10,borderRadius:7}}>
       <strong>{l.name}</strong> {l.revoked&&t("(revoked)","(revocado)")}
+      <p style={{fontSize:13,margin:"4px 0"}}>{l.active===true?
+       t("Approved location active","Ubicación autorizada activa"):
+       t("Location grant unavailable or expired","Permiso de ubicación no vigente")}</p>
       <p style={{fontSize:13,margin:"6px 0"}}>{t("Published quality access: ","Acceso a informes de calidad: ")}
        {l.quality_access?t("Approved","Autorizado"):t("Private","Privado")}</p>
+      {c.status==="active"&&l.active===true&&pilotEnabled===true&&serverLoginEnabled===true&&
+       <button type="button" disabled={copyBusy||busy} onClick={()=>void copyInvitation(c,l)}>
+        {copyBusy?t("Copying…","Copiando…"):
+         t("Copy private customer invitation","Copiar invitación para el cliente")}
+       </button>}
       {c.status==="active"&&!l.revoked&&l.basic_portal&&<button type="button"
        disabled={busy||!loaded}
        onClick={()=>void changeQuality(c,l,!l.quality_access)}>

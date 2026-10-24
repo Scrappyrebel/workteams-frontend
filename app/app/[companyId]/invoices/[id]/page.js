@@ -62,7 +62,7 @@ export default function InvoiceDetailPage() {
       .eq("company_id", company.id)
       .single();
     if (invError) {
-      // A missing table (migration 060 not run yet) reads the same as a
+      // A missing table (migration 061 not run yet) reads the same as a
       // load failure from here; show the calm state, never a crash.
       setUnavailable(true);
       return;
@@ -339,7 +339,7 @@ export default function InvoiceDetailPage() {
             <strong>Invoicing isn't switched on for this database yet.</strong>
           </p>
           <p style={{ color: "var(--muted)", marginBottom: 0 }}>
-            A one-time database update (migration 060) creates the invoice tables. Until the
+            A one-time database update (migration 061) creates the invoice tables. Until the
             owner runs it, invoices can't be opened — nothing else in the app is affected.
           </p>
         </section>

@@ -1,4 +1,4 @@
--- 060: Customer invoicing (accounts receivable) for WorkTeams.
+-- 061: Customer invoicing (accounts receivable) for WorkTeams.
 --
 -- WorkTeams had NO invoicing anywhere: no invoices, no receivables, no
 -- record of what a client owes. This file adds it, following the patterns
@@ -53,7 +53,7 @@ grant select, insert, update, delete on public.invoice_counters to authenticated
 grant all on public.invoice_counters to service_role;
 
 comment on table public.invoice_counters is
- 'Per-company sequential invoice numbering for migration 060. next_number is the number the NEXT invoice in that company will claim. Written only by workteams_assign_invoice_number().';
+ 'Per-company sequential invoice numbering for migration 061. next_number is the number the NEXT invoice in that company will claim. Written only by workteams_assign_invoice_number().';
 
 -- ============ 2. Invoices ============
 create table if not exists public.invoices (
@@ -126,7 +126,7 @@ create policy "invoices owner/admin delete" on public.invoices
       and m.role in ('owner', 'admin')));
 
 comment on table public.invoices is
- 'Customer invoices (migration 060). Owner/admin only. subtotal/tax_amount/total are derived from invoice_line_items while the invoice is a draft and frozen at issue; amount_paid and the issued/paid status are derived from active invoice_payments rows. Issued invoices are never edited or deleted -- void with a recorded reason and re-issue.';
+ 'Customer invoices (migration 061). Owner/admin only. subtotal/tax_amount/total are derived from invoice_line_items while the invoice is a draft and frozen at issue; amount_paid and the issued/paid status are derived from active invoice_payments rows. Issued invoices are never edited or deleted -- void with a recorded reason and re-issue.';
 
 -- ============ 3. Invoice line items ============
 create table if not exists public.invoice_line_items (
@@ -239,7 +239,7 @@ create policy "invoice payments owner/admin update" on public.invoice_payments
 -- and the guard trigger below rejects deletes even for owners.
 
 comment on table public.invoice_payments is
- 'Per-payment ledger for customer invoices (migration 060). invoices.amount_paid is derived from the active (non-voided) rows here by trigger; a payment is never edited or deleted -- void it with a recorded reason and record a corrected payment.';
+ 'Per-payment ledger for customer invoices (migration 061). invoices.amount_paid is derived from the active (non-voided) rows here by trigger; a payment is never edited or deleted -- void it with a recorded reason and record a corrected payment.';
 
 -- ============ 5. Numbering: claim the next per-company number ============
 create or replace function public.workteams_assign_invoice_number()
