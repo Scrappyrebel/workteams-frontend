@@ -229,7 +229,7 @@ function SiteNav() {
       </nav>
       <div className="wt2-m-nav-cta">
         <Link href="/login" className="wt2-m-btn wt2-m-btn-navghost">Sign in</Link>
-        <Link href="/login" className="wt2-m-btn wt2-m-btn-primary">Start free trial</Link>
+        <Link href="/signup" className="wt2-m-btn wt2-m-btn-primary">Start free trial</Link>
       </div>
     </header>
   );
@@ -305,7 +305,7 @@ function Hero() {
             your accountant. One app, built mobile-first for the people doing the work.
           </p>
           <div className="wt2-m-cta-row">
-            <Link href="/login" className="wt2-m-btn wt2-m-btn-primary wt2-m-btn-lg wt2-m-btn-glow">
+            <Link href="/signup" className="wt2-m-btn wt2-m-btn-primary wt2-m-btn-lg wt2-m-btn-glow">
               Start my 7-day free trial
             </Link>
             <a href="#pricing" className="wt2-m-btn wt2-m-btn-hero-outline wt2-m-btn-lg">See plans &amp; pricing</a>
@@ -514,7 +514,7 @@ function Pricing({ tierKeys, prices }) {
                 ))}
               </ul>
               <Link
-                href="/login"
+                href="/signup"
                 className={featured ? "wt2-m-btn wt2-m-btn-tier-featured wt2-m-btn-block" : "wt2-m-btn wt2-m-btn-tier wt2-m-btn-block"}
               >
                 {i === 0 ? "Start free trial" : `Choose ${tier.name}`}
@@ -572,7 +572,7 @@ function FinalCta() {
     <section className="wt2-m-final">
       <h2>Ready to keep every shift covered?</h2>
       <p>Try WorkTeams free for 7 days and run your cleaning business from your pocket.</p>
-      <Link href="/login" className="wt2-m-btn wt2-m-btn-white wt2-m-btn-lg">
+      <Link href="/signup" className="wt2-m-btn wt2-m-btn-white wt2-m-btn-lg">
         Start my 7-day free trial
       </Link>
       <p className="wt2-m-final-note">7-day free trial · No card required</p>
