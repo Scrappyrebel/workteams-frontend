@@ -7,6 +7,7 @@ import { useCompany } from "../../../../lib/company-context";
 import { canUseWithRole } from "../../../../lib/tiers";
 import ClientIdentityContactManager from "../../../../components/ClientIdentityContactManager";
 import CustomerDocumentManager from "../../../../components/CustomerDocumentManager";
+import {CUSTOMER_INBOX_FILTERS,filterCustomerInbox,summarizeCustomerInbox} from "../../../../lib/customer-inbox-dashboard.mjs";
 
 export default function ClientPortalPage() {
   const { company, member, loading } = useCompany();
@@ -26,6 +27,13 @@ export default function ClientPortalPage() {
   const allowed = canUseWithRole(company?.effectiveTier || company?.tier, "portal", member?.role);
 
   const [messages, setMessages] = useState([]);
+  const [inboxFilter,setInboxFilter]=useState("attention");
+  const [inboxError,setInboxError]=useState("");
+  const [inboxCheckedAt,setInboxCheckedAt]=useState(null);
+  const liveInboxCompany=useRef(company?.id);
+  liveInboxCompany.current=company?.id;
+  const inboxStats=summarizeCustomerInbox(messages);
+  const visibleInbox=filterCustomerInbox(messages,inboxFilter);
   const [pilotRequested,setPilotRequested]=useState(null);
   const [pilotEnabled,setPilotEnabled]=useState(null);
   const [pilotCanActivate,setPilotCanActivate]=useState(false);
@@ -114,7 +122,9 @@ export default function ClientPortalPage() {
   }
 
   async function load() {
-    setLoadError("");
+    const companyId=company?.id;
+    if(!companyId||!isManager||!allowed)return;
+    setLoadError("");setInboxError("");
     const sb = supabase();
     const { data: locs, error: locError } = await sb.from("locations").select("id, name").eq("company_id", company.id).order("name");
     if(locError){setLoadError("Could not confirm service locations. Try refreshing.");return}
@@ -132,7 +142,12 @@ export default function ClientPortalPage() {
       .eq("company_id", company.id)
       .order("created_at", { ascending: false })
       .limit(50);
-    if(messageError){setLoadError("Client messages are temporarily unavailable. This does not mean there are no messages.");setMessages([]);return}
+    if(liveInboxCompany.current!==companyId)return;
+    if(messageError){
+      setInboxError("Customer request inbox could not be verified. Refresh to retry.");
+      setMessages([]);setInboxCheckedAt(null);return;
+    }
+    setInboxError("");setInboxCheckedAt(new Date());
     setMessages(msgs || []);
     setResponseDrafts(previous=>{
       const next={...previous};
@@ -147,13 +162,63 @@ export default function ClientPortalPage() {
   }
 
   useEffect(() => {
+    setMessages([]);setInboxError("");setInboxCheckedAt(null);setInboxFilter("attention");
+    setResponseDrafts({});setStatusDrafts({});setDeliveryConfirmed({});
     if (!loading && company && allowed && isManager){
-      load();
+      void load();
       setPilotRequested(null);setPilotEnabled(null);setPilotCanActivate(false);setPilotNotice("");
       void loadPilot();
     }else{setPilotRequested(null);setPilotEnabled(null);setPilotCanActivate(false);}
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loading, company, allowed]);
+
+  // Refresh only this company's inbox while the manager is viewing the tab.
+  // Never overwrite a draft response or perform a background write.
+  useEffect(()=>{
+    if(loading||!company?.id||!allowed||!isManager)return;
+    const companyId=company.id;
+    let alive=true;
+    let inFlight=false;
+    async function pollInbox(){
+      if(!alive||inFlight||document.visibilityState!=="visible"||
+         responseInFlight.current||working)return;
+      inFlight=true;
+      try{
+        const {data,error}=await supabase().from("portal_messages")
+          .select("*, locations(name)")
+          .eq("company_id",companyId)
+          .order("created_at",{ascending:false})
+          .limit(50);
+        if(!alive||liveInboxCompany.current!==companyId)return;
+        if(error){
+          // Authorization may have changed; fail closed, do not display stale data.
+          setMessages([]);
+          setInboxError("Customer request refresh failed. Check your access or retry.");
+          setInboxCheckedAt(null);
+          return;
+        }
+        setInboxError("");setInboxCheckedAt(new Date());
+        setMessages(data||[]);
+        setResponseDrafts(previous=>{
+          const next={...previous};
+          for(const m of data||[])if(next[m.id]===undefined)
+            next[m.id]=m.customer_response||"";
+          return next;
+        });
+        setStatusDrafts(previous=>{
+          const next={...previous};
+          for(const m of data||[])if(next[m.id]===undefined)
+            next[m.id]=m.customer_status||"received";
+          return next;
+        });
+      }finally{inFlight=false}
+    }
+    const timer=setInterval(()=>{void pollInbox()},30000);
+    function onVisibility(){if(document.visibilityState==="visible")void pollInbox()}
+    document.addEventListener("visibilitychange",onVisibility);
+    return ()=>{alive=false;clearInterval(timer);
+      document.removeEventListener("visibilitychange",onVisibility)};
+  },[loading,company?.id,allowed,isManager,working]);
 
   // 256-bit token from the platform CSPRNG. No Math.random() fallback:
   // if secure randomness is unavailable the link is not generated.
@@ -418,12 +483,44 @@ export default function ClientPortalPage() {
         companyId={company?.id} locations={locations}
         pilotRequested={pilotRequested} pilotEnabled={pilotEnabled}/>}
       <h3 id="portal-management-messages">Customer Service inbox &amp; responses</h3>
+      <section aria-label="Customer service inbox overview"
+        style={{border:"1px solid var(--line,#ccc)",borderRadius:10,padding:14,margin:"12px 0"}}>
+        <p style={{fontSize:"0.85rem",margin:"0 0 8px"}}>
+          New customer messages are checked every 30 seconds while this tab is visible.
+          Counts reflect only the most recent 50 requests for this company, not an all-time total.
+        </p>
+        {inboxCheckedAt&&<p style={{fontSize:"0.8rem",color:"var(--muted)"}}>
+          Last verified: {inboxCheckedAt.toLocaleTimeString()}
+        </p>}
+        {inboxError&&<p role="alert" style={{color:"#b3261e"}}>{inboxError}</p>}
+        <div style={{display:"flex",gap:12,flexWrap:"wrap",marginBottom:12}}>
+          <span><strong>{inboxStats.attention}</strong> need attention</span>
+          <span><strong>{inboxStats.unread}</strong> unread</span>
+          <span><strong>{inboxStats.open}</strong> open</span>
+          <span><strong>{inboxStats.document_copy}</strong> open contract-copy requests</span>
+        </div>
+        <label htmlFor="customer-inbox-filter" style={{display:"block",fontWeight:700,marginBottom:6}}>
+          Show customer requests / Mostrar solicitudes
+        </label>
+        <select id="customer-inbox-filter" value={inboxFilter}
+          onChange={e=>setInboxFilter(e.target.value)}
+          style={{maxWidth:360,width:"100%",padding:10,borderRadius:8}}>
+          {CUSTOMER_INBOX_FILTERS.map(f=><option key={f.id} value={f.id}>
+            {f.en} / {f.es}
+          </option>)}
+        </select>
+        <p role="status" style={{fontSize:"0.85rem"}}>
+          Showing {visibleInbox.length} matching requests from {inboxStats.recent} recent.
+        </p>
+      </section>
       {responseError&&<p role="alert" style={{color:"#b3261e"}}>{responseError}</p>}
       {responseNotice&&<p role="status">{responseNotice}</p>}
       <p style={{fontSize:"0.85rem",color:"var(--muted)"}}>Customers holding a location link can see only request category, date, status and the approved response—not private original messages or sender names. Do not enter internal notes, sensitive details or employee information.</p>
       <div style={{ display: "grid", gap: 10, margin: "18px 0 28px" }}>
-        {!loadError && messages.length === 0 && <p style={{ color: "var(--muted)" }}>No client messages yet.</p>}
-        {messages.map((m) => (
+        {!loadError&&!inboxError&&messages.length===0&&<p style={{color:"var(--muted)"}}>No recent client requests.</p>}
+        {!loadError&&!inboxError&&messages.length>0&&visibleInbox.length===0&&
+          <p style={{color:"var(--muted)"}}>No requests match this filter. Choose All recent to see the other messages.</p>}
+        {visibleInbox.map((m) => (
           <div key={m.id} className="portal-card" style={{ minHeight: 0, padding: "14px 18px", opacity: m.read_at ? 0.75 : 1 }}>
             <span className="card-kicker">
               {!m.read_at && <strong style={{ color: "var(--brand-deep)" }}>NEW • </strong>}
