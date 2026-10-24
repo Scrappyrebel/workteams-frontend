@@ -75,27 +75,38 @@ export default function PortalPage() {
     (async () => {
       try {
         const res = await fetch("/api/portal/lookup", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ token }),
+          method:"POST",headers:{"Content-Type":"application/json"},
+          body:JSON.stringify({token}),cache:"no-store",
         });
         const result = await res.json();
-        if(cancelled)return;
-        setData(result && typeof result.ok === "boolean"
-          ? result
-          : { ok: false, error: "Could not load this page. Please try again later." });
-        if (result && result.ok && result.location_address) {
-          setTempReq((t) => ({ ...t, siteAddress: t.siteAddress || result.location_address }));
+        if(cancelled||currentPortalToken.current!==token)return;
+        // Never fetch a signed contract until the exact location link is valid.
+        if(!res.ok||result?.ok!==true){
+          setData({ok:false,error:result?.error||"This location link could not be verified."});
+          return;
         }
-      } catch {
-        if(!cancelled)setData({ ok: false, error: "Could not load this page. Please try again later." });
+        setData(result);
+        if(result.location_address){
+          setTempReq(t=>({...t,siteAddress:t.siteAddress||result.location_address}));
+        }
+        setLoading(false);
+        try{
+          // The contract endpoint revalidates token, company, location and expiry.
+          const contractRes=await fetch(`/api/portal/service?token=${encodeURIComponent(token)}`,{cache:"no-store"});
+          if(!contractRes.ok)return;
+          const contractJson=await contractRes.json();
+          if(!cancelled&&currentPortalToken.current===token&&contractJson?.contract){
+            setContract(contractJson.contract);
+          }
+        }catch{/* Optional agreement must never fabricate contract data. */}
+      }catch{
+        if(!cancelled&&currentPortalToken.current===token){
+          setData({ok:false,error:"Could not load this page. Please try again later."});
+        }
+      }finally{
+        if(!cancelled&&currentPortalToken.current===token)setLoading(false);
       }
-      if(!cancelled)setLoading(false);
     })();
-    fetch(`/api/portal/service?token=${encodeURIComponent(token)}`)
-      .then((r) => r.json())
-      .then((j) => { if (!cancelled && j.contract) setContract(j.contract); })
-      .catch(() => {});
     return () => { cancelled = true; };
   }, [token]);
 
@@ -137,7 +148,7 @@ export default function PortalPage() {
 
   async function sendContact(e) {
     e.preventDefault();
-    if (!contact.body.trim()) { setActionError("Please write your message first."); return; }
+    if (!contact.body.trim()) { setActionError(t("Please write your message first.","Escriba su mensaje antes de enviarlo.")); return; }
     if(!beginAction("contact"))return;
     setContactBusy(true);
     try {
@@ -146,14 +157,14 @@ export default function PortalPage() {
         body: JSON.stringify({ token, ...contact }),
       });
       const j = await res.json();
-      if (!res.ok || j.ok !== true) throw new Error(j.error || "Message status could not be confirmed.");
+      if (!res.ok || j.ok !== true) throw new Error(j.error || t("Message status could not be confirmed.","No se pudo confirmar el mensaje."));
       setContactSent(true);
       setContact({ name: "", subject: "", body: "", category: "general" });
       // A successful message should appear in the same-token status history.
       // Failure to refresh must never be treated as failed message delivery.
       void refreshCustomerRequests(true);
     } catch (err) {
-      setActionError(err instanceof Error ? err.message : "Message status unknown. Ask the business before resending.");
+      setActionError(err instanceof Error ? err.message : t("Message status unknown. Ask the business before resending.","No se confirmó el mensaje. Consulte a la empresa antes de reenviarlo."));
     } finally {
       setContactBusy(false);finishAction("contact");
     }
@@ -161,8 +172,8 @@ export default function PortalPage() {
 
   async function signAmendment(e) {
     e.preventDefault();
-    if (!signingAmend || !signName.trim()) { setActionError("Please type your name to sign."); return; }
-    if (portalAction.current || !window.confirm("Sign this amendment? This makes the changes part of your contract.")) return;
+    if (!signingAmend || !signName.trim()) { setActionError(t("Please type your name to sign.","Escriba su nombre para firmar.")); return; }
+    if (portalAction.current || !window.confirm(t("Sign this amendment? This makes the changes part of your contract.","¿Firmar esta modificación? Los cambios pasarán a formar parte de su contrato."))) return;
     if(!beginAction("sign"))return;
     setSignBusy(true);
     try {
@@ -171,12 +182,12 @@ export default function PortalPage() {
         body: JSON.stringify({ sign_token: signingAmend.sign_token, name: signName.trim() }),
       });
       const j = await res.json();
-      if (!res.ok || j.ok !== true) throw new Error(j.error || "Signature status could not be confirmed.");
+      if (!res.ok || j.ok !== true) throw new Error(j.error || t("Signature status could not be confirmed.","No se pudo confirmar la firma."));
       setSigningAmend(null);
       setSignName("");
       window.location.reload();
     } catch (err) {
-      setActionError(err instanceof Error ? err.message : "Signature status unknown. Ask the business before signing again.");
+      setActionError(err instanceof Error ? err.message : t("Signature status unknown. Ask the business before signing again.","No se confirmó la firma. Consulte a la empresa antes de firmar de nuevo."));
     } finally {
       setSignBusy(false);finishAction("sign");
     }
@@ -184,7 +195,7 @@ export default function PortalPage() {
 
   async function requestClean(e) {
     e.preventDefault();
-    if (!cleanReq.date) { setActionError("Pick a date for the extra service."); return; }
+    if (!cleanReq.date) { setActionError(t("Pick a date for the extra service.","Seleccione una fecha para el servicio adicional.")); return; }
     if(!beginAction("service"))return;
     setCleanBusy(true);
     try {
@@ -193,11 +204,11 @@ export default function PortalPage() {
         body: JSON.stringify({ token, ...cleanReq }),
       });
       const j = await res.json();
-      if (!res.ok || j.ok !== true) throw new Error(j.error || "Service request could not be confirmed.");
+      if (!res.ok || j.ok !== true) throw new Error(j.error || t("Service request could not be confirmed.","No se pudo confirmar la solicitud de servicio."));
       setCleanDone({ kind: cleanReq.kind, price: j.price });
       setCleanReq({ kind: "extra", date: "", notes: "" });
     } catch (err) {
-      setActionError(err instanceof Error ? err.message : "Service status unknown. Check with the business before retrying.");
+      setActionError(err instanceof Error ? err.message : t("Service status unknown. Check with the business before retrying.","No se confirmó la solicitud. Consulte a la empresa antes de reintentar."));
     } finally { setCleanBusy(false);finishAction("service"); }
   }
 
@@ -211,17 +222,17 @@ export default function PortalPage() {
         body: JSON.stringify({ token, action: "request", ...tempReq }),
       });
       const j = await res.json();
-      if (!res.ok || j.ok !== true) throw new Error(j.error || "Temp staffing request could not be confirmed.");
+      if (!res.ok || j.ok !== true) throw new Error(j.error || t("Temp staffing request could not be confirmed.","No se pudo confirmar la solicitud de personal temporal."));
       setTempDone(true);
     } catch (err) {
-      setActionError(err instanceof Error ? err.message : "Temp request status unknown. Contact the business before resending.");
+      setActionError(err instanceof Error ? err.message : t("Temp request status unknown. Contact the business before resending.","No se confirmó la solicitud de personal. Contacte a la empresa antes de reenviarla."));
     } finally { setTempBusy(false);finishAction("temp"); }
   }
 
   async function confirmHours(e, requestId) {
     e.preventDefault();
     const hours = parseFloat(confirming[requestId]);
-    if (!Number.isFinite(hours) || hours < 0) { setActionError("Enter the hours worked."); return; }
+    if (!Number.isFinite(hours) || hours < 0) { setActionError(t("Enter the hours worked.","Ingrese las horas trabajadas.")); return; }
     if(!beginAction("hours"))return;
     setConfirmBusy(requestId);
     try {
@@ -230,7 +241,7 @@ export default function PortalPage() {
         body: JSON.stringify({ token, action: "confirm_hours", requestId, hours }),
       });
       const j = await res.json();
-      if (!res.ok || j.ok !== true) throw new Error(j.error || "Hours confirmation could not be verified.");
+      if (!res.ok || j.ok !== true) throw new Error(j.error || t("Hours confirmation could not be verified.","No se pudo verificar la confirmación de horas."));
       window.location.reload();
     } catch (err) {
       setActionError(err instanceof Error ? err.message : "Hours confirmation status unknown. Check before retrying.");
@@ -292,7 +303,7 @@ export default function PortalPage() {
                 <a href="#portal-documents">{t("Documents & agreements","Documentos y contratos")}</a>
                 <a href="#portal-work">{t("Open work","Trabajos pendientes")}</a>
                 {contract && <a href="#portal-contract">{t("Contract & scope","Contrato y alcance")}</a>}
-                {data?.amendments?.length > 0 && <a href="#portal-amendments">Contract amendments{dueAmendments>0? ` (${dueAmendments} to sign)` : ""}</a>}
+                {data?.amendments?.length > 0 && <a href="#portal-amendments">{t("Contract amendments","Modificaciones del contrato")}{dueAmendments>0? ` (${dueAmendments} ${t("to sign","por firmar")})` : ""}</a>}
                 <a href="#portal-extra">{t("Extra service","Servicio adicional")}</a>
                 {data.temp_enabled && <a href="#portal-temp">{t("Temp staffing","Personal temporal")}</a>}
                 <a href="#portal-contact">{t("Contact us","Contáctenos")}</a>
@@ -300,7 +311,7 @@ export default function PortalPage() {
               </div>
               <p style={{fontSize:"0.85rem",color:"var(--muted)",marginBottom:0}}>Amendments awaiting signature: {dueAmendments} · Temp hours to confirm: {hoursToConfirm}. This secure link is for this location only.</p>
             </nav>
-            {actionError && <div role="alert" className="panel" style={{padding:16,border:"1px solid #b3261e",margin:"12px 0"}}><strong>{t("Action not confirmed","Acción no confirmada")}</strong><p>{actionError}</p><p style={{fontSize:"0.82rem"}}>If your connection stopped after sending, contact the business before submitting the same request again.</p></div>}
+            {actionError && <div role="alert" className="panel" style={{padding:16,border:"1px solid #b3261e",margin:"12px 0"}}><strong>{t("Action not confirmed","Acción no confirmada")}</strong><p>{actionError}</p><p style={{fontSize:"0.82rem"}}>{t("If your connection stopped after sending, contact the business before submitting the same request again.","Si se perdió la conexión después del envío, consulte a la empresa antes de enviar la misma solicitud nuevamente.")}</p></div>}
 
             <section className="panel" style={{ padding: 22, margin: "18px 0" }}>
               <h3 id="portal-visits" style={{ marginTop: 0 }}>{t("Upcoming visits","Próximas visitas")}</h3>
