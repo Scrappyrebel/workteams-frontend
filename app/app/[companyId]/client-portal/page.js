@@ -7,6 +7,7 @@ import { useCompany } from "../../../../lib/company-context";
 import { canUseWithRole } from "../../../../lib/tiers";
 import ClientIdentityContactManager from "../../../../components/ClientIdentityContactManager";
 import CustomerDocumentManager from "../../../../components/CustomerDocumentManager";
+import PublishedServiceScheduleManager from "../../../../components/PublishedServiceScheduleManager";
 
 export default function ClientPortalPage() {
   const { company, member, loading } = useCompany();
@@ -417,6 +418,7 @@ export default function ClientPortalPage() {
       {pilotRequested===true&&<ClientIdentityContactManager
         companyId={company?.id} locations={locations}
         pilotRequested={pilotRequested} pilotEnabled={pilotEnabled}/>}
+      {pilotRequested===true&&<PublishedServiceScheduleManager companyId={company?.id}/>}
       <h3 id="portal-management-messages">Customer Service inbox &amp; responses</h3>
       {responseError&&<p role="alert" style={{color:"#b3261e"}}>{responseError}</p>}
       {responseNotice&&<p role="status">{responseNotice}</p>}
