@@ -211,6 +211,11 @@ export default function ClientPortalPage() {
             next[m.id]=m.customer_status||"received";
           return next;
         });
+      }catch{
+        if(alive&&liveInboxCompany.current===companyId){
+          setMessages([]);setInboxCheckedAt(null);
+          setInboxError("Customer request refresh is unavailable. Check your connection and retry.");
+        }
       }finally{inFlight=false}
     }
     const timer=setInterval(()=>{void pollInbox()},30000);
