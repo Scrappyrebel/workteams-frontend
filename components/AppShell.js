@@ -28,6 +28,7 @@ const NAV = [
   { key: "supplies", label: "Supplies", href: (c) => `/app/${c}/supplies`, minRole: "manager" },
   { key: "portal", label: "Client Portal", href: (c) => `/app/${c}/client-portal`, minRole: "manager" },
   { key: "profitability", label: "Profitability", href: (c) => `/app/${c}/profitability`, minRole: "manager" },
+  { key: "invoices", label: "Invoices", href: (c) => `/app/${c}/invoices`, minRole: "manager" },
   { key: "plans", label: "Plans", href: (c) => `/app/${c}/plans`, minRole: null },
   { key: "settings", label: "Settings", href: (c) => `/app/${c}/settings`, minRole: "owner" },
   { key: "contracts", label: "Contracts", href: (c) => `/app/${c}/contracts`, minRole: "manager" },
