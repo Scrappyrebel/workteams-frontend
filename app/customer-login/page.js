@@ -15,18 +15,35 @@ export default function CustomerLogin(){
  useEffect(()=>{
   const params=new URLSearchParams(window.location.search);
   if(params.get("mode")==="create")setMode("create");
-  if(params.get("lang")==="es")setLanguage("es");
+  const supplied=params.get("lang");
+  let preferred="en";
+  try{
+   const saved=window.localStorage.getItem("workteams-customer-portal-language");
+   preferred=supplied==="es"?"es":supplied==="en"?"en":
+    saved==="es"?"es":saved==="en"?"en":
+    navigator.language.toLowerCase().startsWith("es")?"es":"en";
+   window.localStorage.setItem("workteams-customer-portal-language",preferred);
+  }catch{preferred=supplied==="es"?"es":"en"}
+  setLanguage(preferred);
   if(params.get("verified")==="1")setNotice(
-   params.get("lang")==="es"?
+   preferred==="es"?
    "Si confirmó su correo electrónico, inicie sesión para comprobar su acceso autorizado.":
    "If you confirmed your email address, sign in to check your approved customer access."
   );
   if(params.get("reset")==="1")setNotice(
-   params.get("lang")==="es"?
+   preferred==="es"?
    "Inicie sesión con su contraseña actualizada.":
    "Sign in using your updated password."
   );
  },[]);
+ function chooseLanguage(next){
+  const lang=next==="es"?"es":"en";
+  setLanguage(lang);
+  try{window.localStorage.setItem("workteams-customer-portal-language",lang)}catch{}
+  const url=new URL(window.location.href);
+  url.searchParams.set("lang",lang);
+  window.history.replaceState({},"",url.toString());
+ }
  async function submit(e){
   e.preventDefault();if(busy)return;
   setBusy(true);setError("");setNotice("");
@@ -58,7 +75,12 @@ export default function CustomerLogin(){
     if(failure)throw failure;
     window.location.assign("/customer-portal");
    }
-  }catch(err){setError(err.message||t("Sign-in failed.","No se pudo iniciar sesión."))}
+  }catch(err){
+   setError(t(
+    mode==="create"?"Could not create the account. Check the email or try again.":"Sign-in failed. Check your email and password.",
+    mode==="create"?"No se pudo crear la cuenta. Revise el correo e inténtelo de nuevo.":"No se pudo iniciar sesión. Revise el correo y la contraseña."
+   ));
+  }
   finally{setBusy(false)}
  }
  return <main className="site-shell" style={{maxWidth:580,margin:"0 auto"}}>
@@ -67,7 +89,7 @@ export default function CustomerLogin(){
    <h1>{t("Verified Customer Portal","Portal de clientes verificados")}</h1>
    <label htmlFor="wt-customer-language">Language / Idioma</label>
    <select id="wt-customer-language" value={language}
-    onChange={e=>setLanguage(e.target.value==="es"?"es":"en")}>
+    onChange={e=>chooseLanguage(e.target.value)}>
     <option value="en">English</option><option value="es">Español</option>
    </select>
    <p>{t(
