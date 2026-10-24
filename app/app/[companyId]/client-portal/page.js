@@ -412,7 +412,8 @@ export default function ClientPortalPage() {
           </div>}
       </section>
       {pilotRequested===true&&<ClientIdentityContactManager
-        companyId={company?.id} locations={locations} pilotRequested={pilotRequested}/>}
+        companyId={company?.id} locations={locations}
+        pilotRequested={pilotRequested} pilotEnabled={pilotEnabled}/>}
       <h3 id="portal-management-messages">Customer Service inbox &amp; responses</h3>
       {responseError&&<p role="alert" style={{color:"#b3261e"}}>{responseError}</p>}
       {responseNotice&&<p role="status">{responseNotice}</p>}
