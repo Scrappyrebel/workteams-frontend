@@ -44,7 +44,7 @@ for(const term of [
  "pendingKey.current=null",
  "p_company_id:companyId,p_location_id:locationId",
  "Request a contract copy",
- "Solicitud",
+ "Historial de solicitudes",
  "Refresh request statuses",
  "role=\"alert\""
 ])assert.ok(requests.includes(term),"Missing authenticated customer request UI: "+term);
