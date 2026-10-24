@@ -498,7 +498,7 @@ export default function ClientPortalPage() {
       {pilotRequested===true&&<ClientIdentityContactManager
         companyId={company?.id} locations={locations}
         pilotRequested={pilotRequested} pilotEnabled={pilotEnabled}/>}
-      {pilotRequested===true&&<PublishedServiceScheduleManager companyId={company?.id}/>}
+      {pilotRequested===true&&<PublishedServiceScheduleManager companyId={company?.id} language={managerLanguage}/>}
       <h3 id="portal-management-messages">{tr("Customer Service inbox & responses","Bandeja de Servicio al Cliente y respuestas")}</h3>
       <section aria-label="Customer service inbox overview"
         style={{border:"1px solid var(--line,#ccc)",borderRadius:10,padding:14,margin:"12px 0"}}>

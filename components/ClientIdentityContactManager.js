@@ -19,24 +19,31 @@ export default function ClientIdentityContactManager({companyId,locations,pilotR
  const currentCompany=useRef(companyId);
  currentCompany.current=companyId;
  const t=(en,es)=>language==="es"?es:en;
+ const latestLanguage=useRef(language);
+ latestLanguage.current=language;
+ const liveT=(en,es)=>latestLanguage.current==="es"?es:en;
 
  async function refresh(){
   const id=companyId;
   if(!id||!pilotRequested)return;
   setError("");setLoaded(false);setServerLoginEnabled(null);
-  const {data,error:e}=await supabase().rpc("list_workteams_customer_identity_contacts",{
-   p_company_id:id
-  });
-  if(currentCompany.current!==id)return;
-  if(e||data?.ok!==true||!Array.isArray(data.contacts)||typeof data.customer_login_enabled!=="boolean"){
-   setContacts([]);setServerLoginEnabled(null);
-   setError(t("Approved contacts could not be verified. No changes were made.",
-    "No fue posible verificar los contactos. No se modificó ningún registro."));
-  }else{
+  try{
+   const {data,error:e}=await supabase().rpc("list_workteams_customer_identity_contacts",{
+    p_company_id:id
+   });
+   if(currentCompany.current!==id)return;
+   if(e||data?.ok!==true||!Array.isArray(data.contacts)||typeof data.customer_login_enabled!=="boolean")
+    throw Error("contacts-unverified");
    setContacts(data.contacts);
    setServerLoginEnabled(data.customer_login_enabled);
+  }catch{
+   if(currentCompany.current!==id)return;
+   setContacts([]);setServerLoginEnabled(null);
+   setError(liveT("Approved contacts could not be verified. No changes were made.",
+    "No fue posible verificar los contactos. No se modificó ningún registro."));
+  }finally{
+   if(currentCompany.current===id)setLoaded(true);
   }
-  setLoaded(true);
  }
  useEffect(()=>{
   let active=true;
@@ -48,12 +55,18 @@ export default function ClientIdentityContactManager({companyId,locations,pilotR
     if(!active)return;
     if(e||data?.ok!==true||!Array.isArray(data.contacts)||typeof data.customer_login_enabled!=="boolean"){
      setContacts([]);setServerLoginEnabled(null);
-     setError("Customer contact list could not be verified.");
+     setError(liveT("Customer contact list could not be verified.",
+      "No se pudo verificar la lista de contactos de clientes."));
     }else{
      setContacts(data.contacts);
      setServerLoginEnabled(data.customer_login_enabled);
     }
     setLoaded(true);
+   }).catch(()=>{
+    if(!active||currentCompany.current!==companyId)return;
+    setContacts([]);setServerLoginEnabled(null);setLoaded(true);
+    setError(liveT("Customer contact list could not be verified.",
+     "No se pudo verificar la lista de contactos de clientes."));
    });
   }
   return ()=>{active=false};
