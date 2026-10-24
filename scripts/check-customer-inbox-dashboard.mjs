@@ -33,13 +33,13 @@ for(const v of [
  'document.removeEventListener("visibilitychange",onVisibility)',
  'liveInboxCompany.current!==companyId',
  'setMessages([])',
- 'setInboxError("Customer request refresh failed.',
+ 'setInboxError(tr("Customer request refresh failed.',
  'if(next[m.id]===undefined)',
  'CUSTOMER_INBOX_FILTERS.map',
  'filterCustomerInbox(messages,inboxFilter)',
  'summarizeCustomerInbox(messages)',
  'visibleInbox.map((m) =>',
- 'most recent 50 requests for this company'
+ 'most recent 50 requests, not all-time totals.'
 ])assert.ok(page.includes(v),"Missing manager inbox isolation or usability: "+v);
 assert.ok(!page.includes("setInterval(()=>{void load()},30000)"),
  "Background refresh must not repeatedly fetch or mutate tokens and settings");

@@ -27,7 +27,7 @@ all(manager,["saveCustomerResponse(message)","responseInFlight.current",
  ".eq(\"company_id\",company.id)","customer_status:status",
  "customer_response:reply||null","select(\"id,customer_status,customer_response,customer_responded_at\")",
  "window.confirm","Save customer update",
- "Customer Service inbox &amp; responses"]);
+ 'tr("Customer Service inbox & responses","Bandeja de Servicio al Cliente y respuestas")']);
 all(client,["id=\"portal-customer-requests\"","customer_requests_error",
  "My Request Status / Estado de mis solicitudes","refreshCustomerRequests(true)",
  "request statuses","r.status===\"resolved\"",

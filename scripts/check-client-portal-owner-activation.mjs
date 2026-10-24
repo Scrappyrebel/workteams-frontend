@@ -33,8 +33,8 @@ for(const t of [
  "setPilotEnabled(data.customer_login_enabled)",
  "pilotCanActivate",
  "pilotRequested===true&&pilotCanActivate&&pilotEnabled!==null",
- "Disable customer logins now / Desactivar accesos",
- "Activate verified customer logins / Activar accesos verificados"
+ 'tr("Disable customer logins now","Desactivar accesos de clientes")',
+ 'tr("Activate verified customer logins","Activar accesos verificados")'
 ])assert.ok(ui.includes(t),"Missing owner UI safe action: "+t);
 assert.ok(contacts.includes('typeof data.customer_login_enabled!=="boolean"'));
 assert.ok(authenticated.includes("s.enabled=true and s.pilot_requested=true"));
