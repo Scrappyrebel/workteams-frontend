@@ -125,15 +125,51 @@ export async function POST(req) {
       case "checkout.session.completed": {
         const session = event.data.object;
         // Temp staffing booking (one-time payment, no subscription).
+        // Credit is verified end-to-end before anything is marked paid:
+        // the session must be the exact checkout recorded on the booking
+        // row, the session metadata's company must be the booking's own
+        // company, and the amount paid must equal the server-quoted
+        // cents. Any mismatch: log loudly, mark nothing, let a human
+        // reconcile — never credit on a guess.
         if (session.metadata?.temp_job_request_id) {
+          const jobId = session.metadata.temp_job_request_id;
+          const { data: job, error: jobErr } = await sb
+            .from("temp_job_requests")
+            .select("id, company_id, quoted_cents, stripe_checkout_session_id")
+            .eq("id", jobId)
+            .maybeSingle();
+          const problems = [];
+          if (jobErr || !job) {
+            problems.push("booking row not found");
+          } else {
+            if (!session.metadata.company_id || session.metadata.company_id !== job.company_id) {
+              problems.push("company mismatch");
+            }
+            if (job.stripe_checkout_session_id !== session.id) {
+              problems.push("checkout session mismatch");
+            }
+            if (
+              typeof session.amount_total === "number" &&
+              job.quoted_cents != null &&
+              session.amount_total !== job.quoted_cents
+            ) {
+              problems.push("amount mismatch");
+            }
+          }
+          if (problems.length > 0) {
+            console.error(
+              `stripe webhook: temp job ${jobId} NOT marked paid — verification failed (${problems.join(", ")}) for session ${session.id}`
+            );
+            break;
+          }
           const { error: payErr } = await sb
             .from("temp_job_requests")
             .update({ status: "paid", updated_at: new Date().toISOString() })
-            .eq("id", session.metadata.temp_job_request_id)
+            .eq("id", jobId)
             .eq("status", "pending");
           if (payErr) {
             console.error(
-              `stripe webhook: failed to mark temp job ${session.metadata.temp_job_request_id} paid`,
+              `stripe webhook: failed to mark temp job ${jobId} paid`,
               payErr.message
             );
           }

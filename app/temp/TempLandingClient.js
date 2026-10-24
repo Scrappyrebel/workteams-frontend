@@ -355,7 +355,7 @@ const I = {
   ),
 };
 
-function WorthItCalculator({ rates }) {
+function WorthItCalculator({ rates, bookHref = "/temp/book" }) {
   const [workers, setWorkers] = useState(2);
   const [hours, setHours] = useState(40);
   const [pay, setPay] = useState(17);
@@ -466,7 +466,7 @@ function WorthItCalculator({ rates }) {
         The difference: <strong>{fmt(calc.premium)}/week</strong> buys you zero
         recruiting, zero HR headaches, replacements for no-shows, and the
         freedom to scale up or down any week.{" "}
-        <Link href="/temp/book" style={{ fontWeight: 700 }}>
+        <Link href={bookHref} style={{ fontWeight: 700 }}>
           Get an exact quote →
         </Link>
       </p>
@@ -568,11 +568,18 @@ const BADGES = [
 
 export default function TempLanding() {
   const [rates, setRates] = useState(null);
+  // An agency link may name its company (?agency=<company_id>); carry it
+  // into the rates lookup and every booking/application link so the
+  // customer stays with that agency end-to-end. No param -> plain links,
+  // exactly as before.
+  const [agency, setAgency] = useState("");
 
   useEffect(() => {
     (async () => {
       try {
-        const r = await fetch("/api/temp/config");
+        const linked = new URLSearchParams(window.location.search).get("agency") || "";
+        setAgency(linked);
+        const r = await fetch(linked ? `/api/temp/config?agency=${encodeURIComponent(linked)}` : "/api/temp/config");
         const j = await r.json();
         if (j.available && j.serviceRates) setRates(j.serviceRates);
       } catch {
@@ -580,6 +587,9 @@ export default function TempLanding() {
       }
     })();
   }, []);
+
+  const bookHref = agency ? `/temp/book?agency=${encodeURIComponent(agency)}` : "/temp/book";
+  const applyHref = agency ? `/temp/apply?agency=${encodeURIComponent(agency)}` : "/temp/apply";
 
   const rateFor = (key, fallback) => Number(rates?.[key] ?? fallback);
 
@@ -601,8 +611,8 @@ export default function TempLanding() {
           <a href="#faq">FAQ</a>
         </nav>
         <div className="wt2-t-nav-cta">
-          <Link href="/temp/apply" className="wt2-t-btn wt2-t-btn-navghost">Apply as a temp</Link>
-          <Link href="/temp/book" className="wt2-t-btn wt2-t-btn-primary">Get cleaners</Link>
+          <Link href={applyHref} className="wt2-t-btn wt2-t-btn-navghost">Apply as a temp</Link>
+          <Link href={bookHref} className="wt2-t-btn wt2-t-btn-primary">Get cleaners</Link>
         </div>
       </header>
 
@@ -622,7 +632,7 @@ export default function TempLanding() {
               pay, taxes, and workers&apos; comp. You just point them at the dirt.
             </p>
             <div className="wt2-t-cta-row">
-              <Link href="/temp/book" className="wt2-t-btn wt2-t-btn-primary wt2-t-btn-lg wt2-t-btn-glow">
+              <Link href={bookHref} className="wt2-t-btn wt2-t-btn-primary wt2-t-btn-lg wt2-t-btn-glow">
                 Get cleaners
               </Link>
               <a href="#worth-it" className="wt2-t-btn wt2-t-btn-hero-outline wt2-t-btn-lg">
@@ -678,7 +688,7 @@ export default function TempLanding() {
               The request form starts with the kind of work — pick the closest
               fit and tell us the rest in the job details.
             </p>
-            <Link href="/temp/book" className="wt2-t-card-link">
+            <Link href={bookHref} className="wt2-t-card-link">
               Start a request {I.arrow}
             </Link>
           </article>
@@ -700,7 +710,7 @@ export default function TempLanding() {
                 <h3>{e.name}</h3>
                 <p className="wt2-t-engage-tag">{e.tag}</p>
                 <p className="wt2-t-engage-text">{e.text}</p>
-                <Link href="/temp/book" className="wt2-t-card-link">
+                <Link href={bookHref} className="wt2-t-card-link">
                   Start a request {I.arrow}
                 </Link>
               </article>
@@ -721,7 +731,7 @@ export default function TempLanding() {
           interviews, turnover, and the weeks a seat sits empty.
         </p>
         <div className="wt2-t-calc-wrap">
-          <WorthItCalculator rates={rates} />
+          <WorthItCalculator rates={rates} bookHref={bookHref} />
         </div>
       </section>
 
@@ -748,7 +758,7 @@ export default function TempLanding() {
           <p className="wt2-t-footnote">
             Final quote depends on cleaners needed, hours, schedule, and job
             details. Long-term and high-volume jobs earn lower rates —{" "}
-            <Link href="/temp/book">get your exact price</Link>.
+            <Link href={bookHref}>get your exact price</Link>.
           </p>
         </div>
       </section>
@@ -799,7 +809,7 @@ export default function TempLanding() {
             ))}
           </ol>
           <div className="wt2-t-steps-cta">
-            <Link href="/temp/book" className="wt2-t-btn wt2-t-btn-primary wt2-t-btn-lg">
+            <Link href={bookHref} className="wt2-t-btn wt2-t-btn-primary wt2-t-btn-lg">
               Request cleaners
             </Link>
           </div>
@@ -818,7 +828,7 @@ export default function TempLanding() {
             recruiter fees, no interview gamble. You&apos;ve already watched them
             work.
           </p>
-          <Link href="/temp/book" className="wt2-t-btn wt2-t-btn-white wt2-t-btn-lg">
+          <Link href={bookHref} className="wt2-t-btn wt2-t-btn-white wt2-t-btn-lg">
             Start temp-to-hire
           </Link>
         </div>
@@ -849,7 +859,7 @@ export default function TempLanding() {
             W-2 employee: steady pay, workers&apos; comp, and a path to get hired
             on full-time.
           </p>
-          <Link href="/temp/apply" className="wt2-t-btn wt2-t-btn-tier wt2-t-btn-lg">
+          <Link href={applyHref} className="wt2-t-btn wt2-t-btn-tier wt2-t-btn-lg">
             Apply as a temp
           </Link>
         </div>
@@ -862,7 +872,7 @@ export default function TempLanding() {
           Tell us what you need — we&apos;ll price it by the cleaner, by the
           hour, and have a crew ready. No contracts to sign just to get a quote.
         </p>
-        <Link href="/temp/book" className="wt2-t-btn wt2-t-btn-white wt2-t-btn-lg">
+        <Link href={bookHref} className="wt2-t-btn wt2-t-btn-white wt2-t-btn-lg">
           Get my price
         </Link>
       </section>
@@ -879,8 +889,8 @@ export default function TempLanding() {
           </span>
           <p>Temp staffing across east-central Missouri.</p>
           <span className="wt2-t-footer-links">
-            <Link href="/temp/book">Get cleaners</Link>
-            <Link href="/temp/apply">Apply as a temp</Link>
+            <Link href={bookHref}>Get cleaners</Link>
+            <Link href={applyHref}>Apply as a temp</Link>
             <Link href="/">WorkTeams</Link>
             <Link href="/privacy">Privacy</Link>
             <Link href="/terms">Terms</Link>
