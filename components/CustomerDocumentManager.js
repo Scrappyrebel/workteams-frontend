@@ -1,6 +1,7 @@
 "use client";
 import {useEffect,useRef,useState} from "react";
 import {supabase} from "../lib/supabase";
+import {documentManagerScope,isCurrentDocumentRequest} from "../lib/customer-document-scope.mjs";
 
 export default function CustomerDocumentManager({companyId,locations,pilotRequested}){
  const [locationId,setLocationId]=useState("");
@@ -14,27 +15,52 @@ export default function CustomerDocumentManager({companyId,locations,pilotReques
  const [notice,setNotice]=useState("");
  const fileRef=useRef(null);
  const selected=locations?.some(l=>l.id===locationId);
+ // A late response must never show documents under a newly selected tenant or location.
+ const currentScope=documentManagerScope(companyId,locationId,pilotRequested,selected);
+ const scopeRef=useRef(currentScope);
+ scopeRef.current=currentScope;
+ const requestSeq=useRef(0);
+ const [loadedScope,setLoadedScope]=useState("");
+ const visibleDocs=loadedScope===currentScope?docs:[];
  async function refresh(){
-  const id=locationId;
-  if(!companyId||!id||!pilotRequested)return;
-  setLoading(true);setDocs([]);setError("");
-  const {data,error:e}=await supabase().rpc("list_workteams_customer_documents_manager",{
-   p_company_id:companyId,p_location_id:id
-  });
-  if(e||data?.ok!==true||!Array.isArray(data.documents)){
-   setError("Private documents could not be verified. Please retry.");
-   setDocs([]);
-  }else setDocs(data.documents);
-  setLoading(false);
+  const scope=currentScope;
+  if(!scope){
+   requestSeq.current++;setDocs([]);setLoadedScope("");setLoading(false);
+   return;
+  }
+  const requestId=++requestSeq.current;
+  setLoading(true);setDocs([]);setLoadedScope("");setError("");
+  try{
+   const {data,error:e}=await supabase().rpc("list_workteams_customer_documents_manager",{
+    p_company_id:companyId,p_location_id:locationId
+   });
+   if(!isCurrentDocumentRequest(requestId,requestSeq.current,scope,scopeRef.current))return;
+   if(e||data?.ok!==true||!Array.isArray(data.documents)){
+    setError("Private documents could not be verified. Please retry.");
+    setDocs([]);
+   }else{setDocs(data.documents);setLoadedScope(scope)}
+  }catch(e){
+   if(isCurrentDocumentRequest(requestId,requestSeq.current,scope,scopeRef.current)){
+    setDocs([]);setError("Private documents could not be verified. Please retry.");
+   }
+  }finally{
+   if(isCurrentDocumentRequest(requestId,requestSeq.current,scope,scopeRef.current))
+    setLoading(false);
+  }
  }
  useEffect(()=>{
-  setDocs([]);setError("");setNotice("");
-  if(companyId&&locationId&&selected&&pilotRequested)void refresh();
- },[companyId,locationId,pilotRequested]);
+  requestSeq.current++;
+  setDocs([]);setLoadedScope("");setLoading(false);
+  setError("");setNotice("");setTitle("");setFile(null);
+  if(fileRef.current)fileRef.current.value="";
+  if(currentScope)void refresh();
+  return ()=>{requestSeq.current++};
+ },[currentScope]);
 
  async function upload(e){
   e.preventDefault();
-  if(!selected||!companyId||!file||busy||loading||!pilotRequested)return;
+  if(!currentScope||!file||busy||loading)return;
+  const operationScope=currentScope;
   if(!window.confirm("Upload this PDF privately for this company's selected service location? The file will NOT be visible to customers unless separately published and customer document access is approved."))return;
   setBusy(true);setError("");setNotice("");
   try{
@@ -48,32 +74,35 @@ export default function CustomerDocumentManager({companyId,locations,pilotReques
     method:"POST",headers:{Authorization:"Bearer "+token},body:form,cache:"no-store"
    });
    const out=await res.json();
+   if(scopeRef.current!==operationScope)return;
    if(!res.ok||out?.ok!==true||out.published!==false)
     throw Error(out?.error||"The private PDF upload could not be verified.");
    setTitle("");setFile(null);
    if(fileRef.current)fileRef.current.value="";
    setNotice("PDF uploaded privately and UNPUBLISHED. Review the title and choose Publish only when approved for customers.");
    await refresh();
-  }catch(e){setError(e.message||"PDF upload was not confirmed.")}
+  }catch(e){if(scopeRef.current===operationScope)setError(e.message||"PDF upload was not confirmed.")}
   finally{setBusy(false)}
  }
  async function publish(doc,makePublic){
-  if(busy||loading||!companyId||!selected||!pilotRequested)return;
+  if(busy||loading||!currentScope||!visibleDocs.some(d=>d.id===doc.id))return;
+  const operationScope=currentScope;
   const question=makePublic?
    "Publish this PDF for approved verified customer accounts at this service location? Only contacts with separate document permission can download. Review the PDF for sensitive information first.":
    "Withdraw this PDF immediately from all customer account downloads?";
-  if(!window.confirm(question))return;
+  if(!window.confirm(question)||scopeRef.current!==operationScope)return;
   setBusy(true);setError("");setNotice("");
   try{
    const {data,error:e}=await supabase().rpc("set_workteams_customer_document_publication",{
     p_company_id:companyId,p_document_id:doc.id,p_publish:makePublic,
     p_expires_at:makePublic?new Date(Date.now()+Number(expiryDays)*86400000).toISOString():null
    });
+   if(scopeRef.current!==operationScope)return;
    if(e||data?.ok!==true||data.published!==makePublic)
     throw Error(e?.message||"Document publication was not verified.");
    setNotice(makePublic?"PDF publication saved. Approved customers with document permission may download.":"Publication withdrawn; future downloads are blocked.");
    await refresh();
-  }catch(e){setError(e.message||"Publication change could not be confirmed.")}
+  }catch(e){if(scopeRef.current===operationScope)setError(e.message||"Publication change could not be confirmed.")}
   finally{setBusy(false)}
  }
  if(!pilotRequested)return null;
@@ -104,14 +133,14 @@ export default function CustomerDocumentManager({companyId,locations,pilotReques
     Refresh document list
    </button>
    {loading&&<p role="status">Checking company documents…</p>}
-   {!loading&&!error&&docs.length===0&&<p>No PDF documents have been added here.</p>}
+   {!loading&&!error&&loadedScope===currentScope&&visibleDocs.length===0&&<p>No PDF documents have been added here.</p>}
    <label htmlFor="doc-expiry-days">Published download expiry / Vencimiento del acceso</label>
    <select id="doc-expiry-days" value={expiryDays} onChange={e=>setExpiryDays(e.target.value)}>
     <option value="30">30 days / días</option>
     <option value="90">90 days / días</option>
     <option value="365">365 days / días</option>
    </select>
-   {docs.map(doc=><div key={doc.id} style={{borderTop:"1px solid var(--line,#ccc)",padding:"12px 0"}}>
+   {visibleDocs.map(doc=><div key={doc.id} style={{borderTop:"1px solid var(--line,#ccc)",padding:"12px 0"}}>
     <strong>{doc.title}</strong>
     <p style={{fontSize:13}}>{doc.file_name} · {doc.published?"PUBLISHED":"PRIVATE"} · {doc.expires_at?"Expires "+new Date(doc.expires_at).toLocaleDateString():"No expiry set"}</p>
     <button type="button" disabled={busy||loading} onClick={()=>void publish(doc,!doc.published)}>
