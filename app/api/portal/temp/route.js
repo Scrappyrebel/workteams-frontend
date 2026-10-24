@@ -78,6 +78,7 @@ export async function POST(req) {
       }
       const { error: insErr } = await client.from("temp_job_requests").insert({
         company_id: pt.company_id,
+        portal_token_id: pt.id,
         service_type: serviceType,
         cleaners_needed: cleanersNeeded,
         hours_requested: hoursRequested,
@@ -106,7 +107,7 @@ export async function POST(req) {
         .select("id, status")
         .eq("id", b.requestId)
         .eq("company_id", pt.company_id)
-        .eq("customer_name", pt.client_name)
+        .eq("portal_token_id", pt.id)
         .maybeSingle();
       if (!jr) return NextResponse.json({ error: "Not found." }, { status: 404 });
       if (!["assigned", "in_progress", "completed"].includes(jr.status)) {
@@ -115,7 +116,10 @@ export async function POST(req) {
       const { error: upErr } = await client
         .from("temp_job_requests")
         .update({ hours_confirmed: hours })
-        .eq("id", jr.id);
+        .eq("id", jr.id)
+        .eq("company_id",pt.company_id)
+        .eq("portal_token_id",pt.id)
+        .is("hours_confirmed",null);
       if (upErr) {
         console.error("portal confirm hours failed", upErr.message);
         return NextResponse.json({ error: "Could not confirm hours." }, { status: 500 });

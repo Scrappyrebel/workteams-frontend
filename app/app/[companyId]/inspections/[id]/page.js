@@ -30,6 +30,10 @@ export default function InspectionDetailPage() {
   const [photos, setPhotos] = useState([]);
   const [files, setFiles] = useState([]);
   const [uploading, setUploading] = useState(false);
+  const [publication, setPublication] = useState(null);
+  const [publicationSummary, setPublicationSummary] = useState("");
+  const [publicationError, setPublicationError] = useState("");
+  const [publicationBusy, setPublicationBusy] = useState(false);
 
   const inspectionId = params.id;
   const isManager = member && (member.role === "owner" || member.role === "admin");
@@ -61,6 +65,17 @@ export default function InspectionDetailPage() {
       if (m) inspectorName = m.display_name;
     }
     setInspection({ ...insp, inspector_name: inspectorName });
+    if(isManager){
+      const result=await sb.rpc("get_client_portal_inspection_publication_for_manager",{p_inspection_id:inspectionId});
+      if(result.error){
+        setPublication(null);
+        setPublicationError("Customer report publication is not available: "+result.error.message);
+      }else{
+        setPublication(result.data);
+        setPublicationSummary(result.data?.customer_summary||"");
+        setPublicationError("");
+      }
+    }
     // Load sections with their photos.
     const { data: items } = await sb.from("inspection_items")
       .select("*, inspection_photos(*)")
@@ -81,6 +96,29 @@ export default function InspectionDetailPage() {
     if (!loading && company) load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loading, company]);
+
+  async function updatePortalPublication(publish) {
+    if(!isManager||!inspection||publicationBusy)return;
+    const summary=publicationSummary.trim();
+    if(publish&&(!inspection.score||summary.length<10||summary.length>600)){
+      setPublicationError("Finish scoring the inspection, then write a customer-safe summary of 10–600 characters.");return;
+    }
+    if(!publish&&!window.confirm("Withdraw this customer quality report? The customer link will stop showing it."))return;
+    setPublicationBusy(true);setPublicationError("");
+    try{
+      const result=await supabase().rpc("set_client_portal_inspection_publication",{
+        p_inspection_id:inspectionId,p_publish:publish,p_customer_summary:publish?summary:null
+      });
+      if(result.error||!result.data)throw new Error(result.error?.message||"The publication change was not confirmed saved.");
+      const check=await supabase().rpc("get_client_portal_inspection_publication_for_manager",{p_inspection_id:inspectionId});
+      if(check.error||check.data?.published!==publish)
+        throw new Error("The new publication state could not be verified. Check its status before retrying.");
+      setPublication(check.data);
+      setPublicationSummary(check.data?.customer_summary||"");
+    }catch(error){
+      setPublicationError(error instanceof Error?error.message:"The quality report status could not be confirmed.");
+    }finally{setPublicationBusy(false)}
+  }
 
   async function addPhotos(e) {
     e.preventDefault();
@@ -214,6 +252,25 @@ export default function InspectionDetailPage() {
           </button>
         )}
       </section>
+
+      {isManager&&<section className="panel" style={{padding:22,margin:"18px 0"}}>
+        <h3 style={{marginTop:0}}>Customer Portal — Published Quality Report</h3>
+        <p style={{fontSize:"0.88rem",color:"var(--muted)"}}>Inspections stay private until an owner or administrator publishes an approved, customer-safe summary. Only the inspection date, score, and summary will appear in the location-specific Customer Portal link. Internal notes, checklists, inspector identities and photos stay private.</p>
+        {publicationError&&<p role="alert" style={{color:"#b3261e"}}>{publicationError}</p>}
+        <p><strong>Current visibility:</strong> {publication?.published?"Published to this location's customer link":"Not published"}</p>
+        <label htmlFor="client-quality-summary">Customer-safe quality summary (10–600 characters)</label>
+        <textarea id="client-quality-summary" rows={4} maxLength={600} value={publicationSummary}
+          onChange={e=>setPublicationSummary(e.target.value)} disabled={publicationBusy}
+          placeholder="Describe the completed inspection in customer-safe language. Do not include names, security details, or internal staff notes." style={{...input,resize:"vertical"}} />
+        <div style={{display:"flex",gap:10,marginTop:12,flexWrap:"wrap"}}>
+          <button type="button" disabled={publicationBusy||!inspection.score||publicationSummary.trim().length<10}
+            onClick={()=>void updatePortalPublication(true)} style={button}>
+            {publicationBusy?"Saving…":publication?.published?"Update published summary":"Publish quality report"}
+          </button>
+          {publication?.published&&<button type="button" disabled={publicationBusy}
+            onClick={()=>void updatePortalPublication(false)} style={secondaryBtn}>Withdraw report</button>}
+        </div>
+      </section>}
 
       {sections.length > 0 && (
         <>
