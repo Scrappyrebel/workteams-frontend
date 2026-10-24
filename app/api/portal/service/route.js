@@ -2,6 +2,20 @@ import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { checkRateLimit, clientIp } from "../../../../lib/rate-limit";
 
+
+const PRIVATE_PORTAL_HEADERS = {
+  "Cache-Control":"private, no-store, max-age=0",
+  "Referrer-Policy":"no-referrer",
+  "X-Content-Type-Options":"nosniff"
+};
+// Location bearer tokens, contract terms and customer request history
+// must never enter intermediary/browser caches, even on failure responses.
+function portalResponse(payload,options={}){
+  return NextResponse.json(payload,{
+    ...options,headers:{...(options.headers||{}),...PRIVATE_PORTAL_HEADERS}
+  });
+}
+
 const sb = () =>
   createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
 
@@ -10,19 +24,19 @@ const sb = () =>
 export async function GET(req) {
   const token = new URL(req.url).searchParams.get("token");
   if (!token || typeof token !== "string" || token.length > 128)
-    return NextResponse.json({ error: "Invalid location link" }, { status: 400 });
+    return portalResponse({ error: "Invalid location link" }, { status: 400 });
   const limit = checkRateLimit(`portal-contract:${clientIp(req)}`, { limit: 30, windowMs: 60_000 });
-  if(!limit.ok)return NextResponse.json({error:"Too many requests. Try again shortly."},{status:429});
+  if(!limit.ok)return portalResponse({error:"Too many requests. Try again shortly."},{status:429});
   const client = sb();
   const { data: pt, error: tokenError } = await client
     .from("portal_tokens")
     .select("id, company_id, location_id, expires_at")
     .eq("token", token)
     .maybeSingle();
-  if(tokenError)return NextResponse.json({error:"Location access could not be verified."},{status:503});
-  if (!pt) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  if(tokenError)return portalResponse({error:"Location access could not be verified."},{status:503});
+  if (!pt) return portalResponse({ error: "Not found" }, { status: 404 });
   if (pt.expires_at && new Date(pt.expires_at) < new Date()) {
-    return NextResponse.json({ error: "This link has expired." }, { status: 410 });
+    return portalResponse({ error: "This link has expired." }, { status: 410 });
   }
   const { data: c, error: contractError } = await client
     .from("contracts")
@@ -33,9 +47,9 @@ export async function GET(req) {
     .order("signed_at", { ascending: false })
     .limit(1)
     .maybeSingle();
-  if(contractError)return NextResponse.json({error:"Contract access could not be verified."},{status:503});
-  if (!c) return NextResponse.json({ contract: null }, {headers:{"Cache-Control":"private, no-store"}});
-  return NextResponse.json({ contract: c }, {headers:{"Cache-Control":"private, no-store"}});
+  if(contractError)return portalResponse({error:"Contract access could not be verified."},{status:503});
+  if (!c) return portalResponse({ contract: null }, {headers:{"Cache-Control":"private, no-store"}});
+  return portalResponse({ contract: c }, {headers:{"Cache-Control":"private, no-store"}});
 }
 
 // Public: client requests an extra or heavy clean. Creates a work order for
@@ -43,11 +57,11 @@ export async function GET(req) {
 export async function POST(req) {
   try {
     const rl = checkRateLimit(`portal-clean:${clientIp(req)}`, { limit: 10, windowMs: 60_000 });
-    if (!rl.ok) return NextResponse.json({ error: "Too many requests. Try again shortly." }, { status: 429 });
+    if (!rl.ok) return portalResponse({ error: "Too many requests. Try again shortly." }, { status: 429 });
 
     const { token, kind, date, notes } = await req.json();
     if (!token || !["extra", "heavy"].includes(kind) || !date) {
-      return NextResponse.json({ error: "Service type and date are required." }, { status: 400 });
+      return portalResponse({ error: "Service type and date are required." }, { status: 400 });
     }
     const client = sb();
     const { data: pt } = await client
@@ -55,9 +69,9 @@ export async function POST(req) {
       .select("id, company_id, location_id, expires_at")
       .eq("token", token)
       .maybeSingle();
-    if (!pt) return NextResponse.json({ error: "Not found" }, { status: 404 });
+    if (!pt) return portalResponse({ error: "Not found" }, { status: 404 });
     if (pt.expires_at && new Date(pt.expires_at) < new Date()) {
-      return NextResponse.json({ error: "This link has expired." }, { status: 410 });
+      return portalResponse({ error: "This link has expired." }, { status: 410 });
     }
     const { data: c } = await client
       .from("contracts")
@@ -80,10 +94,10 @@ export async function POST(req) {
       status: "open",
       priority: "normal",
     });
-    if (error) return NextResponse.json({ error: "Could not submit request." }, { status: 500 });
-    return NextResponse.json({ ok: true, price });
+    if (error) return portalResponse({ error: "Could not submit request." }, { status: 500 });
+    return portalResponse({ ok: true, price });
   } catch (e) {
     console.error("portal request-clean error", e);
-    return NextResponse.json({ error: "Could not submit request." }, { status: 500 });
+    return portalResponse({ error: "Could not submit request." }, { status: 500 });
   }
 }
