@@ -62,7 +62,8 @@ for(const phrase of [
  't("Upcoming service visits","Próximas visitas de servicio")',
  't("Refresh upcoming visits","Actualizar próximas visitas")',
  't("No scheduled visits for the next 30 days.',
- 't("Customer-safe public note (optional, 5–300 characters)"'
+ 'Customer-safe public note (optional, 5–300 characters)',
+ 'Nota pública para el cliente (opcional, de 5 a 300 caracteres)'
 ])assert.ok(manager.includes(phrase),"Missing bilingual/revoked manager schedule workflow: "+phrase);
 for(const unsafe of ['throw Error(e?.message','setError(e.message','Upcoming shifts could not be verified. No publication changes were made."];']){
  assert.ok(!manager.includes(unsafe),"Customer manager must not expose raw SQL errors: "+unsafe);
