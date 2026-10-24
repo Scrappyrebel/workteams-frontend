@@ -6,6 +6,7 @@ import AuthenticatedCustomerRequests from "../../components/AuthenticatedCustome
 import AuthenticatedCustomerQuality from "../../components/AuthenticatedCustomerQuality";
 import AuthenticatedCustomerWorkOrders from "../../components/AuthenticatedCustomerWorkOrders";
 import AuthenticatedCustomerDocuments from "../../components/AuthenticatedCustomerDocuments";
+import AuthenticatedCustomerServiceSchedule from "../../components/AuthenticatedCustomerServiceSchedule";
 
 export default function AuthenticatedCustomerPortal(){
  const [language,setLanguage]=useState("en");
@@ -130,6 +131,9 @@ export default function AuthenticatedCustomerPortal(){
        <AuthenticatedCustomerDocuments
          companyId={loc.company_id} locationId={loc.location_id}
          language={language}/>
+       <AuthenticatedCustomerServiceSchedule
+        companyId={loc.company_id} locationId={loc.location_id}
+        language={language}/>
        <AuthenticatedCustomerRequests
          companyId={loc.company_id} locationId={loc.location_id}
          language={language}
