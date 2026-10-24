@@ -53,8 +53,8 @@ includes(sql,[
 includes(manager,[
  'm.category==="document_copy"',
  'deliveryConfirmed[message.id]',
- 'verify the recipient and deliver the document privately',
- 'Verified the recipient',
+ 'Verify the recipient and deliver the document privately',
+ 'I verified the recipient',
  'setDeliveryConfirmed(',
  'Do not paste document links, file paths or attachments'
 ],"manager inbox");
