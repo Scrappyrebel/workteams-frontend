@@ -5,6 +5,7 @@ import {supabase} from "../../lib/supabase";
 import AuthenticatedCustomerRequests from "../../components/AuthenticatedCustomerRequests";
 import AuthenticatedCustomerQuality from "../../components/AuthenticatedCustomerQuality";
 import AuthenticatedCustomerWorkOrders from "../../components/AuthenticatedCustomerWorkOrders";
+import AuthenticatedCustomerDocuments from "../../components/AuthenticatedCustomerDocuments";
 
 export default function AuthenticatedCustomerPortal(){
  const [language,setLanguage]=useState("en");
@@ -124,6 +125,9 @@ export default function AuthenticatedCustomerPortal(){
          companyId={loc.company_id} locationId={loc.location_id}
          language={language}/>
        <AuthenticatedCustomerWorkOrders
+         companyId={loc.company_id} locationId={loc.location_id}
+         language={language}/>
+       <AuthenticatedCustomerDocuments
          companyId={loc.company_id} locationId={loc.location_id}
          language={language}/>
        <AuthenticatedCustomerRequests
