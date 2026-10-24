@@ -18,7 +18,7 @@ create table if not exists public.client_portal_service_schedule_publications (
  start_time time not null,
  end_time time not null,
  actor_user_id uuid references auth.users(id) on delete set null,
- created_at timestamptz not null default now(),
+ created_at timestamptz not null default clock_timestamp(),
  foreign key(company_id,location_id,shift_id)
   references public.shifts(company_id,location_id,id) on delete cascade,
  constraint client_portal_schedule_public_note_limit check (
