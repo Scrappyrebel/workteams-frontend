@@ -49,6 +49,8 @@ export default function AppShell({ company, member, children }) {
   const [isOwner, setIsOwner] = useState(false);
   const [pushStatus, setPushStatus] = useState("unknown");
   const [unacked, setUnacked] = useState(0);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef(null);
   // Temp staffing module: only the temp agency company gets the tab.
   // Everyone else never sees it (gated second-company feature).
   const [isTempAgency, setIsTempAgency] = useState(false);
@@ -161,6 +163,27 @@ export default function AppShell({ company, member, children }) {
     };
   });
 
+  // Hamburger menu: closes on route change, Escape, or an outside tap.
+  useEffect(() => {
+    setMenuOpen(false);
+  }, [pathname]);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    const onKey = (e) => {
+      if (e.key === "Escape") setMenuOpen(false);
+    };
+    const onDown = (e) => {
+      if (menuRef.current && !menuRef.current.contains(e.target)) setMenuOpen(false);
+    };
+    document.addEventListener("keydown", onKey);
+    document.addEventListener("pointerdown", onDown);
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.removeEventListener("pointerdown", onDown);
+    };
+  }, [menuOpen]);
+
   return (
     <div>
       <header
@@ -178,11 +201,97 @@ export default function AppShell({ company, member, children }) {
           style={{
             display: "flex",
             alignItems: "center",
+            flexWrap: "wrap",
             gap: 12,
             paddingTop: 12,
             paddingBottom: 12,
           }}
         >
+          {companyId && (
+            <div ref={menuRef} style={{ position: "relative", flexShrink: 0 }}>
+              <button
+                type="button"
+                aria-label={menuOpen ? "Close menu" : "Open menu — all tools"}
+                aria-haspopup="true"
+                aria-expanded={menuOpen}
+                onClick={() => setMenuOpen((v) => !v)}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                  minHeight: 44,
+                  border: "1px solid var(--line)",
+                  background: menuOpen ? "var(--brand-soft)" : "#fff",
+                  color: "var(--brand-deep)",
+                  borderRadius: 999,
+                  padding: "8px 16px 8px 13px",
+                  fontWeight: 800,
+                  fontSize: "0.95rem",
+                  cursor: "pointer",
+                }}
+              >
+                <span aria-hidden="true" style={{ fontSize: "1.15rem", lineHeight: 1 }}>☰</span>
+                Menu
+              </button>
+              {menuOpen && (
+                <div
+                  role="menu"
+                  aria-label="All sections and tools"
+                  style={{
+                    position: "absolute",
+                    top: "calc(100% + 10px)",
+                    left: 0,
+                    width: "min(92vw, 340px)",
+                    maxHeight: "72vh",
+                    overflowY: "auto",
+                    background: "#fff",
+                    border: "1px solid var(--line)",
+                    borderRadius: 16,
+                    boxShadow: "0 18px 44px rgba(24,34,53,0.28)",
+                    padding: 8,
+                    zIndex: 80,
+                  }}
+                >
+                  <p
+                    style={{
+                      margin: "6px 12px 8px",
+                      fontSize: "0.75rem",
+                      fontWeight: 800,
+                      letterSpacing: "0.08em",
+                      color: "var(--muted)",
+                    }}
+                  >
+                    ALL SECTIONS &amp; TOOLS
+                  </p>
+                  {linksMapped.map((item) => {
+                    const active = pathname === item.href || (item.key === "dashboard" && pathname === `/app/${companyId}`);
+                    return (
+                      <Link
+                        key={item.key}
+                        href={item.href}
+                        role="menuitem"
+                        onClick={() => setMenuOpen(false)}
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          minHeight: 52,
+                          padding: "12px 14px",
+                          borderRadius: 12,
+                          fontWeight: 700,
+                          fontSize: "1rem",
+                          color: active ? "#fff" : "var(--ink)",
+                          background: active ? "var(--brand)" : "transparent",
+                        }}
+                      >
+                        {!item.allowed && "🔒 "}
+                        {item.label}
+                      </Link>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
           <Link href="/app" style={{ display: "flex", alignItems: "center", gap: 10 }}>
             <span className="brand-mark" style={{ width: 40, height: 40, flexBasis: 40, borderRadius: 12, fontSize: "0.95rem" }}>
               WT

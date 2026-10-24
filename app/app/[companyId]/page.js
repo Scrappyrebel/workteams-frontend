@@ -4,29 +4,12 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { supabase } from "../../../lib/supabase";
 import { useCompany } from "../../../lib/company-context";
-import { canUseWithRole, tierLabel } from "../../../lib/tiers";
-import { roleRank, roleLabel } from "../../../lib/roles";
+import { tierLabel } from "../../../lib/tiers";
+import { roleLabel } from "../../../lib/roles";
 import { chicagoToday, formatTime12h } from "../../../lib/dates";
 import EmergencyButton from "../../../components/EmergencyButton";
 import CompanyShiftProofSettings from "../../../components/CompanyShiftProofSettings";
 import CompanyFeatureToggles from "../../../components/CompanyFeatureToggles";
-
-const TOOL_CARDS = [
-  { key: "scheduling", label: "Schedule", desc: "Shifts by day, who works where.", href: "schedule", roles: "all" },
-  { key: "timeclock", label: "Time Clock", desc: "Clock in and out with GPS.", href: "time", roles: "all" },
-  { key: "payroll", label: "My Hours / Payroll", desc: "Payroll-ready hour reports + CSV.", href: "payroll", roles: "all" },
-  { key: "locations", label: "Locations", desc: "Sites, clients, and geofences.", href: "locations", roles: "supervisor" },
-  { key: "team", label: "Team", desc: "Members, roles, and invites.", href: "team", roles: "all" },
-  { key: "inspections", label: "Inspections", desc: "Quality checks with photos.", href: "inspections", roles: "supervisor" },
-  { key: "messaging", label: "Messages", desc: "Message your team.", href: "messages", roles: "all" },
-  { key: "bidding", label: "Bids", desc: "Quote and win new work.", href: "bids", roles: "manager" },
-  { key: "walkthroughs", label: "Walkthroughs", desc: "Room-by-room measurements & scope.", href: "walkthroughs", roles: "manager" },
-  { key: "workorders", label: "Work Orders", desc: "One-time and extra jobs.", href: "work-orders", roles: "all" },
-  { key: "supplies", label: "Supplies", desc: "Requests and inventory.", href: "supplies", roles: "manager" },
-  { key: "portal", label: "Client Portal", desc: "Let clients see their service.", href: "client-portal", roles: "manager" },
-  { key: "profitability", label: "Profitability", desc: "Job costs and margins.", href: "profitability", roles: "manager" },
-  { key: "contracts", label: "Contracts", desc: "Client agreements and e-signatures.", href: "contracts", roles: "manager" },
-];
 
 export default function CompanyDashboard() {
   const { company, member, loading } = useCompany();
@@ -76,13 +59,6 @@ export default function CompanyDashboard() {
 
   if (loading || !company) return <p>Loading…</p>;
 
-  const visibleCards = TOOL_CARDS.filter((t) => {
-    const rank = roleRank(member?.role);
-    if (t.roles === "manager" && rank < 2) return false;
-    if (t.roles === "supervisor" && rank < 1) return false;
-    return true;
-  });
-
   return (
     <div>
       <div className="dashboard-header" style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
@@ -100,6 +76,11 @@ export default function CompanyDashboard() {
       <section className="panel" style={{ padding: 20, marginBottom: 18 }}>
         <h3 style={{ margin: "0 0 12px" }}>Quick Access · Shift Essentials</h3>
         <div className="portal-grid" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 12 }}>
+          <Link className="portal-card" href={`/app/${company.id}/time`}
+                style={{ minHeight: 86, padding: 16 }}>
+            <strong>⏰ Time Clock</strong>
+            <p style={{ margin: "6px 0 0" }}>Clock in and out with GPS →</p>
+          </Link>
           <Link className="portal-card" href={`/app/${company.id}/schedule`}
                 style={{ minHeight: 86, padding: 16 }}>
             <strong>📅 Schedule</strong>
@@ -120,8 +101,6 @@ export default function CompanyDashboard() {
           Video and book proof controls appear in Time Clock during an active shift.
         </p>
       </section>
-      {isManager && <CompanyShiftProofSettings companyId={company.id} />}
-      {isManager && <CompanyFeatureToggles companyId={company.id} />}
 
       <section className="panel" style={{ padding: 22, marginBottom: 22 }}>
         <p className="eyebrow">TODAY'S ALERTS</p>        {alertsLoading ? (
@@ -149,19 +128,13 @@ export default function CompanyDashboard() {
         )}
       </section>
 
-      <div className="portal-grid" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))" }}>
-        {visibleCards.map((t) => {
-          const allowed = canUseWithRole(tier, t.key, member?.role);
-          const href = allowed ? `/app/${company.id}/${t.href}` : `/app/${company.id}/plans`;
-          return (
-            <Link className="portal-card" style={{ minHeight: 150, padding: 22 }} href={href} key={t.key}>
-              <span className="card-kicker">{allowed ? t.label : "🔒 " + t.label}</span>
-              <p style={{ marginTop: 8 }}>{t.desc}</p>
-              <span className="card-link">{allowed ? "Open →" : "See plans →"}</span>
-            </Link>
-          );
-        })}
-      </div>
+      <p style={{ color: "var(--muted)", fontSize: "0.92rem", margin: "0 0 18px" }}>
+        Everything else — Team, Messages, My Hours / Payroll, Bids and more — lives in the{" "}
+        <strong style={{ color: "var(--brand-deep)" }}>☰ Menu</strong> at the very top of the page.
+      </p>
+
+      {isManager && <CompanyShiftProofSettings companyId={company.id} />}
+      {isManager && <CompanyFeatureToggles companyId={company.id} />}
     </div>
   );
 }
