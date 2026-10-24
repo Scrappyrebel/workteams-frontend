@@ -10,6 +10,7 @@ export default function ClientPortalPage() {
   const { company, member, loading } = useCompany();
   const [locations, setLocations] = useState([]);
   const [tokens, setTokens] = useState([]);
+  const [invitationLanguage,setInvitationLanguage]=useState("en");
   const [working, setWorking] = useState(false);
   const [loadError, setLoadError] = useState("");
   const [responseDrafts,setResponseDrafts]=useState({});
@@ -144,13 +145,34 @@ export default function ClientPortalPage() {
     }
   }
 
-  async function copyLink(token) {
-    const url = `${window.location.origin}/portal/${token}`;
-    try {
-      await navigator.clipboard.writeText(url);
-      alert("Link copied — send it to your client.");
-    } catch {
-      prompt("Copy this link:", url);
+  async function copyLink(link,format="url") {
+    if(working||!isManager||!allowed||!company?.id||!link||
+      !tokens.some(row=>row.id===link.id&&row.token===link.token)||
+      (!!link.expires_at&&new Date(link.expires_at).getTime()<=Date.now())){
+      setLoadError("Link is expired or no longer verified. Refresh or rotate it before sharing.");
+      return;
+    }
+    // Check the live company-scoped record before copying a bearer credential.
+    const checked=await supabase().from("portal_tokens")
+      .select("id,token,location_id,expires_at")
+      .eq("company_id",company.id).eq("id",link.id).maybeSingle();
+    if(checked.error||!checked.data||checked.data.token!==link.token||
+       checked.data.location_id!==link.location_id||
+       (!!checked.data.expires_at&&new Date(checked.data.expires_at).getTime()<=Date.now())){
+      setLoadError("The link was revoked, rotated or expired. Refresh the portal links before sharing.");
+      return;
+    }
+    const url=`${window.location.origin}/portal/${checked.data.token}`;
+    const name=locations.find(l=>l.id===link.location_id)?.name||(
+      invitationLanguage==="es"?"su ubicación":"your location");
+    const payload=format==="invitation"?(invitationLanguage==="es"?
+      `Hola, este es el enlace privado del portal de servicio de ${name}: ${url}\nEl enlace permite ver información de servicio de esa ubicación. No lo reenvíe. Solicite un enlace nuevo si deja de funcionar.`:
+      `Hello, here is the private service portal link for ${name}: ${url}\nThis link shows service information for this location. Please do not forward it. Ask the business for a new link if it stops working.`):url;
+    try{
+      await navigator.clipboard.writeText(payload);
+      alert(format==="invitation"?"Invitation message copied. Share it only with an authorized customer contact.":"Link copied. Share it only with an authorized customer contact.");
+    }catch{
+      window.prompt(format==="invitation"?"Copy this customer invitation:":"Copy this private location link:",payload);
     }
   }
 
@@ -284,9 +306,17 @@ export default function ClientPortalPage() {
       </div>
 
       <h2 id="portal-management-links" style={{ fontSize: "1.8rem" }}>Client portal links</h2>
+      <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",margin:"8px 0 12px"}}>
+        <label htmlFor="client-invitation-language">Customer invitation language / Idioma</label>
+        <select id="client-invitation-language" value={invitationLanguage}
+          onChange={e=>setInvitationLanguage(e.target.value==="es"?"es":"en")}
+          style={{padding:"9px 12px",borderRadius:8,border:"1px solid var(--line)"}}>
+          <option value="en">English</option><option value="es">Español</option>
+        </select>
+      </div>
       <p style={{ color: "var(--muted)" }}>
         Share a read-only link per location. Clients see upcoming visits, recent inspection
-        scores, and open work orders — no login needed, no financial or staff details.
+        scores, and open work orders — no login needed, no financial or staff details. Treat each location link as a private access credential. Share only with an authorized contact, never publicly; rotate expired links.
       </p>
 
       <div style={{ display: "grid", gap: 10, marginTop: 18 }}>
@@ -310,7 +340,8 @@ export default function ClientPortalPage() {
                     </p>
                   )}
                   <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
-                    <button onClick={() => copyLink(t.token)} style={button}>Copy link</button>
+                    <button type="button" disabled={working||linkExpired(t)||Boolean(loadError)} onClick={()=>void copyLink(t)} style={button}>Copy link</button>
+                     <button type="button" disabled={working||linkExpired(t)||Boolean(loadError)} onClick={()=>void copyLink(t,"invitation")} style={button}>Copy customer invitation</button>
                     <button onClick={() => regenerate(t)} disabled={working} style={button}>New link</button>
                     <button onClick={() => revoke(t.id)} disabled={working} style={dangerButton}>Revoke</button>
                   </div>
