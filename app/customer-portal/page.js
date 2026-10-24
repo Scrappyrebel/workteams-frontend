@@ -1,6 +1,6 @@
 "use client";
 import Link from "next/link";
-import {useEffect,useState} from "react";
+import {useEffect,useRef,useState} from "react";
 import {supabase} from "../../lib/supabase";
 import AuthenticatedCustomerRequests from "../../components/AuthenticatedCustomerRequests";
 import AuthenticatedCustomerQuality from "../../components/AuthenticatedCustomerQuality";
@@ -13,32 +13,70 @@ export default function AuthenticatedCustomerPortal(){
  const [error,setError]=useState("");
  const [notice,setNotice]=useState("");
  const t=(en,es)=>language==="es"?es:en;
- async function refresh(){
-  setBusy(true);setError("");setLocations([]);setNotice("");
+ // A browser can keep old customer data rendered after a manager revokes it.
+ // Revalidate every minute while visible and whenever the tab regains focus.
+ // Server RPCs remain the authorization authority on every read and write.
+ const requestSequence=useRef(0);
+ const mounted=useRef(false);
+ const latestLanguage=useRef(language);
+ latestLanguage.current=language;
+ async function refresh({silent=false}={}){
+  const sequence=++requestSequence.current;
+  if(!silent){setBusy(true);setError("");setLocations([]);setNotice("");}
   try{
    const sb=supabase();
    const {data:userState,error:userError}=await sb.auth.getUser();
+   if(!mounted.current||sequence!==requestSequence.current)return;
    if(userError||!userState?.user){
-    setLoggedIn(false);return;
+    setLocations([]);setLoggedIn(false);setNotice("");
+    if(userError)setError("Could not verify your current session. Please sign in again.");
+    return;
    }
-   setLoggedIn(true);
    const {data:claimed,error:claimError}=await sb.rpc("claim_workteams_customer_identity");
-   if(claimError)throw new Error("Could not verify customer account authorization. Please try again.");
-   if(typeof claimed!=="number")throw new Error("Customer account claim returned an invalid response.");
+   if(!mounted.current||sequence!==requestSequence.current)return;
+   if(claimError||typeof claimed!=="number")
+    throw new Error("Could not verify customer account authorization. Please try again.");
    const {data,error:scopeError}=await sb.rpc("get_my_workteams_customer_identity");
+   if(!mounted.current||sequence!==requestSequence.current)return;
    if(scopeError||data?.ok!==true||!Array.isArray(data.locations)){
     if(data?.ok===false&&data?.error)throw new Error(String(data.error));
     throw new Error("Customer locations could not be verified. No information was displayed.");
    }
-   setLocations(data.locations);
-   if(data.locations.length===0)setNotice(t(
-    "No customer locations are available. A business owner must first approve your verified email and location and activate their customer portal. Existing service-location links continue to work separately.",
-    "No hay ubicaciones disponibles. La empresa debe aprobar su correo y ubicación y activar su portal. Los enlaces de servicio existentes siguen funcionando aparte."
-   ));
-  }catch(err){setError(err.message||"Customer access unavailable.");setLocations([])}
-  finally{setBusy(false)}
+   setLoggedIn(true);
+   setError("");
+   setLocations(previous=>
+    JSON.stringify(previous)===JSON.stringify(data.locations)?previous:data.locations);
+   if(data.locations.length===0){
+    setNotice(latestLanguage.current==="es"?
+     "No hay ubicaciones disponibles. La empresa debe aprobar su correo y ubicación y activar su portal. Los enlaces de servicio existentes siguen funcionando aparte.":
+     "No customer locations are available. A business owner must first approve your verified email and location and activate their customer portal. Existing service-location links continue to work separately.");
+   }else setNotice("");
+  }catch(err){
+   if(!mounted.current||sequence!==requestSequence.current)return;
+   // Fail closed when authorization is unknown, including network failure.
+   setLocations([]);setNotice("");
+   setError(err instanceof Error?err.message:"Customer access unavailable.");
+  }finally{
+   if(mounted.current&&sequence===requestSequence.current)setBusy(false);
+  }
  }
- useEffect(()=>{void refresh()},[]);
+ useEffect(()=>{
+  mounted.current=true;
+  void refresh();
+  const recheck=()=>{
+   if(document.visibilityState==="visible")void refresh({silent:true});
+  };
+  document.addEventListener("visibilitychange",recheck);
+  window.addEventListener("focus",recheck);
+  const poll=window.setInterval(recheck,60000);
+  return ()=>{
+   mounted.current=false;
+   requestSequence.current++;
+   window.clearInterval(poll);
+   window.removeEventListener("focus",recheck);
+   document.removeEventListener("visibilitychange",recheck);
+  };
+ },[]);
  async function signOut(){
   setLocations([]);setLoggedIn(false);
   await supabase().auth.signOut();
