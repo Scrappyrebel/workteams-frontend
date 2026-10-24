@@ -219,6 +219,7 @@ export default function PortalPage() {
               <div style={{display:"flex",gap:12,flexWrap:"wrap"}}>
                 <a href="#portal-visits">Upcoming visits</a>
                 <a href="#portal-inspections">Published quality reports</a>
+                <a href="#portal-documents">Documents &amp; agreements</a>
                 <a href="#portal-work">Open work</a>
                 {contract && <a href="#portal-contract">Contract &amp; scope</a>}
                 {data?.amendments?.length > 0 && <a href="#portal-amendments">Contract amendments{dueAmendments>0? ` (${dueAmendments} to sign)` : ""}</a>}
@@ -280,6 +281,28 @@ export default function PortalPage() {
             <p style={{ fontSize: "0.8rem", color: "var(--muted)" }}>
               Questions about your service? Use the contact form below or reach out directly.
             </p>
+
+            <section className="panel" id="portal-documents" style={{padding:22,margin:"18px 0"}}>
+              <h3 style={{marginTop:0}}>Documents &amp; Agreements / Documentos y contratos</h3>
+              <p style={{fontSize:"0.9rem",color:"var(--muted)"}}>
+                This secure location link includes only approved contract details and amendment statuses.
+                It does not provide private downloadable company files or account-wide records.
+                Request a copy of your signed agreement using Customer Service.
+              </p>
+              <div style={{display:"flex",gap:14,flexWrap:"wrap"}}>
+                {contract?<a href="#portal-contract">Review location contract / Revisar contrato</a>:<span>No contract summary is currently available.</span>}
+                {data?.amendments?.length>0&&<a href="#portal-amendments">Review amendments / Revisar modificaciones</a>}
+                <button type="button" disabled={Boolean(portalAction.current)}
+                  onClick={()=>{
+                    setContactSent(false);
+                    setContact(previous=>({...previous,subject:"Request a copy of my signed contract",body:"Please contact me with a secure copy of my approved agreement for this service location.",category:"general"}));
+                    document.getElementById("portal-contact")?.scrollIntoView({behavior:"smooth"});
+                  }}
+                  style={{...pButton,padding:"8px 16px",width:"auto"}}>
+                  Request a contract copy / Solicitar copia del contrato
+                </button>
+              </div>
+            </section>
 
             {contract && (
               <section className="panel" style={{ padding: 22, margin: "18px 0" }}>
