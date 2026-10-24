@@ -37,12 +37,12 @@ Enable RLS and deny all direct public/anon/authenticated table access in the fou
 
 ## Phased rollout and test gates
 
-- **A — Design:** document approval, route separation, threat model, per-company grant model, rollback path. No new end-user privileges.
-- **B — Off-by-default schema:** create isolated, RLS-enabled, no-direct-grants foundation tables with location-company integrity and zero existing-user migration. Verify zero enabled companies, RLS, execute grants, database constraints, existing location-link data/count unchanged.
-- **C — Owner/admin opt-in management:** explicit contact approval, select allowed locations, rotate/revoke and audit with protected manager APIs. Negative checks for unaffiliated employees and other companies.
-- **D — Real customer identity:** separate bilingual sign-up/login/reset; verified email claim, account/location picker, no cross-account leakage, role-overlap denial, real recovery and revocation.
-- **E — One published capability at a time:** scoped support and safe quality, then signed contracts, then private documents, and only after separate billing security review, invoices.
-- **F — Nationwide acceptance:** real consenting customer/manager tests on Android/iPhone, two active tenant identities, unauthorized cross-company reads and writes, revocation mid-session, real delivery, accessible error/keyboard UX, service alerts.
+- **Phase A — Design:** document approval, route separation, threat model, per-company grant model, rollback path. No new end-user privileges.
+- **Phase B — Off-by-default schema:** create isolated, RLS-enabled, no-direct-grants foundation tables with location-company integrity and zero existing-user migration. Verify zero enabled companies, RLS, execute grants, database constraints, existing location-link data/count unchanged.
+- **Phase C — Owner/admin opt-in management:** explicit contact approval, select allowed locations, rotate/revoke and audit with protected manager APIs. Negative checks for unaffiliated employees and other companies.
+- **Phase D — Real customer identity:** separate bilingual sign-up/login/reset; verified email claim, account/location picker, no cross-account leakage, role-overlap denial, real recovery and revocation.
+- **Phase E — One published capability at a time:** scoped support and safe quality, then signed contracts, then private documents, and only after separate billing security review, invoices.
+- **Phase F — Nationwide acceptance:** real consenting customer/manager tests on Android/iPhone, two active tenant identities, unauthorized cross-company reads and writes, revocation mid-session, real delivery, accessible error/keyboard UX, service alerts.
 
 Rollback Phase B without loss: leave flag OFF and tables inaccessible until Phase C, rather than destructive DROP statements. If later rollout fails, disable feature and revert new API/UI while keeping existing bearer portal functioning.
 
