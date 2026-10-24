@@ -19,6 +19,7 @@ export default function PortalPage() {
   const [contact, setContact] = useState({ name: "", subject: "", body: "", category: "general" });
   const [contactSent, setContactSent] = useState(false);
   const [contactBusy, setContactBusy] = useState(false);
+  const [historyRefreshing,setHistoryRefreshing]=useState(false);
   const [cleanReq, setCleanReq] = useState({ kind: "extra", date: "", notes: "" });
   const [cleanBusy, setCleanBusy] = useState(false);
   const [cleanDone, setCleanDone] = useState(null);
@@ -76,6 +77,26 @@ export default function PortalPage() {
     return () => { cancelled = true; };
   }, [token]);
 
+  async function refreshCustomerRequests(allowPending=false){
+    if(historyRefreshing||(!allowPending&&portalAction.current))return;
+    setHistoryRefreshing(true);
+    try{
+      const res=await fetch("/api/portal/lookup",{
+        method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({token}),cache:"no-store"
+      });
+      const payload=await res.json();
+      if(!res.ok||payload?.ok!==true||payload.customer_requests_error||!Array.isArray(payload.customer_requests))
+        throw new Error(payload.customer_requests_error||"Customer request statuses are unavailable.");
+      setData(previous=>previous?.ok===true?{
+        ...previous,customer_requests:payload.customer_requests,customer_requests_error:null
+      }:previous);
+    }catch(error){
+      setData(previous=>previous?.ok===true?{...previous,
+        customer_requests_error:error instanceof Error?error.message:"Customer request statuses are unavailable."
+      }:previous);
+    }finally{setHistoryRefreshing(false)}
+  }
+
   async function sendContact(e) {
     e.preventDefault();
     if (!contact.body.trim()) { setActionError("Please write your message first."); return; }
@@ -90,6 +111,9 @@ export default function PortalPage() {
       if (!res.ok || j.ok !== true) throw new Error(j.error || "Message status could not be confirmed.");
       setContactSent(true);
       setContact({ name: "", subject: "", body: "", category: "general" });
+      // A successful message should appear in the same-token status history.
+      // Failure to refresh must never be treated as failed message delivery.
+      void refreshCustomerRequests(true);
     } catch (err) {
       setActionError(err instanceof Error ? err.message : "Message status unknown. Ask the business before resending.");
     } finally {
@@ -226,6 +250,7 @@ export default function PortalPage() {
                 <a href="#portal-extra">Extra service</a>
                 {data.temp_enabled && <a href="#portal-temp">Temp staffing</a>}
                 <a href="#portal-contact">Contact us</a>
+                <a href="#portal-customer-requests">My request statuses</a>
               </div>
               <p style={{fontSize:"0.85rem",color:"var(--muted)",marginBottom:0}}>Amendments awaiting signature: {dueAmendments} · Temp hours to confirm: {hoursToConfirm}. This secure link is for this location only.</p>
             </nav>
@@ -521,6 +546,37 @@ export default function PortalPage() {
                   <button type="submit" disabled={contactBusy || Boolean(portalAction.current)} style={pButton}>{contactBusy ? "Sending…" : "Send message"}</button>
                 </form>
               )}
+            </section>
+
+            <section className="panel" id="portal-customer-requests" style={{padding:22,margin:"18px 0"}}>
+              <h3 style={{marginTop:0}}>My Request Status / Estado de mis solicitudes</h3>
+              <p style={{fontSize:"0.85rem",color:"var(--muted)"}}>
+                This link is shared by service location. For privacy, request history shows only
+                date, category, status and customer-approved replies. Original personal messages,
+                contact details, internal notes and staff information are never displayed here.
+              </p>
+              {data.customer_requests_error&&<div role="alert" style={{color:"#b3261e"}}>
+                Request status could not be confirmed: {data.customer_requests_error}.
+                Your prior messages have not been deleted.
+              </div>}
+              <button type="button" disabled={historyRefreshing||Boolean(portalAction.current)}
+                onClick={()=>void refreshCustomerRequests()} style={{...pButton,padding:"8px 14px",width:"auto"}}>
+                {historyRefreshing?"Refreshing…":"Refresh request status / Actualizar estado"}
+              </button>
+              {!data.customer_requests_error&&Array.isArray(data.customer_requests)&&data.customer_requests.length===0&&
+                <p style={{color:"var(--muted)"}}>No customer service requests have been submitted through this location link.</p>}
+              {!data.customer_requests_error&&Array.isArray(data.customer_requests)&&data.customer_requests.map(r=>(
+                <article key={r.id} style={{border:"1px solid var(--line)",padding:14,borderRadius:12,marginTop:10}}>
+                  <strong>{r.category==="service_problem"?"Service concern":r.category==="callback_request"?"Callback request":"General request"}</strong>
+                  <p style={{margin:"6px 0",fontSize:"0.85rem",color:"var(--muted)"}}>
+                    {r.created_at?new Date(r.created_at).toLocaleString():"Date unavailable"} · 
+                    {r.status==="resolved"?" Resolved / Resuelto":r.status==="in_progress"?" In progress / En curso":" Received / Recibido"}
+                  </p>
+                  {r.response&&<p style={{whiteSpace:"pre-wrap",margin:"8px 0 0"}}>
+                    <strong>Business response / Respuesta:</strong> {r.response}
+                  </p>}
+                </article>
+              ))}
             </section>
           </div>
         )}
