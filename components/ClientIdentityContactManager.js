@@ -78,6 +78,31 @@ export default function ClientIdentityContactManager({companyId,locations,pilotR
    await refresh();
   }catch(err){setError(err.message||"Could not revoke this contact.")}finally{setBusy(false)}
  }
+ async function changeQuality(contact,location,allow){
+  if(!companyId||!pilotRequested||busy||contact.status!=="active"||location.revoked)return;
+  const question=allow?
+    t("Publish only manager-approved quality summaries to this verified customer at this exact location? Internal notes, photos and checklists stay private.",
+      "¿Permitir que este cliente vea únicamente los resúmenes de calidad publicados para esta ubicación? Las notas y fotos internas seguirán privadas."):
+    t("Stop this customer's quality report access immediately for this location?",
+      "¿Revocar inmediatamente el acceso de este cliente a los informes de esta ubicación?");
+  if(!window.confirm(question))return;
+  setBusy(true);setError("");setNotice("");
+  try{
+   const {data,error:e}=await supabase().rpc("set_workteams_customer_quality_access",{
+    p_company_id:companyId,p_contact_id:contact.id,p_location_id:location.id,
+    p_allow:allow
+   });
+   if(e||data?.ok!==true||data.quality_access!==allow)
+    throw Error(e?.message||"Quality permission update could not be confirmed.");
+   setNotice(allow?
+    t("Published quality summaries enabled for this contact and location.",
+      "Se permitió ver los informes publicados para este contacto y ubicación."):
+    t("Quality report access revoked for this contact and location.",
+      "Se revocó el acceso a los informes de este contacto y ubicación."));
+   await refresh();
+  }catch(e){setError(e.message||"Cannot verify quality permissions.")}
+  finally{setBusy(false)}
+ }
  if(!pilotRequested)return null;
  return <section className="panel" style={{padding:20,margin:"16px 0"}}>
   <h3>{t("Verified Customer Contacts — Pilot preparation","Contactos verificados — Preparación del programa piloto")}</h3>
@@ -114,7 +139,21 @@ export default function ClientIdentityContactManager({companyId,locations,pilotR
   {contacts.map(c=><div key={c.id} style={{borderTop:"1px solid var(--border,#ccc)",padding:"12px 0"}}>
    <strong>{c.name||"Customer"}</strong> — <span>{c.email}</span>
    <p style={{margin:"4px 0"}}>{t("Status","Estado")}: {c.status}</p>
-   <p style={{fontSize:13}}>{(c.locations||[]).map(l=>l.name+(l.revoked?" (revoked)":"")).join(", ")||"No location grants"}</p>
+   <div style={{display:"grid",gap:8,margin:"10px 0"}}>
+    {(c.locations||[]).length===0&&<p>{t("No approved locations","No hay ubicaciones autorizadas")}</p>}
+    {(c.locations||[]).map(l=><div key={l.id}
+      style={{border:"1px solid var(--line,#ccc)",padding:10,borderRadius:7}}>
+      <strong>{l.name}</strong> {l.revoked&&t("(revoked)","(revocado)")}
+      <p style={{fontSize:13,margin:"6px 0"}}>{t("Published quality access: ","Acceso a informes de calidad: ")}
+       {l.quality_access?t("Approved","Autorizado"):t("Private","Privado")}</p>
+      {c.status==="active"&&!l.revoked&&l.basic_portal&&<button type="button"
+       disabled={busy||!loaded}
+       onClick={()=>void changeQuality(c,l,!l.quality_access)}>
+        {l.quality_access?t("Revoke quality reports","Revocar informes"):
+         t("Allow published quality reports","Permitir informes publicados")}
+      </button>}
+    </div>)}
+   </div>
    {c.status!=="disabled"&&<button type="button" disabled={busy} onClick={()=>void revoke(c.id)}>
     {t("Revoke contact","Revocar contacto")}
    </button>}
