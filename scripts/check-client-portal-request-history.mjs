@@ -33,6 +33,16 @@ all(client,["id=\"portal-customer-requests\"","customer_requests_error",
  "request statuses","r.status===\"resolved\"",
  "r.response&&","Refresh request status / Actualizar estado",
  "Original personal messages"]);
+const customerRefresh=client.slice(client.indexOf("  async function refreshCustomerRequests("),client.indexOf("  async function sendContact("));
+all(customerRefresh,[
+ "currentPortalToken.current!==token",
+ "if(!res.ok||payload?.ok!==true)",
+ 'setData({ok:false,error:payload?.error',
+ "setContract(null);setSigningAmend(null);setContactSent(false)",
+ "customer_requests:[]",
+ 'setData({ok:false,error:"Could not reverify this location link.'
+]);
+assert.ok(!customerRefresh.includes("customer_requests_error:error instanceof Error"),"unknown token validation failure must not leave old records visible");
 assert.ok(!client.includes("r.body"),"Shared token must not render original message");
 assert.ok(!client.includes("r.sender_name"),"Shared token must not render sender name");
 console.log("WorkTeams request status and customer-safe response privacy regression passed.");

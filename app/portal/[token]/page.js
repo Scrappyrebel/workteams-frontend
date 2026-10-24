@@ -31,6 +31,10 @@ export default function PortalPage() {
     try{localStorage.setItem("workteams-client-portal-language",value)}catch{}
   };
   const token = params.token;
+  // Ref updates on route changes so delayed refreshes cannot restore another
+  // location link's information after navigation.
+  const currentPortalToken=useRef(token);
+  currentPortalToken.current=token;
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [contract, setContract] = useState(null);
@@ -103,15 +107,31 @@ export default function PortalPage() {
         method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({token}),cache:"no-store"
       });
       const payload=await res.json();
-      if(!res.ok||payload?.ok!==true||payload.customer_requests_error||!Array.isArray(payload.customer_requests))
-        throw new Error(payload.customer_requests_error||"Customer request statuses are unavailable.");
+      if(currentPortalToken.current!==token)return;
+      if(!res.ok||payload?.ok!==true){
+        // A location link can expire, be revoked or be rotated between reads.
+        // Deny all previously displayed token-scoped content until a new valid lookup.
+        setData({ok:false,error:payload?.error||"This location link could not be verified. Reload a valid invitation."});
+        setContract(null);setSigningAmend(null);setContactSent(false);
+        return;
+      }
+      if(payload.customer_requests_error||!Array.isArray(payload.customer_requests)){
+        // Link verified, but request history is not trustworthy: hide the
+        // previously cached requests instead of showing stale statuses.
+        setData(previous=>previous?.ok===true?{...previous,customer_requests:[],
+          customer_requests_error:payload.customer_requests_error||"Customer request statuses are unavailable."
+        }:previous);
+        return;
+      }
       setData(previous=>previous?.ok===true?{
         ...previous,customer_requests:payload.customer_requests,customer_requests_error:null
       }:previous);
     }catch(error){
-      setData(previous=>previous?.ok===true?{...previous,
-        customer_requests_error:error instanceof Error?error.message:"Customer request statuses are unavailable."
-      }:previous);
+      if(currentPortalToken.current!==token)return;
+      // Unknown network failure cannot establish that this bearer link is
+      // still authorized. Remove private location-scoped content, fail honest.
+      setData({ok:false,error:"Could not reverify this location link. Reload to try again."});
+      setContract(null);setSigningAmend(null);setContactSent(false);
     }finally{setHistoryRefreshing(false)}
   }
 
