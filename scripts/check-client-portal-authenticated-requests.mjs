@@ -5,6 +5,7 @@ const sql=read("supabase/057_client_portal_authenticated_service_requests.sql");
 const requests=read("components/AuthenticatedCustomerRequests.js");
 const portal=read("app/customer-portal/page.js");
 const oldHistory=read("supabase/051_client_portal_request_history.sql");
+const denyDirectWrites=read("supabase/058_client_portal_deny_direct_message_writes.sql");
 for(const term of [
  "add column if not exists customer_contact_id uuid",
  "add column if not exists customer_request_key uuid",
@@ -36,6 +37,7 @@ for(const term of [
 ])assert.ok(sql.toLowerCase().includes(term.toLowerCase()),"Missing location customer request guard: "+term);
 assert.ok(!sql.includes("grant select on public.portal_messages to anon"),"Do not reveal customer requests publicly");
 assert.ok(!sql.includes("grant insert on public.portal_messages to authenticated"),"No direct customer insert");
+assert.ok(denyDirectWrites.includes("revoke insert on public.portal_messages from anon,authenticated;"),"Only guarded RPC may write authenticated customer requests");
 for(const term of [
  "get_workteams_authenticated_customer_requests",
  "submit_workteams_authenticated_customer_request",
