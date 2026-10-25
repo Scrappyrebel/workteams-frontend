@@ -1,9 +1,23 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { supabase } from "../../../../lib/supabase";
 import { useCompany } from "../../../../lib/company-context";
 import { isSupervisorRole } from "../../../../lib/roles";
+
+// Customer portal alerts (migration 065) carry the request id in their
+// dedupe_key — customer_portal_request:<id> or
+// customer_portal_reply:<id>:<reply_id> — so the alert can deep-link
+// straight to that request's conversation in the Client Portal inbox.
+function portalMessageId(alert) {
+  if (alert?.category !== "customer_portal" || typeof alert?.dedupe_key !== "string")
+    return null;
+  const match = alert.dedupe_key.match(
+    /^customer_portal_(?:request|reply):([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i
+  );
+  return match ? match[1] : null;
+}
 
 // Emergency alert log. Supervisors and up can acknowledge ("I'm on it").
 // Everyone sees the alerts for their company.
@@ -17,7 +31,7 @@ export default function EmergencyPage() {
   async function load() {
     const { data } = await supabase()
       .from("emergency_alerts")
-      .select("id, audience, category, message, location_name, created_at, acknowledged_at, company_members!emergency_alerts_sender_member_id_fkey(display_name)")
+      .select("id, audience, category, message, location_name, dedupe_key, created_at, acknowledged_at, company_members!emergency_alerts_sender_member_id_fkey(display_name)")
       .eq("company_id", company.id)
       .order("created_at", { ascending: false })
       .limit(50);
@@ -93,6 +107,16 @@ export default function EmergencyPage() {
                   </span>
                 </div>
                 <div style={{ marginTop: 4 }}>{a.message}</div>
+                {portalMessageId(a) && (
+                  <div style={{ marginTop: 6 }}>
+                    <Link
+                      href={`/app/${company.id}/client-portal?message=${portalMessageId(a)}`}
+                      style={{ color: "var(--brand-deep)", fontWeight: 700 }}
+                    >
+                      Open customer request →
+                    </Link>
+                  </div>
+                )}
                 <div style={{ fontSize: "0.8rem", color: "var(--muted)", marginTop: 4 }}>
                   {new Date(a.created_at).toLocaleString()}
                   {a.acknowledged_at && " • ✅ Responded"}

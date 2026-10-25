@@ -46,6 +46,13 @@ export default function PortalPage() {
   const [copySubmitted,setCopySubmitted]=useState(false);
   const [copyNotice,setCopyNotice]=useState("");
   const [historyRefreshing,setHistoryRefreshing]=useState(false);
+  // Two-way conversation (migration 065): per-request thread + reply form.
+  const [conversations,setConversations]=useState({});
+  const [openConvo,setOpenConvo]=useState(null);
+  const [convoDrafts,setConvoDrafts]=useState({});
+  const [convoBusy,setConvoBusy]=useState(null);
+  const [convoErrors,setConvoErrors]=useState({});
+  const [convoNotices,setConvoNotices]=useState({});
   const [cleanReq, setCleanReq] = useState({ kind: "extra", date: "", notes: "" });
   const [cleanBusy, setCleanBusy] = useState(false);
   const [cleanDone, setCleanDone] = useState(null);
@@ -152,6 +159,69 @@ export default function PortalPage() {
       setData({ok:false,error:"Could not reverify this location link. Reload to try again."});
       setContract(null);setSigningAmend(null);setContactSent(false);
     }finally{setHistoryRefreshing(false)}
+  }
+
+  async function toggleConversation(request){
+    if(openConvo===request.id){setOpenConvo(null);return;}
+    setOpenConvo(request.id);
+    if(conversations[request.id])return;
+    setConvoBusy(request.id);
+    try{
+      const res=await fetch("/api/portal/conversation",{
+        method:"POST",headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({token,message_id:request.id}),cache:"no-store"
+      });
+      const payload=await res.json();
+      if(currentPortalToken.current!==token)return;
+      if(!res.ok||payload?.ok!==true||!Array.isArray(payload.replies)){
+        setConvoErrors(p=>({...p,[request.id]:payload?.error||t("Conversation could not be loaded.","No se pudo cargar la conversación.")}));
+        return;
+      }
+      setConversations(p=>({...p,[request.id]:payload.replies}));
+    }catch{
+      if(currentPortalToken.current===token)
+        setConvoErrors(p=>({...p,[request.id]:t("Conversation could not be loaded.","No se pudo cargar la conversación.")}));
+    }finally{if(currentPortalToken.current===token)setConvoBusy(null)}
+  }
+
+  async function sendPortalReply(request){
+    const body=String(convoDrafts[request.id]??"").trim();
+    if(!body||body.length>1600){
+      setConvoErrors(p=>({...p,[request.id]:t("Write a reply of 1 to 1600 characters.","Escriba una respuesta de 1 a 1600 caracteres.")}));
+      return;
+    }
+    if(!beginAction("reply"))return;
+    setConvoBusy(request.id);
+    setConvoErrors(p=>({...p,[request.id]:""}));
+    setConvoNotices(p=>({...p,[request.id]:""}));
+    try{
+      const res=await fetch("/api/portal/conversation",{
+        method:"POST",headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({token,message_id:request.id,body})
+      });
+      const payload=await res.json();
+      if(currentPortalToken.current!==token)return;
+      if(!res.ok||payload?.ok!==true)
+        throw new Error(payload?.error||t("Reply status could not be confirmed.","No se pudo confirmar la respuesta."));
+      setConvoDrafts(p=>({...p,[request.id]:""}));
+      setConvoNotices(p=>({...p,[request.id]:t("Reply saved. Management has been alerted.","Respuesta guardada. Se avisó a la gerencia.")}));
+      // Reload the authoritative thread; a reply on a resolved request
+      // reopens it, so refresh the status list too.
+      const check=await fetch("/api/portal/conversation",{
+        method:"POST",headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({token,message_id:request.id}),cache:"no-store"
+      });
+      const thread=await check.json();
+      if(currentPortalToken.current===token&&check.ok&&thread?.ok===true&&Array.isArray(thread.replies))
+        setConversations(p=>({...p,[request.id]:thread.replies}));
+      void refreshCustomerRequests(true);
+    }catch(err){
+      if(currentPortalToken.current===token)
+        setConvoErrors(p=>({...p,[request.id]:err instanceof Error?err.message:t("Reply status unknown. Ask the business before resending.","No se confirmó la respuesta. Consulte a la empresa antes de reenviarla.")}));
+    }finally{
+      if(currentPortalToken.current===token)setConvoBusy(null);
+      finishAction("reply");
+    }
   }
 
   async function sendContact(e) {
@@ -669,6 +739,44 @@ export default function PortalPage() {
                   {r.response&&<p style={{whiteSpace:"pre-wrap",margin:"8px 0 0"}}>
                     <strong>{t("Business response / Respuesta:","Respuesta del negocio:")}</strong> {r.response}
                   </p>}
+                  <button type="button" disabled={Boolean(portalAction.current)||convoBusy===r.id}
+                    onClick={()=>void toggleConversation(r)}
+                    style={{...pButton,padding:"8px 14px",width:"auto",marginTop:10}}>
+                    {openConvo===r.id?t("Hide conversation","Ocultar conversación"):t("View conversation & reply","Ver conversación y responder")}
+                  </button>
+                  {openConvo===r.id&&(
+                    <div style={{marginTop:10,borderTop:"1px dashed var(--line)",paddingTop:10}}>
+                      <p style={{fontSize:"0.82rem",color:"var(--muted)",margin:"0 0 8px"}}>
+                        {t("Replies written here are visible on this location link. Please do not include private phone numbers or personal details.","Las respuestas escritas aquí son visibles en este enlace de ubicación. No incluya números de teléfono privados ni datos personales.")}
+                      </p>
+                      {convoErrors[r.id]&&<p role="alert" style={{color:"#b3261e"}}>{convoErrors[r.id]}</p>}
+                      {convoNotices[r.id]&&<p role="status" style={{color:"#1e8e4d",fontWeight:700}}>{convoNotices[r.id]}</p>}
+                      {convoBusy===r.id&&!conversations[r.id]&&<p role="status">{t("Loading conversation…","Cargando conversación…")}</p>}
+                      <div style={{display:"grid",gap:8}}>
+                        {(conversations[r.id]||[]).map((entry,idx)=>(
+                          <div key={entry.id||`legacy-${idx}`} style={{borderLeft:entry.sender_role==="business"?"3px solid var(--brand)":"3px solid var(--line)",paddingLeft:10}}>
+                            <p style={{margin:0,fontSize:"0.8rem",color:"var(--muted)"}}>
+                              <strong>{entry.sender_role==="business"?t("Business reply","Respuesta del negocio"):t("Your reply","Su respuesta")}</strong>
+                              {" • "}{entry.created_at?new Date(entry.created_at).toLocaleString(language==="es"?"es-US":"en-US"):t("Date unavailable","Fecha no disponible")}
+                            </p>
+                            <p style={{margin:"2px 0 0",whiteSpace:"pre-wrap"}}>{entry.body}</p>
+                          </div>
+                        ))}
+                      </div>
+                      <form onSubmit={e=>{e.preventDefault();void sendPortalReply(r);}} style={{display:"grid",gap:8,marginTop:10}}>
+                        <label htmlFor={`portal-reply-${r.id}`} style={{fontWeight:700,fontSize:"0.9rem"}}>{t("Reply to the business","Responder al negocio")}</label>
+                        <textarea id={`portal-reply-${r.id}`} rows={3} maxLength={1600}
+                          value={convoDrafts[r.id]??""}
+                          onChange={e=>setConvoDrafts(p=>({...p,[r.id]:e.target.value}))}
+                          placeholder={t("Write a follow-up about this request.","Escriba un seguimiento sobre esta solicitud.")}
+                          style={pInput}/>
+                        <button type="submit" disabled={Boolean(portalAction.current)||convoBusy===r.id||!(convoDrafts[r.id]??"").trim()}
+                          style={{...pButton,padding:"10px 16px",width:"auto"}}>
+                          {convoBusy===r.id?t("Sending…","Enviando…"):t("Send reply","Enviar respuesta")}
+                        </button>
+                      </form>
+                    </div>
+                  )}
                 </article>
               ))}
             </section>
