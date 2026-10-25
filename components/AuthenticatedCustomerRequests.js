@@ -13,6 +13,15 @@ export default function AuthenticatedCustomerRequests({companyId,locationId,lang
  const [error,setError]=useState("");
  const [notice,setNotice]=useState("");
  const pendingKey=useRef(null);
+ // Two-way conversation (migration 065): the thread on one request, with
+ // replies appended through RPCs — never a new unlinked request.
+ const [openThread,setOpenThread]=useState(null);
+ const [threads,setThreads]=useState({});
+ const [replyDrafts,setReplyDrafts]=useState({});
+ const [replyBusy,setReplyBusy]=useState(null);
+ const [threadError,setThreadError]=useState("");
+ const threadSequence=useRef(0);
+ const replySequence=useRef(0);
  // Reject older RPC completions after location changes, refreshes, logout,
  // revocation or unmount. Authorization remains checked by the server.
  const requestSequence=useRef(0);
@@ -59,12 +68,16 @@ export default function AuthenticatedCustomerRequests({companyId,locationId,lang
  useEffect(()=>{
   let active=true;
   setItems([]);setMessage("");setNotice("");setError("");pendingKey.current=null;
+  setOpenThread(null);setThreads({});setReplyDrafts({});setThreadError("");
   const {data:listener}=supabase().auth.onAuthStateChange((event)=>{
    if(!active||event!=="SIGNED_OUT")return;
    requestSequence.current++;
    submissionSequence.current++;
+   threadSequence.current++;
+   replySequence.current++;
    pendingKey.current=null;
    setItems([]);setMessage("");setNotice("");setError("");setLoading(false);setSending(false);
+   setOpenThread(null);setThreads({});setReplyDrafts({});setThreadError("");
    onAuthorizationLost?.();
   });
   void refresh(()=>active);
@@ -72,6 +85,8 @@ export default function AuthenticatedCustomerRequests({companyId,locationId,lang
    active=false;
    requestSequence.current++;
    submissionSequence.current++;
+   threadSequence.current++;
+   replySequence.current++;
    pendingKey.current=null;
    listener?.subscription?.unsubscribe();
   };
@@ -121,6 +136,66 @@ export default function AuthenticatedCustomerRequests({companyId,locationId,lang
    if(stillCurrent())setSending(false);
   }
  }
+ async function loadConversation(messageId,isCurrent=()=>true){
+  const request=++threadSequence.current;
+  try{
+   const {data,error:failure}=await supabase().rpc("get_workteams_authenticated_customer_conversation",{
+    p_company_id:companyId,p_location_id:locationId,p_message_id:messageId
+   });
+   if(!isCurrent()||request!==threadSequence.current||scopeRef.current!==key)return;
+   if(failure||data?.ok!==true||!Array.isArray(data.replies)){
+    if(failure?.code==="42501")onAuthorizationLost?.();
+    setThreadError(t("Conversation could not be verified. Please recheck your account.",
+     "No se pudo verificar la conversación. Vuelva a comprobar su cuenta."));
+    return;
+   }
+   setThreads(previous=>({...previous,[messageId]:data.replies}));
+  }catch{
+   if(!isCurrent()||request!==threadSequence.current||scopeRef.current!==key)return;
+   setThreadError(t("Conversation could not be verified. Please recheck your account.",
+    "No se pudo verificar la conversación. Vuelva a comprobar su cuenta."));
+  }
+ }
+ function toggleConversation(item){
+  setThreadError("");
+  if(openThread===item.id){setOpenThread(null);return;}
+  setOpenThread(item.id);
+  if(!threads[item.id])void loadConversation(item.id);
+ }
+ async function sendReply(item){
+  if(replyBusy||sending||loading)return;
+  const body=String(replyDrafts[item.id]??"").trim();
+  if(body.length<1||body.length>1600){
+   setThreadError(t("Reply must contain 1 to 1600 characters.",
+    "La respuesta debe tener entre 1 y 1600 caracteres."));
+   return;
+  }
+  const operation=++replySequence.current;
+  const submittedScope=key;
+  const stillCurrent=()=>operation===replySequence.current&&scopeRef.current===submittedScope;
+  setReplyBusy(item.id);setThreadError("");
+  try{
+   const {data,error:failure}=await supabase().rpc("reply_workteams_authenticated_customer_request",{
+    p_company_id:companyId,p_location_id:locationId,p_message_id:item.id,p_body:body
+   });
+   if(!stillCurrent())return;
+   if(failure||data?.ok!==true||!data.reply_id){
+    if(failure?.code==="42501")onAuthorizationLost?.();
+    throw Error("reply-not-confirmed");
+   }
+   setReplyDrafts(previous=>({...previous,[item.id]:""}));
+   setNotice(t("Reply saved. Management has been alerted.",
+    "Respuesta guardada. Se avisó a la gerencia."));
+   await loadConversation(item.id,()=>stillCurrent());
+   await refresh(()=>stillCurrent());
+  }catch{
+   if(!stillCurrent())return;
+   setThreadError(t("Could not confirm your reply. Check the conversation or retry.",
+    "No se pudo confirmar su respuesta. Revise la conversación o vuelva a intentar."));
+  }finally{
+   if(stillCurrent())setReplyBusy(null);
+  }
+ }
  return <section style={{borderTop:"1px solid var(--line,#aaa)",paddingTop:12,marginTop:12}}>
   <h3>{t("Customer Service & requests","Servicio al cliente y solicitudes")}</h3>
   <p style={{fontSize:13}}>{t(
@@ -162,6 +237,32 @@ export default function AuthenticatedCustomerRequests({companyId,locationId,lang
     {item.response&&<p style={{whiteSpace:"pre-wrap",overflowWrap:"anywhere"}}>
      <strong>{t("Manager response","Respuesta del responsable")}:</strong> {item.response}
     </p>}
+    <button type="button" disabled={loading||sending||replyBusy===item.id}
+     onClick={()=>toggleConversation(item)} style={{marginTop:8}}>
+     {openThread===item.id?t("Hide conversation","Ocultar conversación"):t("View conversation & reply","Ver conversación y responder")}
+    </button>
+    {openThread===item.id&&<div style={{marginTop:8,borderTop:"1px dashed var(--line,#ccc)",paddingTop:8}}>
+     {threadError&&<p role="alert" style={{color:"#b3261e"}}>{threadError}</p>}
+     {!threads[item.id]&&<p role="status">{t("Loading conversation…","Cargando conversación…")}</p>}
+     {(threads[item.id]||[]).map((entry,idx)=><div key={entry.id||`legacy-${idx}`}
+       style={{borderLeft:entry.sender_role==="business"?"3px solid var(--brand,#3457d5)":"3px solid #bbb",paddingLeft:9,marginTop:7}}>
+       <p style={{margin:0,fontSize:12.5}}>
+        <strong>{entry.sender_role==="business"?t("Manager reply","Respuesta del responsable"):t("Your reply","Su respuesta")}</strong>
+        {" · "}{entry.created_at?new Date(entry.created_at).toLocaleString(language==="es"?"es":"en-US"):""}
+       </p>
+       <p style={{whiteSpace:"pre-wrap",overflowWrap:"anywhere",margin:"2px 0 0"}}>{entry.body}</p>
+      </div>)}
+     <form onSubmit={e=>{e.preventDefault();void sendReply(item);}} style={{display:"grid",gap:8,marginTop:10}}>
+      <label htmlFor={"reply-"+item.id}>{t("Reply to management","Responder a la gerencia")}</label>
+      <textarea id={"reply-"+item.id} rows={3} maxLength={1600}
+       value={replyDrafts[item.id]??""}
+       onChange={e=>setReplyDrafts(previous=>({...previous,[item.id]:e.target.value}))}
+       placeholder={t("Write a follow-up for this request.","Escriba un seguimiento para esta solicitud.")}/>
+      <button type="submit" disabled={replyBusy===item.id||!(replyDrafts[item.id]??"").trim()}>
+       {replyBusy===item.id?t("Sending…","Enviando…"):t("Send reply","Enviar respuesta")}
+      </button>
+     </form>
+    </div>}
   </article>)}
  </section>;
 }

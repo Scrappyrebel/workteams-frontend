@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { checkRateLimit, clientIp } from "../../../../lib/rate-limit";
+import { appUrlFrom } from "../../../../lib/app-url";
 
 const sb = () =>
   createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
@@ -105,14 +106,17 @@ export async function POST(req) {
 
     // Notify management when available; the durable request remains in the
     // company inbox even if external mail is disabled or unavailable.
+    // The link opens the Client Portal inbox on this exact request's
+    // conversation (migration 065 deep link).
+    const inboxUrl=`${appUrlFrom(req)}/app/${pt.company_id}/client-portal?message=${msg.id}`;
     const {data:owner}=await client.from("company_members").select("email")
       .eq("company_id",pt.company_id).eq("role","owner").limit(1).maybeSingle();
     const emailed=await tryEmail({
       to:owner?.email,
       subject:isCopy?"Customer requested signed contract copy":`Client message: ${cleanSubject||cat}`,
       text:isCopy?
-        "A location-scoped Customer Portal visitor requested a signed contract copy. Open your WorkTeams Client Portal inbox to verify the recipient and arrange secure delivery. Do not send a document through the shared location link.":
-        `New client portal message${name?` (${name})`:""}:\n\n${cleanBody}`
+        `A location-scoped Customer Portal visitor requested a signed contract copy. Open this request in your WorkTeams Client Portal inbox to verify the recipient and arrange secure delivery: ${inboxUrl}\n\nDo not send a document through the shared location link.`:
+        `New client portal message${name?` (${name})`:""}:\n\n${cleanBody}\n\nOpen this request in WorkTeams: ${inboxUrl}`
     });
     if(emailed)await client.from("portal_messages")
       .update({emailed_at:new Date().toISOString()}).eq("id",msg.id)

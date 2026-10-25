@@ -35,12 +35,27 @@ export default function ClientPortalPage() {
   const [responseError,setResponseError]=useState("");
   const [responseNotice,setResponseNotice]=useState("");
   const responseInFlight=useRef(false);
+  // Two-way conversation (migration 065): append-only thread per request,
+  // posted through RPCs; the legacy single response stays as a fallback.
+  const [threads,setThreads]=useState({});
+  const [threadDrafts,setThreadDrafts]=useState({});
+  const [threadBusyId,setThreadBusyId]=useState(null);
+  const [threadNotice,setThreadNotice]=useState("");
+  const threadInFlight=useRef(false);
+  // Deep link from a customer alert or the owner email: ?message=<request id>
+  // opens this inbox on that exact request's conversation.
+  const [deepLinkId]=useState(()=>{
+    if(typeof window==="undefined")return null;
+    const value=new URLSearchParams(window.location.search).get("message");
+    return value&&/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value)?value:null;
+  });
+  const [highlightId,setHighlightId]=useState(null);
 
   const isManager = member && (member.role === "owner" || member.role === "admin");
   const allowed = canUseWithRole(company?.effectiveTier || company?.tier, "portal", member?.role);
 
   const [messages, setMessages] = useState([]);
-  const [inboxFilter,setInboxFilter]=useState("attention");
+  const [inboxFilter,setInboxFilter]=useState(deepLinkId?"all":"attention");
   const [inboxError,setInboxError]=useState("");
   const [inboxCheckedAt,setInboxCheckedAt]=useState(null);
   const liveInboxCompany=useRef(company?.id);
@@ -134,6 +149,40 @@ export default function ClientPortalPage() {
     }finally{setPilotBusy(false)}
   }
 
+  // Conversation threads are additive: if the replies table is unavailable
+  // (migration 065 not run yet) the inbox keeps working with the legacy
+  // single response, so a failed thread read is swallowed on purpose.
+  async function loadThreads(ids){
+    const unique=[...new Set((ids||[]).filter(Boolean))];
+    if(!unique.length)return;
+    const {data,error}=await supabase().from("portal_message_replies")
+      .select("id,portal_message_id,sender_role,sender_name,body,created_at")
+      .in("portal_message_id",unique)
+      .order("created_at",{ascending:true});
+    if(error)return;
+    const grouped={};
+    for(const row of data||[])(grouped[row.portal_message_id]??=[]).push(row);
+    setThreads(previous=>{
+      const next={...previous};
+      for(const id of unique)next[id]=grouped[id]||[];
+      return next;
+    });
+  }
+
+  // What the conversation shows: the append-only thread, with the legacy
+  // saved response standing in as the business reply until a thread reply
+  // supersedes it (business replies are mirrored back into that field).
+  function threadEntries(m){
+    const thread=threads[m.id]||[];
+    const hasBusiness=thread.some(r=>r.sender_role==="business");
+    if(!hasBusiness&&m.customer_response){
+      return [{id:"legacy-"+m.id,sender_role:"business",sender_name:null,
+        body:m.customer_response,
+        created_at:m.customer_responded_at||m.created_at},...thread];
+    }
+    return thread;
+  }
+
   async function load() {
     const companyId=company?.id;
     if(!companyId||!isManager||!allowed)return;
@@ -161,21 +210,32 @@ export default function ClientPortalPage() {
       setMessages([]);setInboxCheckedAt(null);return;
     }
     setInboxError("");setInboxCheckedAt(new Date());
-    setMessages(msgs || []);
+    let allMsgs=msgs || [];
+    // A deep-linked request may be older than the recent-50 window; fetch it
+    // directly so the alert/email link always lands on its conversation.
+    if(deepLinkId&&!allMsgs.some(m=>m.id===deepLinkId)){
+      const {data:linked}=await sb.from("portal_messages")
+        .select("*, locations(name)")
+        .eq("company_id",company.id).eq("id",deepLinkId).maybeSingle();
+      if(liveInboxCompany.current!==companyId)return;
+      if(linked)allMsgs=[linked,...allMsgs];
+    }
+    setMessages(allMsgs);
+    void loadThreads(allMsgs.map(m=>m.id));
     setResponseDrafts(previous=>{
       const next={...previous};
-      for(const m of msgs||[])if(next[m.id]===undefined)next[m.id]=m.customer_response||"";
+      for(const m of allMsgs)if(next[m.id]===undefined)next[m.id]=m.customer_response||"";
       return next;
     });
     setStatusDrafts(previous=>{
       const next={...previous};
-      for(const m of msgs||[])if(next[m.id]===undefined)next[m.id]=m.customer_status||"received";
+      for(const m of allMsgs)if(next[m.id]===undefined)next[m.id]=m.customer_status||"received";
       return next;
     });
   }
 
   useEffect(() => {
-    setMessages([]);setInboxError("");setInboxCheckedAt(null);setInboxFilter("attention");
+    setMessages([]);setInboxError("");setInboxCheckedAt(null);setInboxFilter(deepLinkId?"all":"attention");
     setResponseDrafts({});setStatusDrafts({});setDeliveryConfirmed({});
     if (!loading && company && allowed && isManager){
       void load();
@@ -212,6 +272,7 @@ export default function ClientPortalPage() {
         }
         setInboxError("");setInboxCheckedAt(new Date());
         setMessages(data||[]);
+        void loadThreads((data||[]).map(m=>m.id));
         setResponseDrafts(previous=>{
           const next={...previous};
           for(const m of data||[])if(next[m.id]===undefined)
@@ -405,6 +466,50 @@ export default function ClientPortalPage() {
     }
   }
 
+  // Append a business reply to the conversation (migration 065). Unlike the
+  // legacy response below, a thread reply never overwrites earlier replies,
+  // and the customer can reply back from their portal.
+  async function sendThreadReply(message){
+    if(threadInFlight.current||working||!isManager||!company?.id)return;
+    const reply=String(threadDrafts[message.id]??"").trim();
+    if(reply.length<10||reply.length>1200){
+      setResponseError(tr("Write a customer-safe reply of 10–1200 characters.","Escriba una respuesta segura de 10 a 1200 caracteres."));return;
+    }
+    if(message.category==="document_copy"&&(
+       reply.toLowerCase().includes("://")||
+       reply.toLowerCase().includes("www.")||
+       /[.]pdf|[.]docx?|[.]zip/i.test(reply))){
+      setResponseError(tr("Do not paste document links, file paths or attachments into a customer-visible reply.","No pegue enlaces a documentos, rutas ni adjuntos en la respuesta al cliente."));return;
+    }
+    if(!window.confirm(message.customer_contact_id?
+      tr("Send this reply to the verified customer who submitted this request? Never include private staff information, unrelated locations or sensitive details.","¿Enviar esta respuesta al cliente verificado que envió esta solicitud? No incluya información privada de personal, otras ubicaciones ni datos sensibles."):
+      tr("Send this reply to anyone holding this location's secure customer link? Do not include private staff information or sensitive details.","¿Enviar esta respuesta a quienes tengan el enlace privado de esta ubicación? No incluya datos del personal ni información sensible.")))return;
+    threadInFlight.current=true;setThreadBusyId(message.id);setResponseError("");setThreadNotice("");
+    try{
+      const {data,error}=await supabase().rpc("post_portal_message_business_reply",{
+        p_message_id:message.id,p_body:reply
+      });
+      if(error||data?.ok!==true||!data.reply_id)
+        throw new Error(error?.message||tr("The reply could not be verified.","No se pudo verificar la respuesta."));
+      setThreadDrafts(p=>({...p,[message.id]:""}));
+      await loadThreads([message.id]);
+      await load();
+      setThreadNotice(tr("Reply sent. The customer can read it and reply back from their portal.","Respuesta enviada. El cliente puede leerla y responder desde su portal."));
+    }catch(error){
+      setResponseError(error instanceof Error?error.message:tr("Reply status unknown. Check the conversation before resending.","Estado de la respuesta desconocido. Revise la conversación antes de reenviar."));
+    }finally{
+      threadInFlight.current=false;setThreadBusyId(null);
+    }
+  }
+
+  // Deep link: once the inbox has loaded, bring the linked request's
+  // conversation into view and highlight it.
+  useEffect(()=>{
+    if(!deepLinkId||!messages.length)return;
+    const el=document.getElementById(`portal-message-${deepLinkId}`);
+    if(el){el.scrollIntoView({block:"center"});setHighlightId(deepLinkId);}
+  },[deepLinkId,messages]);
+
   if (loading || !company) return <p>Loading…</p>;
   if (!allowed || !isManager) {
     const roleBlocked = allowed && !isManager;
@@ -527,13 +632,14 @@ export default function ClientPortalPage() {
       </section>
       {responseError&&<p role="alert" style={{color:"#b3261e"}}>{responseError}</p>}
       {responseNotice&&<p role="status">{responseNotice}</p>}
+      {threadNotice&&<p role="status">{threadNotice}</p>}
       <p style={{fontSize:"0.85rem",color:"var(--muted)"}}>{tr("Location-link customers see only the request category, date, status and approved response. Never expose original messages, sender names, internal notes or employee details.","Los clientes con enlace de ubicación solo ven categoría, fecha, estado y respuesta aprobada. Nunca exponga mensajes originales, nombres, notas internas ni datos del personal.")}</p>
       <div style={{ display: "grid", gap: 10, margin: "18px 0 28px" }}>
         {!loadError&&!inboxError&&messages.length===0&&<p style={{color:"var(--muted)"}}>{tr("No recent client requests.","No hay solicitudes recientes.")}</p>}
         {!loadError&&!inboxError&&messages.length>0&&visibleInbox.length===0&&
           <p style={{color:"var(--muted)"}}>{tr("No requests match this filter. Choose All recent to see the other messages.","Ninguna solicitud coincide con el filtro. Elija Todas para ver otras.")}</p>}
         {visibleInbox.map((m) => (
-          <div key={m.id} className="portal-card" style={{ minHeight: 0, padding: "14px 18px", opacity: m.read_at ? 0.75 : 1 }}>
+          <div key={m.id} id={`portal-message-${m.id}`} className="portal-card" style={{ minHeight: 0, padding: "14px 18px", opacity: m.read_at ? 0.75 : 1, ...(highlightId===m.id?{boxShadow:"0 0 0 3px var(--brand)"}:{}) }}>
             <span className="card-kicker">
               {!m.read_at && <strong style={{ color: "var(--brand-deep)" }}>{tr("NEW","NUEVO")} • </strong>}
               {m.sender_name || tr("Client","Cliente")}{m.locations?.name ? ` • ${m.locations.name}` : ""}
@@ -545,6 +651,34 @@ export default function ClientPortalPage() {
             </p>}
             {m.subject && <p style={{ fontWeight: 700, margin: "6px 0 0" }}>{m.subject}</p>}
             <p style={{ margin: "6px 0 0", whiteSpace: "pre-wrap" }}>{m.body}</p>
+            <div style={{marginTop:12,paddingTop:12,borderTop:"1px dashed var(--line)"}}>
+              <p style={{fontWeight:700,margin:"0 0 8px"}}>{tr("Conversation","Conversación")}</p>
+              {threadEntries(m).length===0&&<p style={{fontSize:"0.85rem",color:"var(--muted)",margin:"0 0 8px"}}>{tr("No replies yet. Send the first reply below — the customer can reply back from their portal.","Aún no hay respuestas. Envíe la primera abajo: el cliente puede responder desde su portal.")}</p>}
+              <div style={{display:"grid",gap:8}}>
+                {threadEntries(m).map(entry=>(
+                  <div key={entry.id} style={{borderLeft:entry.sender_role==="business"?"3px solid var(--brand)":"3px solid var(--line)",paddingLeft:10}}>
+                    <p style={{margin:0,fontSize:"0.8rem",color:"var(--muted)"}}>
+                      <strong>{entry.sender_role==="business"?tr("Management reply","Respuesta de la gerencia"):tr("Customer reply","Respuesta del cliente")}</strong>
+                      {entry.sender_name?` • ${entry.sender_name}`:""}
+                      {" • "}{new Date(entry.created_at).toLocaleString(managerLanguage==="es"?"es-US":"en-US")}
+                    </p>
+                    <p style={{margin:"2px 0 0",whiteSpace:"pre-wrap"}}>{entry.body}</p>
+                  </div>
+                ))}
+              </div>
+              <label htmlFor={`thread-reply-${m.id}`} style={{display:"block",fontWeight:700,margin:"10px 0 6px"}}>{tr("Reply to the customer","Responder al cliente")}</label>
+              <textarea id={`thread-reply-${m.id}`} rows={3} maxLength={1200}
+                value={threadDrafts[m.id]??""}
+                onChange={e=>setThreadDrafts(p=>({...p,[m.id]:e.target.value}))}
+                disabled={working||threadBusyId===m.id}
+                placeholder={tr("Write a customer-safe reply. It joins the conversation and the customer can reply back.","Escriba una respuesta segura. Se une a la conversación y el cliente puede responder.")}
+                style={{width:"100%",padding:10,borderRadius:8,resize:"vertical"}} />
+              <button type="button" disabled={working||threadBusyId===m.id}
+                onClick={()=>void sendThreadReply(m)}
+                style={{...button,marginTop:8}}>
+                {threadBusyId===m.id?tr("Sending…","Enviando…"):tr("Send reply","Enviar respuesta")}
+              </button>
+            </div>
             <div style={{marginTop:12,paddingTop:12,borderTop:"1px solid var(--line)"}}>
               <label htmlFor={`status-${m.id}`} style={{display:"block",fontWeight:700,marginBottom:6}}>{tr("Customer-facing request status","Estado de solicitud visible para el cliente")}</label>
               <select id={`status-${m.id}`} value={statusDrafts[m.id]??m.customer_status??"received"}
