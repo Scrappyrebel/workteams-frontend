@@ -217,7 +217,7 @@ begin
       'error','Write a reply of 1 to 1600 characters.');
   end if;
   select * into pt from public.portal_tokens
-   where token=<redacted> and (expires_at is null or expires_at>now());
+   where token=tok and (expires_at is null or expires_at>now());
   if pt.id is null then
     return jsonb_build_object('ok',false,'error','This link is not valid.');
   end if;
@@ -325,7 +325,7 @@ begin
     return jsonb_build_object('ok',false,'error','This link is not valid.');
   end if;
   select * into pt from public.portal_tokens
-   where token=<redacted> and (expires_at is null or expires_at>now());
+   where token=tok and (expires_at is null or expires_at>now());
   if pt.id is null then
     return jsonb_build_object('ok',false,'error','This link is not valid.');
   end if;
