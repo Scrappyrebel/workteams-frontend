@@ -63,7 +63,7 @@ export default function WalkthroughsPage() {
   const [form, setForm] = useState(emptyForm);
   const [saving, setSaving] = useState(false);
   // Question-set state. qReady is null until the first load probes for the
-  // migration-066 columns; false means the migration has not been run yet
+  // migration-067 columns; false means the migration has not been run yet
   // and the question sections stay hidden (nothing breaks).
   const [qReady, setQReady] = useState(null);
   const [showIntake, setShowIntake] = useState(false);
@@ -149,7 +149,7 @@ export default function WalkthroughsPage() {
       .from("walkthroughs")
       .insert(qReady === false ? base : { ...base, ...questionPayload() });
     if (error && qReady !== false && isMissingSchemaError(error)) {
-      // Migration 066 not run yet — save the walkthrough the old way.
+      // Migration 067 not run yet — save the walkthrough the old way.
       setQReady(false);
       ({ error } = await supabase().from("walkthroughs").insert(base));
     }
@@ -224,7 +224,7 @@ export default function WalkthroughsPage() {
 
           {qReady === false ? (
             <p style={{ fontSize: "0.85rem", color: "var(--muted)", margin: 0 }}>
-              The phone-question set turns on after database update 066 is run.
+              The phone-question set turns on after database update 067 is run.
             </p>
           ) : (
             <div style={{ border: "1px solid var(--line)", borderRadius: 14, padding: 14 }}>

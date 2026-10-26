@@ -154,8 +154,8 @@ export default function WalkthroughDetailPage() {
   const [savingWt, setSavingWt] = useState(false);
   const [creatingWOs, setCreatingWOs] = useState(false);
   const [loadError, setLoadError] = useState(null);
-  // Migration-066 question set. Each flag starts null (unknown) and is set
-  // by a probe in load(); false means that piece of 066 has not been run
+  // Migration-067 question set. Each flag starts null (unknown) and is set
+  // by a probe in load(); false means that piece of 067 has not been run
   // yet, so the matching section stays hidden and saves skip its columns.
   const [wtQReady, setWtQReady] = useState(null);
   const [areaQReady, setAreaQReady] = useState(null);
@@ -187,9 +187,9 @@ export default function WalkthroughDetailPage() {
       return;
     }
     setWalkthrough(data);
-    // Probe for the migration-066 pieces. select("*") above works either
+    // Probe for the migration-067 pieces. select("*") above works either
     // way; a probe error (or the column simply absent from the row) means
-    // that part of 066 has not been run yet.
+    // that part of 067 has not been run yet.
     const wtReady = Object.prototype.hasOwnProperty.call(data, "intake");
     setWtQReady(wtReady);
     if (wtReady) {
