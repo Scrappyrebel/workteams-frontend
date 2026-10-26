@@ -7,6 +7,7 @@ import { supabase } from "../../../../../lib/supabase";
 import { useCompany } from "../../../../../lib/company-context";
 import { getUser } from "../../../../../lib/session";
 import { chicagoToday } from "../../../../../lib/dates";
+import QuickBooksInvoicePanel from "../../../../../components/QuickBooksInvoicePanel";
 
 const STATUS_LABELS = {
   draft: "Draft",
@@ -652,6 +653,8 @@ export default function InvoiceDetailPage() {
           )}
         </section>
       )}
+
+      <QuickBooksInvoicePanel companyId={company.id} invoice={invoice} />
 
       {invoice.status !== "void" && (
         <section className="panel" style={{ padding: 20, margin: "16px 0" }}>

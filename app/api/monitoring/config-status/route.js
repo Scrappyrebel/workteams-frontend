@@ -11,6 +11,11 @@ const CHECKS = [
   ["stripeWebhookSecret", "STRIPE_WEBHOOK_SECRET"],
   ["productOwnerEmail", "PRODUCT_OWNER_EMAIL"],
   ["appUrl", "WORKTEAMS_APP_URL"],
+  ["intuitClientId", "INTUIT_CLIENT_ID"],
+  ["intuitClientSecret", "INTUIT_CLIENT_SECRET"],
+  ["intuitRedirectUri", "INTUIT_REDIRECT_URI"],
+  ["intuitEnvironment", "INTUIT_ENVIRONMENT"],
+  ["intuitWebhookVerifierToken", "INTUIT_WEBHOOK_VERIFIER_TOKEN"],
 ];
 
 export async function GET() {
