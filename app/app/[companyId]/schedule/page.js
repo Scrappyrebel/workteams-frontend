@@ -194,6 +194,12 @@ export default function SchedulePage() {
   });
   const [monthShifts, setMonthShifts] = useState([]);
   const [selectedDay, setSelectedDay] = useState(() => chicagoToday());
+  // Time-off / swap requests (migration 067). Probed: if the table is not
+  // there yet, requestsReady flips false and every request UI stays hidden.
+  const [requestsReady, setRequestsReady] = useState(true);
+  const [pendingRequests, setPendingRequests] = useState([]);
+  const [approvedOff, setApprovedOff] = useState([]);
+  const [decisionNotes, setDecisionNotes] = useState({});
 
   // Sunday of the week containing the selected date (Sun–Sat).
   function startOfWeekISO(iso) {
@@ -374,6 +380,97 @@ export default function SchedulePage() {
     } else {
       setMembers([]);
     }
+    loadRequests();
+  }
+
+  function fmtReqDay(iso) {
+    const d = parseDay(iso);
+    return `${WEEKDAY_SHORT[d.getDay()]} ${MONTHS[d.getMonth()]} ${d.getDate()}`;
+  }
+
+  // Schedule requests are records only: loading them never changes shifts
+  // or time entries. Approved time off is shown so nobody schedules blind;
+  // the pending queue is the manager's approve/deny inbox.
+  async function loadRequests() {
+    const sb = supabase();
+    const today = chicagoToday(company?.timezone);
+    const off = await sb
+      .from("schedule_requests")
+      .select("id, member_id, start_date, end_date")
+      .eq("company_id", company.id)
+      .eq("request_type", "time_off")
+      .eq("status", "approved")
+      .gte("end_date", today)
+      .order("start_date", { ascending: true })
+      .limit(50);
+    if (off.error) {
+      if (/schedule_requests|does not exist|could not find/i.test(off.error.message || "")) {
+        setRequestsReady(false);
+      }
+      return;
+    }
+    const offRows = off.data || [];
+    const ids = offRows.map((r) => r.member_id);
+    let pending = [];
+    if (isManager) {
+      const p = await sb
+        .from("schedule_requests")
+        .select("id, member_id, request_type, shift_id, swap_with_member_id, swap_status, start_date, end_date, reason, created_at")
+        .eq("company_id", company.id)
+        .eq("status", "pending")
+        .order("created_at", { ascending: true })
+        .limit(50);
+      if (!p.error) {
+        pending = p.data || [];
+        for (const r of pending) ids.push(r.member_id, r.swap_with_member_id);
+      }
+    }
+    const uniq = [...new Set(ids.filter(Boolean))];
+    const nameById = {};
+    if (uniq.length > 0) {
+      const { data: dir } = await sb.from("team_directory").select("id, display_name").in("id", uniq);
+      for (const d of dir || []) nameById[d.id] = d.display_name;
+    }
+    setApprovedOff(offRows.map((r) => ({ ...r, name: nameById[r.member_id] || "A teammate" })));
+    const shiftIds = [...new Set(pending.map((r) => r.shift_id).filter(Boolean))];
+    const shiftById = {};
+    if (shiftIds.length > 0) {
+      const { data: srows } = await sb.from("shifts").select("id, shift_date, start_time, end_time, locations(name)").in("id", shiftIds);
+      for (const s of srows || []) shiftById[s.id] = s;
+    }
+    setPendingRequests(
+      pending.map((r) => ({
+        ...r,
+        name: nameById[r.member_id] || "A teammate",
+        swapWithName: r.swap_with_member_id ? nameById[r.swap_with_member_id] || "A teammate" : null,
+        shift: r.shift_id ? shiftById[r.shift_id] || null : null,
+      }))
+    );
+  }
+
+  async function decideRequest(r, decision) {
+    const note = (decisionNotes[r.id] || "").trim();
+    const patch = { status: decision };
+    if (note) patch.decision_note = note.slice(0, 500);
+    const { error } = await supabase().from("schedule_requests").update(patch).eq("id", r.id);
+    if (error) {
+      alert("Could not save the decision: " + error.message);
+      return;
+    }
+    try {
+      const { data: { session } } = await supabase().auth.getSession();
+      await fetch("/api/schedule-requests/notify", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
+        },
+        body: JSON.stringify({ companyId: company.id, requestId: r.id, event: "decided" }),
+      });
+    } catch {
+      // Best-effort: the decision itself is saved either way.
+    }
+    loadRequests();
   }
 
   useEffect(() => {
@@ -799,6 +896,75 @@ export default function SchedulePage() {
         </div>
       </div>
 
+      {requestsReady && approvedOff.length > 0 && (
+        <section className="panel" style={{ padding: "14px 22px", margin: "18px 0 0" }}>
+          <strong>🌴 Approved time off:</strong>{" "}
+          {approvedOff
+            .map((r) => `${r.name} — ${fmtReqDay(r.start_date)} to ${fmtReqDay(r.end_date)}`)
+            .join("  ·  ")}
+        </section>
+      )}
+
+      {isManager && requestsReady && pendingRequests.length > 0 && (
+        <section className="panel" style={{ padding: 22, margin: "18px 0" }}>
+          <h3 style={{ marginTop: 0 }}>📥 Schedule requests ({pendingRequests.length} waiting)</h3>
+          <div style={{ display: "grid", gap: 10 }}>
+            {pendingRequests.map((r) => (
+              <div key={r.id} style={{ border: "1px solid var(--line)", borderRadius: 12, padding: "12px 14px" }}>
+                <div>
+                  <strong>{r.name}</strong> —{" "}
+                  {r.request_type === "time_off"
+                    ? `🌴 Time off, ${fmtReqDay(r.start_date)} to ${fmtReqDay(r.end_date)}`
+                    : `🔁 Swap ${r.shift ? `${fmtReqDay(r.shift.shift_date)} · ${formatTime12h(r.shift.start_time)}–${formatTime12h(r.shift.end_time)}${r.shift.locations?.name ? ` at ${r.shift.locations.name}` : ""}` : "a shift"} with ${r.swapWithName}`}
+                </div>
+                <div style={{ color: "var(--muted)", fontSize: "0.9rem", marginTop: 2 }}>“{r.reason}”</div>
+                {r.request_type === "swap" && (
+                  <div style={{ fontSize: "0.85rem", marginTop: 4 }}>
+                    {r.swapWithName}:{" "}
+                    {r.swap_status === "accepted"
+                      ? "accepted ✓"
+                      : r.swap_status === "declined"
+                        ? "declined ✗"
+                        : "hasn't answered yet"}
+                  </div>
+                )}
+                <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
+                  <input
+                    value={decisionNotes[r.id] || ""}
+                    onChange={(e) => setDecisionNotes((n) => ({ ...n, [r.id]: e.target.value }))}
+                    placeholder="Note for the employee (optional)"
+                    maxLength={500}
+                    style={{ ...input, flex: 1, minWidth: 200 }}
+                  />
+                  <button
+                    type="button"
+                    disabled={r.request_type === "swap" && r.swap_status !== "accepted"}
+                    onClick={() => decideRequest(r, "approved")}
+                    style={approveButton}
+                  >
+                    Approve
+                  </button>
+                  <button type="button" onClick={() => decideRequest(r, "denied")} style={denyButton}>
+                    Deny
+                  </button>
+                </div>
+                {r.request_type === "swap" && r.swap_status !== "accepted" && (
+                  <div style={{ fontSize: "0.8rem", color: "var(--muted)", marginTop: 4 }}>
+                    {r.swap_status === "declined"
+                      ? `${r.swapWithName} declined — deny to close this out.`
+                      : `Waiting on ${r.swapWithName} to accept before this can be approved.`}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+          <p style={{ color: "var(--muted)", fontSize: "0.85rem", marginBottom: 0 }}>
+            Recording a decision here never changes the schedule or anyone's time by itself —
+            edit the shifts themselves when a change is needed.
+          </p>
+        </section>
+      )}
+
       {isManager && (
         <section className="panel" style={{ padding: 22, margin: "18px 0" }}>
           <h3 style={{ marginTop: 0 }}>Add a shift</h3>
@@ -879,6 +1045,26 @@ const repeatsLink = {
   fontSize: "0.9rem",
   background: "#fff",
   whiteSpace: "nowrap",
+};
+
+const approveButton = {
+  padding: "9px 18px",
+  borderRadius: 999,
+  border: "none",
+  background: "var(--brand)",
+  color: "#fff",
+  fontWeight: 800,
+  cursor: "pointer",
+};
+
+const denyButton = {
+  padding: "9px 18px",
+  borderRadius: 999,
+  border: "1px solid #b3261e",
+  background: "#fff",
+  color: "#b3261e",
+  fontWeight: 800,
+  cursor: "pointer",
 };
 
 const ghostBtn = {

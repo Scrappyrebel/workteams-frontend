@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { supabase } from "../../../../lib/supabase";
 import { useCompany } from "../../../../lib/company-context";
 import { UI_TO_DB_ROLE, roleLabel } from "../../../../lib/roles";
+import { formatTime12h } from "../../../../lib/dates";
 
 export default function TeamPage() {
   const { company, member, loading } = useCompany();
@@ -11,6 +12,9 @@ export default function TeamPage() {
   const [form, setForm] = useState({ email: "", display_name: "", role: "employee" });
   const [editingId, setEditingId] = useState(null);
   const [editForm, setEditForm] = useState({ display_name: "", email: "" });
+  // Team availability (migration 067): null = table not there yet / section
+  // hidden; otherwise the company's availability rows for the viewer below.
+  const [availability, setAvailability] = useState(null);
   // Two-tap confirm when changing the email of a member who already signed in.
   const [confirmEmailId, setConfirmEmailId] = useState(null);
   // Two-tap remove: native confirm() doesn't fire on some mobile browsers.
@@ -86,6 +90,46 @@ export default function TeamPage() {
       rows = rows.map((m) => ({ ...m, pay: payByMember[m.id] || {} }));
     }
     setMembers(rows);
+    if (isManager) {
+      // Availability is probed: until migration 067 runs, the section
+      // simply stays hidden — never an error in a manager's face.
+      const av = await supabase()
+        .from("employee_availability")
+        .select("member_id, day_of_week, available, start_time, end_time, note")
+        .eq("company_id", company.id);
+      if (!av.error) setAvailability(av.data || []);
+    }
+  }
+
+  const AVAIL_DAYS = [
+    { dow: 1, short: "Mon" },
+    { dow: 2, short: "Tue" },
+    { dow: 3, short: "Wed" },
+    { dow: 4, short: "Thu" },
+    { dow: 5, short: "Fri" },
+    { dow: 6, short: "Sat" },
+    { dow: 0, short: "Sun" },
+  ];
+
+  function availabilityCells(memberId) {
+    const rows = (availability || []).filter((r) => r.member_id === memberId);
+    const byDow = {};
+    for (const r of rows) byDow[r.day_of_week] = r;
+    return AVAIL_DAYS.map((d) => {
+      const r = byDow[d.dow];
+      if (!r) return { ...d, text: "–", title: "No availability set" };
+      if (!r.available) return { ...d, text: "✗", title: "Not available" };
+      if (r.start_time && r.end_time) {
+        return { ...d, text: `${formatTime12h(r.start_time)}–${formatTime12h(r.end_time)}`, title: "Available window" };
+      }
+      return { ...d, text: "✓", title: "Available" };
+    });
+  }
+
+  function availabilityNotes(memberId) {
+    return (availability || [])
+      .filter((r) => r.member_id === memberId && r.note)
+      .map((r) => `${AVAIL_DAYS.find((d) => d.dow === r.day_of_week)?.short || ""}: ${r.note}`);
   }
 
   useEffect(() => {
@@ -356,6 +400,50 @@ export default function TeamPage() {
           </div>
         ))}
       </div>
+
+      {isManager && availability !== null && (
+        <section className="panel" style={{ padding: 22, margin: "18px 0" }}>
+          <h3 style={{ marginTop: 0 }}>🗓️ Team availability</h3>
+          <p style={{ color: "var(--muted)", marginTop: 4 }}>
+            The days and times each person says they can normally work. A dash means
+            they haven't set their availability yet.
+          </p>
+          <div style={{ display: "grid", gap: 8 }}>
+            {members.map((m) => {
+              const notes = availabilityNotes(m.id);
+              return (
+                <div key={m.id} style={{ border: "1px solid var(--line)", borderRadius: 12, padding: "10px 14px" }}>
+                  <strong>{m.display_name}</strong>
+                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 6 }}>
+                    {availabilityCells(m.id).map((c) => (
+                      <span
+                        key={c.dow}
+                        title={c.title}
+                        style={{
+                          fontSize: "0.78rem",
+                          fontWeight: 700,
+                          border: "1px solid var(--line)",
+                          borderRadius: 999,
+                          padding: "3px 9px",
+                          color: c.text === "✗" ? "#b3261e" : "inherit",
+                          background: c.text === "✗" ? "#fdecea" : "#fff",
+                        }}
+                      >
+                        {c.short} {c.text}
+                      </span>
+                    ))}
+                  </div>
+                  {notes.length > 0 && (
+                    <div style={{ fontSize: "0.82rem", color: "var(--muted)", marginTop: 6 }}>
+                      {notes.join(" · ")}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      )}
     </div>
   );
 }
