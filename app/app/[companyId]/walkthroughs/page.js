@@ -5,8 +5,55 @@ import { useEffect, useState } from "react";
 import { supabase } from "../../../../lib/supabase";
 import { useCompany } from "../../../../lib/company-context";
 import { canUseWithRole } from "../../../../lib/tiers";
+import {
+  INTAKE_FIELDS,
+  PHONE_QUESTIONS,
+  isMissingSchemaError,
+  pruneAnswers,
+} from "../../../../lib/walkthrough-questions";
 
 const emptyForm = { name: "", location_id: "", bid_id: "", notes: "" };
+const emptyAppt = { scheduled_at: "", meet_contact: "", entry_notes: "" };
+
+const LEGACY_SELECT = "id, name, notes, created_at, location_id, bid_id, locations(name)";
+const FULL_SELECT =
+  "id, name, notes, created_at, location_id, bid_id, scheduled_at, meet_contact, entry_notes, intake, answers, locations(name)";
+
+// One labelled input per question definition (text / textarea / select).
+function QuestionFields({ defs, values, onChange }) {
+  return defs.map((d) => (
+    <label key={d.key} style={{ display: "block", fontSize: "0.9rem", fontWeight: 600 }}>
+      {d.label}
+      {d.type === "textarea" ? (
+        <textarea
+          value={values[d.key] || ""}
+          onChange={(e) => onChange(d.key, e.target.value)}
+          rows={2}
+          style={{ ...input, borderRadius: 14, marginTop: 6, fontWeight: 400 }}
+        />
+      ) : d.type === "select" ? (
+        <select
+          value={values[d.key] || ""}
+          onChange={(e) => onChange(d.key, e.target.value)}
+          style={{ ...input, marginTop: 6, fontWeight: 400 }}
+        >
+          <option value="">—</option>
+          {d.options.map((o) => (
+            <option key={o} value={o}>{o}</option>
+          ))}
+        </select>
+      ) : (
+        <input
+          type={d.type === "text" ? "text" : d.type}
+          inputMode={d.inputMode || undefined}
+          value={values[d.key] || ""}
+          onChange={(e) => onChange(d.key, e.target.value)}
+          style={{ ...input, marginTop: 6, fontWeight: 400 }}
+        />
+      )}
+    </label>
+  ));
+}
 
 export default function WalkthroughsPage() {
   const { company, member, loading } = useCompany();
@@ -15,17 +62,34 @@ export default function WalkthroughsPage() {
   const [draftBids, setDraftBids] = useState([]);
   const [form, setForm] = useState(emptyForm);
   const [saving, setSaving] = useState(false);
+  // Question-set state. qReady is null until the first load probes for the
+  // migration-066 columns; false means the migration has not been run yet
+  // and the question sections stay hidden (nothing breaks).
+  const [qReady, setQReady] = useState(null);
+  const [showIntake, setShowIntake] = useState(false);
+  const [intake, setIntake] = useState({});
+  const [appt, setAppt] = useState(emptyAppt);
 
   const isManager = member && (member.role === "owner" || member.role === "admin");
   const allowed = canUseWithRole(company?.effectiveTier || company?.tier, "walkthroughs", member?.role);
 
   async function load() {
     const sb = supabase();
-    const { data } = await sb
+    let { data, error } = await sb
       .from("walkthroughs")
-      .select("id, name, notes, created_at, location_id, bid_id, locations(name)")
+      .select(FULL_SELECT)
       .eq("company_id", company.id)
       .order("created_at", { ascending: false });
+    if (error && isMissingSchemaError(error)) {
+      setQReady(false);
+      ({ data } = await sb
+        .from("walkthroughs")
+        .select(LEGACY_SELECT)
+        .eq("company_id", company.id)
+        .order("created_at", { ascending: false }));
+    } else if (!error) {
+      setQReady(true);
+    }
     const rows = data || [];
     // Area counts + total sqft per walkthrough in one batch.
     let stats = {};
@@ -58,6 +122,15 @@ export default function WalkthroughsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loading, company, allowed]);
 
+  function questionPayload() {
+    return {
+      scheduled_at: appt.scheduled_at ? new Date(appt.scheduled_at).toISOString() : null,
+      meet_contact: appt.meet_contact.trim() || null,
+      entry_notes: appt.entry_notes.trim() || null,
+      intake: pruneAnswers(intake),
+    };
+  }
+
   async function save(e) {
     e.preventDefault();
     if (!form.name.trim()) {
@@ -65,17 +138,28 @@ export default function WalkthroughsPage() {
       return;
     }
     setSaving(true);
-    const { error } = await supabase().from("walkthroughs").insert({
+    const base = {
       company_id: company.id,
       name: form.name.trim(),
       location_id: form.location_id || null,
       bid_id: form.bid_id || null,
       notes: form.notes.trim() || null,
-    });
+    };
+    let { error } = await supabase()
+      .from("walkthroughs")
+      .insert(qReady === false ? base : { ...base, ...questionPayload() });
+    if (error && qReady !== false && isMissingSchemaError(error)) {
+      // Migration 066 not run yet — save the walkthrough the old way.
+      setQReady(false);
+      ({ error } = await supabase().from("walkthroughs").insert(base));
+    }
     setSaving(false);
     if (error) alert("Could not save walkthrough: " + error.message);
     else {
       setForm(emptyForm);
+      setIntake({});
+      setAppt(emptyAppt);
+      setShowIntake(false);
       load();
     }
   }
@@ -137,6 +221,63 @@ export default function WalkthroughsPage() {
             rows={2}
             style={{ ...input, borderRadius: 14 }}
           />
+
+          {qReady === false ? (
+            <p style={{ fontSize: "0.85rem", color: "var(--muted)", margin: 0 }}>
+              The phone-question set turns on after database update 066 is run.
+            </p>
+          ) : (
+            <div style={{ border: "1px solid var(--line)", borderRadius: 14, padding: 14 }}>
+              <button
+                type="button"
+                onClick={() => setShowIntake((s) => !s)}
+                style={{ background: "none", border: "none", padding: 0, fontWeight: 800, fontSize: "1rem", cursor: "pointer", color: "var(--brand-deep)" }}
+              >
+                {showIntake ? "▾" : "▸"} Part 1 — Phone questions (ask before agreeing to a walkthrough)
+              </button>
+              {showIntake && (
+                <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 12 }}>
+                  <QuestionFields
+                    defs={INTAKE_FIELDS}
+                    values={intake}
+                    onChange={(k, v) => setIntake((prev) => ({ ...prev, [k]: v }))}
+                  />
+                  <QuestionFields
+                    defs={PHONE_QUESTIONS}
+                    values={intake}
+                    onChange={(k, v) => setIntake((prev) => ({ ...prev, [k]: v }))}
+                  />
+                  <div style={{ fontWeight: 800, marginTop: 4 }}>SCHEDULE THE WALKTHROUGH</div>
+                  <label style={{ display: "block", fontSize: "0.9rem", fontWeight: 600 }}>
+                    Day / time
+                    <input
+                      type="datetime-local"
+                      value={appt.scheduled_at}
+                      onChange={(e) => setAppt({ ...appt, scheduled_at: e.target.value })}
+                      style={{ ...input, marginTop: 6, fontWeight: 400 }}
+                    />
+                  </label>
+                  <label style={{ display: "block", fontSize: "0.9rem", fontWeight: 600 }}>
+                    Who will meet us
+                    <input
+                      value={appt.meet_contact}
+                      onChange={(e) => setAppt({ ...appt, meet_contact: e.target.value })}
+                      style={{ ...input, marginTop: 6, fontWeight: 400 }}
+                    />
+                  </label>
+                  <label style={{ display: "block", fontSize: "0.9rem", fontWeight: 600 }}>
+                    Where to park and come in
+                    <input
+                      value={appt.entry_notes}
+                      onChange={(e) => setAppt({ ...appt, entry_notes: e.target.value })}
+                      style={{ ...input, marginTop: 6, fontWeight: 400 }}
+                    />
+                  </label>
+                </div>
+              )}
+            </div>
+          )}
+
           <button type="submit" disabled={saving} style={primaryBtn}>
             {saving ? "Saving…" : "Start walkthrough"}
           </button>
@@ -157,6 +298,12 @@ export default function WalkthroughsPage() {
                 <div style={{ fontSize: "0.85rem", color: "var(--muted)", marginTop: 4 }}>
                   {w.locations?.name || "No location"} · {w.count} area{w.count === 1 ? "" : "s"} · {Math.round(w.sqft).toLocaleString()} sq ft
                 </div>
+                {w.scheduled_at && (
+                  <div style={{ fontSize: "0.85rem", color: "var(--muted)" }}>
+                    📅 {new Date(w.scheduled_at).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}
+                    {w.meet_contact ? ` · Meet ${w.meet_contact}` : ""}
+                  </div>
+                )}
                 <div style={{ fontSize: "0.8rem", color: "var(--muted)" }}>
                   {new Date(w.created_at).toLocaleDateString([], { month: "short", day: "numeric", year: "numeric" })}
                 </div>

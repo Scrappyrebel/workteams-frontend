@@ -7,11 +7,46 @@ import { supabase } from "../../../../../lib/supabase";
 import { useCompany } from "../../../../../lib/company-context";
 import { canUseWithRole } from "../../../../../lib/tiers";
 import { STANDARD_TASKS } from "../../../../../lib/walkthrough-tasks";
+import {
+  AREA_SECTIONS,
+  BUILDING_SECTIONS,
+  FLOOR_TYPES,
+  INTAKE_FIELDS,
+  LEAVE_CHECKLIST,
+  LEAVE_TEXT_FIELDS,
+  PHONE_QUESTIONS,
+  answeredPairs,
+  isMissingSchemaError,
+  pruneAnswers,
+  sectionFields,
+} from "../../../../../lib/walkthrough-questions";
+import {
+  storagePathFromUrl,
+  validatePhotoFile,
+  withSignedUrls,
+} from "../../../../../lib/walkthrough-photos";
 
-const emptyArea = { area_name: "", length_ft: "", width_ft: "", square_footage: "", notes: "", custom_task: "" };
+const emptyArea = { area_name: "", length_ft: "", width_ft: "", square_footage: "", notes: "", custom_task: "", floor_type: "", toilets_count: "", urinals_count: "", sinks_count: "" };
 
 function dims(a) {
   return a.length_ft && a.width_ft ? `${a.length_ft} × ${a.width_ft} ft` : "measured";
+}
+
+function fixturesLine(a) {
+  const parts = [];
+  if (a.toilets_count) parts.push(`${a.toilets_count} toilet${Number(a.toilets_count) === 1 ? "" : "s"}`);
+  if (a.urinals_count) parts.push(`${a.urinals_count} urinal${Number(a.urinals_count) === 1 ? "" : "s"}`);
+  if (a.sinks_count) parts.push(`${a.sinks_count} sink${Number(a.sinks_count) === 1 ? "" : "s"}`);
+  return parts.length ? `Fixtures: ${parts.join(" · ")}` : "";
+}
+
+// ISO timestamp -> value for an <input type="datetime-local">.
+function toLocalInput(iso) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
 function buildScope(walkthrough, areas) {
@@ -19,14 +54,86 @@ function buildScope(walkthrough, areas) {
   const lines = [];
   lines.push(`SCOPE OF WORK — ${walkthrough?.locations?.name || walkthrough?.name || ""}`);
   lines.push(`Total: ${Math.round(total).toLocaleString()} sq ft across ${areas.length} area${areas.length === 1 ? "" : "s"}`);
+  if (walkthrough?.scheduled_at) {
+    lines.push(
+      `Walkthrough appointment: ${new Date(walkthrough.scheduled_at).toLocaleString([], { dateStyle: "medium", timeStyle: "short" })}` +
+        (walkthrough.meet_contact ? ` — meet ${walkthrough.meet_contact}` : "") +
+        (walkthrough.entry_notes ? ` — ${walkthrough.entry_notes}` : "")
+    );
+  }
   lines.push("");
   areas.forEach((a, i) => {
     lines.push(`${i + 1}. ${a.area_name} (${dims(a)} — ${Math.round(Number(a.square_footage || 0)).toLocaleString()} sq ft)`);
+    if (a.floor_type) lines.push(`   Floor: ${a.floor_type}`);
+    const fx = fixturesLine(a);
+    if (fx) lines.push(`   ${fx}`);
     const tasks = Array.isArray(a.tasks) ? a.tasks : [];
     tasks.forEach((t) => lines.push(`   • ${t}`));
+    answeredPairs(sectionFields(AREA_SECTIONS), a.details).forEach(([label, v]) => lines.push(`   ${label} ${v}`));
     if (a.notes) lines.push(`   Note: ${a.notes}`);
   });
+
+  // The answers feed the scope (and from there the bid) so they are read,
+  // not just stored.
+  const intakePairs = answeredPairs([...INTAKE_FIELDS, ...PHONE_QUESTIONS], walkthrough?.intake);
+  if (intakePairs.length) {
+    lines.push("");
+    lines.push("PHONE ANSWERS (Part 1)");
+    intakePairs.forEach(([label, v]) => lines.push(`• ${label} ${v}`));
+  }
+  const wtPairs = answeredPairs(sectionFields(BUILDING_SECTIONS), walkthrough?.answers);
+  if (wtPairs.length) {
+    lines.push("");
+    lines.push("WALKTHROUGH ANSWERS (Part 2)");
+    wtPairs.forEach(([label, v]) => lines.push(`• ${label} ${v}`));
+  }
+  const answers = walkthrough?.answers && typeof walkthrough.answers === "object" ? walkthrough.answers : {};
+  const checkedLeave = LEAVE_CHECKLIST.filter((c) => answers[c.key]);
+  const leaveText = answeredPairs(LEAVE_TEXT_FIELDS, answers);
+  if (answers.leave_proposal_date) leaveText.push(["Proposal date promised:", String(answers.leave_proposal_date)]);
+  if (checkedLeave.length || leaveText.length) {
+    lines.push("");
+    lines.push("BEFORE YOU LEAVE — CHECKLIST");
+    LEAVE_CHECKLIST.forEach((c) => lines.push(`${answers[c.key] ? "☑" : "☐"} ${c.label}`));
+    leaveText.forEach(([label, v]) => lines.push(`• ${label} ${v}`));
+  }
   return lines.join("\n");
+}
+
+// One labelled input per question definition (text / textarea / select).
+function QuestionFields({ defs, values, onChange }) {
+  return defs.map((d) => (
+    <label key={d.key} style={{ display: "block", fontSize: "0.9rem", fontWeight: 600 }}>
+      {d.label}
+      {d.type === "textarea" ? (
+        <textarea
+          value={values[d.key] || ""}
+          onChange={(e) => onChange(d.key, e.target.value)}
+          rows={2}
+          style={{ ...input, borderRadius: 14, marginTop: 6, fontWeight: 400 }}
+        />
+      ) : d.type === "select" ? (
+        <select
+          value={values[d.key] || ""}
+          onChange={(e) => onChange(d.key, e.target.value)}
+          style={{ ...input, marginTop: 6, fontWeight: 400 }}
+        >
+          <option value="">—</option>
+          {d.options.map((o) => (
+            <option key={o} value={o}>{o}</option>
+          ))}
+        </select>
+      ) : (
+        <input
+          type={d.type === "text" ? "text" : d.type}
+          inputMode={d.inputMode || undefined}
+          value={values[d.key] || ""}
+          onChange={(e) => onChange(d.key, e.target.value)}
+          style={{ ...input, marginTop: 6, fontWeight: 400 }}
+        />
+      )}
+    </label>
+  ));
 }
 
 export default function WalkthroughDetailPage() {
@@ -47,6 +154,22 @@ export default function WalkthroughDetailPage() {
   const [savingWt, setSavingWt] = useState(false);
   const [creatingWOs, setCreatingWOs] = useState(false);
   const [loadError, setLoadError] = useState(null);
+  // Migration-066 question set. Each flag starts null (unknown) and is set
+  // by a probe in load(); false means that piece of 066 has not been run
+  // yet, so the matching section stays hidden and saves skip its columns.
+  const [wtQReady, setWtQReady] = useState(null);
+  const [areaQReady, setAreaQReady] = useState(null);
+  const [photosReady, setPhotosReady] = useState(null);
+  const [intakeForm, setIntakeForm] = useState({});
+  const [apptForm, setApptForm] = useState({ scheduled_at: "", meet_contact: "", entry_notes: "" });
+  const [savingIntake, setSavingIntake] = useState(false);
+  const [answersForm, setAnswersForm] = useState({});
+  const [savingAnswers, setSavingAnswers] = useState(false);
+  const [areaAnswers, setAreaAnswers] = useState({});
+  const [photos, setPhotos] = useState([]);
+  const [photoFiles, setPhotoFiles] = useState([]);
+  const [photoCaption, setPhotoCaption] = useState("");
+  const [uploadingPhotos, setUploadingPhotos] = useState(false);
 
   const isManager = member && (member.role === "owner" || member.role === "admin");
   const allowed = canUseWithRole(company?.effectiveTier || company?.tier, "walkthroughs", member?.role);
@@ -64,6 +187,34 @@ export default function WalkthroughDetailPage() {
       return;
     }
     setWalkthrough(data);
+    // Probe for the migration-066 pieces. select("*") above works either
+    // way; a probe error (or the column simply absent from the row) means
+    // that part of 066 has not been run yet.
+    const wtReady = Object.prototype.hasOwnProperty.call(data, "intake");
+    setWtQReady(wtReady);
+    if (wtReady) {
+      setIntakeForm(data.intake && typeof data.intake === "object" ? data.intake : {});
+      setApptForm({
+        scheduled_at: toLocalInput(data.scheduled_at),
+        meet_contact: data.meet_contact || "",
+        entry_notes: data.entry_notes || "",
+      });
+      setAnswersForm(data.answers && typeof data.answers === "object" ? data.answers : {});
+    }
+    const { error: areaProbeErr } = await sb.from("walkthrough_areas").select("floor_type").limit(1);
+    setAreaQReady(!areaProbeErr);
+    const { data: ph, error: photoProbeErr } = await sb
+      .from("walkthrough_photos")
+      .select("*")
+      .eq("walkthrough_id", wid)
+      .order("created_at", { ascending: true });
+    if (photoProbeErr) {
+      setPhotosReady(false);
+      setPhotos([]);
+    } else {
+      setPhotosReady(true);
+      setPhotos(await withSignedUrls(sb, ph || []));
+    }
     const { data: ar } = await sb
       .from("walkthrough_areas")
       .select("*")
@@ -93,7 +244,19 @@ export default function WalkthroughDetailPage() {
 
   function startEdit(a) {
     setEditing(a.id);
-    setForm({ area_name: a.area_name, length_ft: a.length_ft != null ? String(a.length_ft) : "", width_ft: a.width_ft != null ? String(a.width_ft) : "", square_footage: String(a.square_footage ?? ""), notes: a.notes || "", custom_task: "" });
+    setForm({
+      area_name: a.area_name,
+      length_ft: a.length_ft != null ? String(a.length_ft) : "",
+      width_ft: a.width_ft != null ? String(a.width_ft) : "",
+      square_footage: String(a.square_footage ?? ""),
+      notes: a.notes || "",
+      custom_task: "",
+      floor_type: a.floor_type || "",
+      toilets_count: a.toilets_count != null ? String(a.toilets_count) : "",
+      urinals_count: a.urinals_count != null ? String(a.urinals_count) : "",
+      sinks_count: a.sinks_count != null ? String(a.sinks_count) : "",
+    });
+    setAreaAnswers(a.details && typeof a.details === "object" ? a.details : {});
     setManualSqft(!(a.length_ft && a.width_ft));
     setChecked(Array.isArray(a.tasks) ? [...a.tasks] : []);
     window.scrollTo({ top: 0, behavior: "smooth" });
@@ -102,6 +265,7 @@ export default function WalkthroughDetailPage() {
   function cancelEdit() {
     setEditing(null);
     setForm(emptyArea);
+    setAreaAnswers({});
     setChecked([]);
     setManualSqft(false);
   }
@@ -121,6 +285,13 @@ export default function WalkthroughDetailPage() {
       tasks: checked,
       notes: form.notes.trim() || null,
     };
+    if (areaQReady) {
+      payload.floor_type = form.floor_type || null;
+      payload.toilets_count = parseInt(form.toilets_count, 10) || null;
+      payload.urinals_count = parseInt(form.urinals_count, 10) || null;
+      payload.sinks_count = parseInt(form.sinks_count, 10) || null;
+      payload.details = pruneAnswers(areaAnswers);
+    }
     let error;
     if (editing) {
       ({ error } = await supabase().from("walkthrough_areas").update(payload).eq("id", editing));
@@ -144,6 +315,77 @@ export default function WalkthroughDetailPage() {
     const { error } = await supabase().from("walkthrough_areas").delete().eq("id", id);
     if (error) alert("Could not delete: " + error.message);
     else load();
+  }
+
+  async function saveIntake() {
+    setSavingIntake(true);
+    const patch = {
+      intake: pruneAnswers(intakeForm),
+      scheduled_at: apptForm.scheduled_at ? new Date(apptForm.scheduled_at).toISOString() : null,
+      meet_contact: apptForm.meet_contact.trim() || null,
+      entry_notes: apptForm.entry_notes.trim() || null,
+    };
+    const { error } = await supabase().from("walkthroughs").update(patch).eq("id", wid);
+    setSavingIntake(false);
+    if (error) {
+      if (isMissingSchemaError(error)) setWtQReady(false);
+      alert("Could not save phone answers: " + error.message);
+    } else {
+      setWalkthrough((w) => (w ? { ...w, ...patch } : w));
+    }
+  }
+
+  async function saveAnswers() {
+    setSavingAnswers(true);
+    const patch = { answers: pruneAnswers(answersForm) };
+    const { error } = await supabase().from("walkthroughs").update(patch).eq("id", wid);
+    setSavingAnswers(false);
+    if (error) {
+      if (isMissingSchemaError(error)) setWtQReady(false);
+      alert("Could not save walkthrough answers: " + error.message);
+    } else {
+      setWalkthrough((w) => (w ? { ...w, ...patch } : w));
+    }
+  }
+
+  async function addPhotos(e) {
+    e.preventDefault();
+    if (photoFiles.length === 0) return;
+    setUploadingPhotos(true);
+    const sb = supabase();
+    for (const file of photoFiles) {
+      const prob = validatePhotoFile(file);
+      if (prob) {
+        alert(prob);
+        continue;
+      }
+      const path = `${company.id}/${wid}/${Date.now()}_${file.name.replace(/[^a-zA-Z0-9._-]/g, "_")}`;
+      const { error: upErr } = await sb.storage.from("walkthrough-photos").upload(path, file);
+      if (upErr) {
+        alert("Photo upload failed: " + upErr.message);
+        continue;
+      }
+      await sb.from("walkthrough_photos").insert({
+        walkthrough_id: wid,
+        photo_url: path,
+        caption: photoCaption.trim() || null,
+      });
+    }
+    setUploadingPhotos(false);
+    setPhotoFiles([]);
+    setPhotoCaption("");
+    load();
+  }
+
+  async function removePhoto(id, url) {
+    if (!confirm("Delete this photo?")) return;
+    const sb = supabase();
+    const path = storagePathFromUrl(url);
+    if (path) {
+      await sb.storage.from("walkthrough-photos").remove([path]);
+    }
+    await sb.from("walkthrough_photos").delete().eq("id", id);
+    load();
   }
 
   async function copyScope() {
@@ -184,18 +426,25 @@ export default function WalkthroughDetailPage() {
       }
       return;
     }
-    // Create a new draft bid with sqft pricing pre-filled.
+    // Create a new draft bid with sqft pricing pre-filled. The phone
+    // answers carry over too: who the client is, where the proposal
+    // goes, and how many nights a week they asked for.
+    const intake = walkthrough.intake && typeof walkthrough.intake === "object" ? walkthrough.intake : {};
+    const wtAnswers = walkthrough.answers && typeof walkthrough.answers === "object" ? walkthrough.answers : {};
+    const frequency = intake.nights_per_week || wtAnswers.nights_best || null;
     const { data, error } = await sb
       .from("bids")
       .insert({
         company_id: company.id,
         location_id: walkthrough.location_id,
-        client_name: walkthrough.locations?.name || walkthrough.name,
+        client_name: intake.business_name || walkthrough.locations?.name || walkthrough.name,
+        client_email: intake.proposal_email || intake.contact_email || null,
         title: `Cleaning bid — ${walkthrough.locations?.name || walkthrough.name}`,
         description: buildScope(walkthrough, areas),
         status: "draft",
         pricing_mode: "sqft",
         square_footage: totalSqft,
+        ...(frequency ? { frequency } : {}),
       })
       .select("id")
       .single();
@@ -220,7 +469,10 @@ export default function WalkthroughDetailPage() {
       title: `${a.area_name} — ${walkthrough.name}`,
       description: [
         `${dims(a)} — ${Math.round(Number(a.square_footage || 0)).toLocaleString()} sq ft`,
+        a.floor_type ? `Floor: ${a.floor_type}` : null,
+        fixturesLine(a) || null,
         ...(Array.isArray(a.tasks) ? a.tasks : []).map((t) => `• ${t}`),
+        ...answeredPairs(sectionFields(AREA_SECTIONS), a.details).map(([label, v]) => `${label} ${v}`),
         a.notes ? `Note: ${a.notes}` : null,
       ].filter(Boolean).join("\n"),
       priority: "normal",
@@ -312,6 +564,56 @@ export default function WalkthroughDetailPage() {
         </div>
       )}
 
+      {wtQReady && (
+        <section className="panel" style={{ padding: 18, marginBottom: 16 }}>
+          <h3 style={{ margin: "0 0 4px", fontSize: "1.1rem" }}>Part 1 — Phone questions</h3>
+          <p style={{ fontSize: "0.85rem", color: "var(--muted)", margin: "0 0 12px" }}>
+            Asked on the phone call, before agreeing to the walkthrough.
+          </p>
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            <QuestionFields
+              defs={INTAKE_FIELDS}
+              values={intakeForm}
+              onChange={(k, v) => setIntakeForm((prev) => ({ ...prev, [k]: v }))}
+            />
+            <QuestionFields
+              defs={PHONE_QUESTIONS}
+              values={intakeForm}
+              onChange={(k, v) => setIntakeForm((prev) => ({ ...prev, [k]: v }))}
+            />
+            <div style={{ fontWeight: 800, marginTop: 4 }}>SCHEDULE THE WALKTHROUGH</div>
+            <label style={{ display: "block", fontSize: "0.9rem", fontWeight: 600 }}>
+              Day / time
+              <input
+                type="datetime-local"
+                value={apptForm.scheduled_at}
+                onChange={(e) => setApptForm({ ...apptForm, scheduled_at: e.target.value })}
+                style={{ ...input, marginTop: 6, fontWeight: 400 }}
+              />
+            </label>
+            <label style={{ display: "block", fontSize: "0.9rem", fontWeight: 600 }}>
+              Who will meet us
+              <input
+                value={apptForm.meet_contact}
+                onChange={(e) => setApptForm({ ...apptForm, meet_contact: e.target.value })}
+                style={{ ...input, marginTop: 6, fontWeight: 400 }}
+              />
+            </label>
+            <label style={{ display: "block", fontSize: "0.9rem", fontWeight: 600 }}>
+              Where to park and come in
+              <input
+                value={apptForm.entry_notes}
+                onChange={(e) => setApptForm({ ...apptForm, entry_notes: e.target.value })}
+                style={{ ...input, marginTop: 6, fontWeight: 400 }}
+              />
+            </label>
+            <button onClick={saveIntake} disabled={savingIntake} style={primaryBtn}>
+              {savingIntake ? "Saving…" : "Save phone answers"}
+            </button>
+          </div>
+        </section>
+      )}
+
       <div className="panel" style={{ padding: 18, marginBottom: 16, background: "var(--brand)", color: "#fff", border: "none" }}>
         <div style={{ fontSize: "0.85rem", opacity: 0.85 }}>Total square footage</div>
         <div style={{ fontSize: "2rem", fontWeight: 800 }}>{Math.round(totalSqft).toLocaleString()} sq ft</div>
@@ -381,6 +683,40 @@ export default function WalkthroughDetailPage() {
               Enter sq ft directly (odd-shaped room)
             </button>
           )}
+          {areaQReady && (
+            <>
+              <label style={{ display: "block", fontSize: "0.9rem", color: "var(--muted)" }}>
+                Floor type
+                <select
+                  value={form.floor_type}
+                  onChange={(e) => setForm({ ...form, floor_type: e.target.value })}
+                  style={{ ...input, marginTop: 6 }}
+                >
+                  <option value="">—</option>
+                  {FLOOR_TYPES.map((f) => (
+                    <option key={f} value={f}>{f}</option>
+                  ))}
+                </select>
+              </label>
+              <div>
+                <div style={{ fontSize: "0.9rem", color: "var(--muted)", marginBottom: 6 }}>Restroom fixtures (restrooms only)</div>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <label style={{ flex: 1, fontSize: "0.85rem", color: "var(--muted)" }}>
+                    Toilets
+                    <input value={form.toilets_count} onChange={(e) => setForm({ ...form, toilets_count: e.target.value })} inputMode="numeric" style={{ ...input, marginTop: 4 }} />
+                  </label>
+                  <label style={{ flex: 1, fontSize: "0.85rem", color: "var(--muted)" }}>
+                    Urinals
+                    <input value={form.urinals_count} onChange={(e) => setForm({ ...form, urinals_count: e.target.value })} inputMode="numeric" style={{ ...input, marginTop: 4 }} />
+                  </label>
+                  <label style={{ flex: 1, fontSize: "0.85rem", color: "var(--muted)" }}>
+                    Sinks
+                    <input value={form.sinks_count} onChange={(e) => setForm({ ...form, sinks_count: e.target.value })} inputMode="numeric" style={{ ...input, marginTop: 4 }} />
+                  </label>
+                </div>
+              </div>
+            </>
+          )}
           <div>
             <div style={{ fontWeight: 700, fontSize: "0.9rem", marginBottom: 8 }}>What needs cleaning here?</div>
             <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
@@ -430,6 +766,27 @@ export default function WalkthroughDetailPage() {
             rows={2}
             style={{ ...input, borderRadius: 14 }}
           />
+          {areaQReady && (
+            <details style={{ border: "1px solid var(--line)", borderRadius: 14, padding: 12 }}>
+              <summary style={{ fontWeight: 800, cursor: "pointer", color: "var(--brand-deep)" }}>
+                Room-by-room questions (Part 2)
+              </summary>
+              <div style={{ display: "flex", flexDirection: "column", gap: 12, marginTop: 12 }}>
+                {AREA_SECTIONS.map((s) => (
+                  <div key={s.title}>
+                    <div style={{ fontWeight: 800, marginBottom: 6 }}>{s.title}</div>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                      <QuestionFields
+                        defs={s.fields}
+                        values={areaAnswers}
+                        onChange={(k, v) => setAreaAnswers((prev) => ({ ...prev, [k]: v }))}
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </details>
+          )}
           <div style={{ display: "flex", gap: 8 }}>
             <button type="submit" disabled={saving} style={{ ...primaryBtn, flex: 1 }}>
               {saving ? "Saving…" : editing ? "Save changes" : "Add area"}
@@ -459,6 +816,17 @@ export default function WalkthroughDetailPage() {
                 ) : (
                   <div style={{ fontSize: "0.85rem", color: "var(--muted)", marginTop: 6 }}>No tasks checked</div>
                 )}
+                {a.floor_type && (
+                  <div style={{ fontSize: "0.85rem", color: "var(--muted)", marginTop: 6 }}>Floor: {a.floor_type}</div>
+                )}
+                {fixturesLine(a) && (
+                  <div style={{ fontSize: "0.85rem", color: "var(--muted)", marginTop: 2 }}>{fixturesLine(a)}</div>
+                )}
+                {answeredPairs(sectionFields(AREA_SECTIONS), a.details).map(([label, v]) => (
+                  <div key={label} style={{ fontSize: "0.85rem", color: "var(--muted)", marginTop: 4 }}>
+                    <span style={{ fontWeight: 600 }}>{label}</span> {v}
+                  </div>
+                ))}
                 {a.notes && <div style={{ fontSize: "0.85rem", color: "var(--muted)", marginTop: 6 }}>Note: {a.notes}</div>}
               </div>
               <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
@@ -469,6 +837,108 @@ export default function WalkthroughDetailPage() {
           </div>
         ))}
       </div>
+
+      {wtQReady && (
+        <section className="panel" style={{ padding: 18, marginBottom: 20 }}>
+          <h3 style={{ margin: "0 0 4px", fontSize: "1.1rem" }}>Part 2 — Walkthrough questions</h3>
+          <p style={{ fontSize: "0.85rem", color: "var(--muted)", margin: "0 0 12px" }}>
+            Asked on site. Room-by-room questions are on each area above; these are for the building as a whole.
+          </p>
+          <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+            {BUILDING_SECTIONS.map((s) => (
+              <div key={s.title}>
+                <div style={{ fontWeight: 800, marginBottom: 6 }}>{s.title}</div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                  <QuestionFields
+                    defs={s.fields}
+                    values={answersForm}
+                    onChange={(k, v) => setAnswersForm((prev) => ({ ...prev, [k]: v }))}
+                  />
+                </div>
+              </div>
+            ))}
+            <div>
+              <div style={{ fontWeight: 800, marginBottom: 6 }}>Before You Leave — Checklist</div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {LEAVE_CHECKLIST.map((c) => (
+                  <div key={c.key} style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                    <label style={{ display: "flex", gap: 8, alignItems: "center", fontSize: "0.95rem", fontWeight: 600, cursor: "pointer" }}>
+                      <input
+                        type="checkbox"
+                        checked={!!answersForm[c.key]}
+                        onChange={(e) => setAnswersForm((prev) => ({ ...prev, [c.key]: e.target.checked }))}
+                        style={{ width: 20, height: 20 }}
+                      />
+                      {c.label}
+                    </label>
+                    {c.textKey && (
+                      <input
+                        value={answersForm[c.textKey] || ""}
+                        onChange={(e) => setAnswersForm((prev) => ({ ...prev, [c.textKey]: e.target.value }))}
+                        placeholder={c.textPlaceholder}
+                        style={{ ...input, flex: 1, minWidth: 140 }}
+                      />
+                    )}
+                  </div>
+                ))}
+                <QuestionFields
+                  defs={LEAVE_TEXT_FIELDS}
+                  values={answersForm}
+                  onChange={(k, v) => setAnswersForm((prev) => ({ ...prev, [k]: v }))}
+                />
+              </div>
+            </div>
+            <button onClick={saveAnswers} disabled={savingAnswers} style={primaryBtn}>
+              {savingAnswers ? "Saving…" : "Save walkthrough answers"}
+            </button>
+          </div>
+        </section>
+      )}
+
+      {photosReady && (
+        <section className="panel" style={{ padding: 18, marginBottom: 20 }}>
+          <h3 style={{ margin: "0 0 10px", fontSize: "1.1rem" }}>Walkthrough photos</h3>
+          {photos.length > 0 && (
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))", gap: 10, marginBottom: 14 }}>
+              {photos.map((p) => (
+                <div key={p.id}>
+                  {p.signed_url ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={p.signed_url} alt={p.caption || "Walkthrough photo"} style={{ width: "100%", borderRadius: 12, display: "block" }} />
+                  ) : (
+                    <div style={{ padding: 12, fontSize: "0.8rem", color: "var(--muted)" }}>Photo unavailable</div>
+                  )}
+                  {p.caption && <div style={{ fontSize: "0.8rem", color: "var(--muted)", marginTop: 4 }}>{p.caption}</div>}
+                  <button onClick={() => removePhoto(p.id, p.photo_url)} style={{ ...ghostBtn, padding: "6px 12px", marginTop: 6 }}>
+                    Delete
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+          <form onSubmit={addPhotos} style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            <input
+              type="file"
+              accept="image/*"
+              multiple
+              onChange={(e) => setPhotoFiles(Array.from(e.target.files || []))}
+            />
+            <input
+              value={photoCaption}
+              onChange={(e) => setPhotoCaption(e.target.value)}
+              placeholder="Caption for these photos (optional)"
+              maxLength={200}
+              style={input}
+            />
+            {photoFiles.length > 0 && (
+              <p style={{ fontSize: "0.85rem", color: "var(--muted)", margin: 0 }}>{photoFiles.length} photo(s) selected</p>
+            )}
+            <button type="submit" disabled={uploadingPhotos || photoFiles.length === 0} style={primaryBtn}>
+              {uploadingPhotos ? "Uploading…" : "Upload photos"}
+            </button>
+          </form>
+        </section>
+      )}
 
       {areas.length > 0 && (
         <section className="panel" style={{ padding: 18, marginBottom: 20 }}>
