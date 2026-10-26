@@ -27,6 +27,14 @@ export default function ProfitabilityPage() {
   const [revForm, setRevForm] = useState(() => emptyEntry());
   const [expForm, setExpForm] = useState(() => emptyEntry());
   const [saving, setSaving] = useState(false);
+  // Manual entry lists (migration 066 adds actor/void columns; until it
+  // runs, auditReady stays false and the page keeps its pre-066 behavior:
+  // entries still list and edit, void controls stay hidden).
+  const [revEntries, setRevEntries] = useState([]);
+  const [expEntries, setExpEntries] = useState([]);
+  const [auditReady, setAuditReady] = useState(false);
+  const [editing, setEditing] = useState(null);
+  const [busy, setBusy] = useState(false);
   // Company-local date default once the company's timezone is known.
   useEffect(() => {
     if (company?.timezone) {
@@ -100,14 +108,55 @@ export default function ProfitabilityPage() {
       }
     }
 
-    // Manual revenue entries.
-    let revQ = sb.from("revenue_entries").select("location_id, amount, entry_date").eq("company_id", company.id);
+    // Manual revenue + expense entries. Full rows are kept for the entry
+    // lists below the add forms; voided rows (migration 066) are listed
+    // as voided and excluded from every total.
+    let revQ = sb.from("revenue_entries")
+      .select("id, location_id, amount, description, entry_date, created_at")
+      .eq("company_id", company.id)
+      .order("entry_date", { ascending: false });
     if (since) revQ = revQ.gte("entry_date", since);
     const { data: revs } = await revQ;
+    let expQ = sb.from("expense_entries")
+      .select("id, location_id, amount, description, entry_date, created_at")
+      .eq("company_id", company.id)
+      .order("entry_date", { ascending: false });
+    if (since) expQ = expQ.gte("entry_date", since);
+    const { data: exps } = await expQ;
+
+    // The 066 audit columns may not exist yet (the owner runs migrations
+    // separately). Probe them tolerantly — the widest read that fails
+    // falls back to legacy behavior instead of breaking the page.
+    const auditByKey = {};
+    let auditOk = false;
+    {
+      const probe = "id, voided_at, voided_by, void_reason";
+      const { data: ra, error: raErr } = await sb.from("revenue_entries").select(probe).eq("company_id", company.id);
+      const { data: ea, error: eaErr } = await sb.from("expense_entries").select(probe).eq("company_id", company.id);
+      if (!raErr && !eaErr) {
+        auditOk = true;
+        for (const r of ra || []) auditByKey["rev:" + r.id] = r;
+        for (const r of ea || []) auditByKey["exp:" + r.id] = r;
+      }
+    }
+    setAuditReady(auditOk);
+    const withAudit = (list, kind) =>
+      (list || []).map((e) => ({
+        ...e,
+        kind,
+        voided_at: auditByKey[kind + ":" + e.id]?.voided_at || null,
+        void_reason: auditByKey[kind + ":" + e.id]?.void_reason || null,
+      }));
+    const revList = withAudit(revs, "rev");
+    const expList = withAudit(exps, "exp");
+    setRevEntries(revList);
+    setExpEntries(expList);
+
     let revTotals = {};
     let unallocRev = 0;
     let unallocRevCount = 0;
-    for (const r of revs || []) {
+    for (const r of revList) {
+      if (r.voided_at) continue;
       if (!r.location_id) {
         unallocRev += Number(r.amount);
         unallocRevCount += 1;
@@ -116,14 +165,11 @@ export default function ProfitabilityPage() {
       revTotals[r.location_id] = (revTotals[r.location_id] || 0) + Number(r.amount);
     }
 
-    // Manual expense entries.
-    let expQ = sb.from("expense_entries").select("location_id, amount, entry_date").eq("company_id", company.id);
-    if (since) expQ = expQ.gte("entry_date", since);
-    const { data: exps } = await expQ;
     let expTotals = {};
     let unallocExp = 0;
     let unallocExpCount = 0;
-    for (const e of exps || []) {
+    for (const e of expList) {
+      if (e.voided_at) continue;
       if (!e.location_id) {
         unallocExp += Number(e.amount);
         unallocExpCount += 1;
@@ -209,19 +255,77 @@ export default function ProfitabilityPage() {
     }
     setSaving(true);
     const table = kind === "rev" ? "revenue_entries" : "expense_entries";
-    const { error } = await supabase().from(table).insert({
+    const row = {
       company_id: company.id,
       location_id: form.location_id,
       amount: parseFloat(form.amount) || 0,
       description: form.description.trim() || null,
       entry_date: form.entry_date,
-    });
+    };
+    // created_by exists only after migration 066; stamp it when present.
+    if (auditReady) row.created_by = member.user_id;
+    const { error } = await supabase().from(table).insert(row);
     setSaving(false);
     if (error) alert("Could not save: " + error.message);
     else {
       reset(() => emptyEntry(company?.timezone));
       compute();
     }
+  }
+
+  async function saveEdit() {
+    if (!editing) return;
+    const amount = parseFloat(editing.amount);
+    if (!editing.entry_date || Number.isNaN(amount) || amount < 0) {
+      alert("Enter an amount of 0 or more and a date.");
+      return;
+    }
+    setBusy(true);
+    const table = editing.kind === "rev" ? "revenue_entries" : "expense_entries";
+    const patch = {
+      location_id: editing.location_id || null,
+      amount,
+      description: editing.description.trim() || null,
+      entry_date: editing.entry_date,
+    };
+    if (auditReady) {
+      patch.updated_at = new Date().toISOString();
+      patch.updated_by = member.user_id;
+    }
+    const { error } = await supabase().from(table).update(patch)
+      .eq("id", editing.id)
+      .eq("company_id", company.id);
+    setBusy(false);
+    if (error) alert("Could not save the correction: " + error.message);
+    else {
+      setEditing(null);
+      compute();
+    }
+  }
+
+  async function voidEntry(entry) {
+    const reason = window.prompt(
+      "Void this entry? It stays on record with your reason and stops counting in the totals.\n\nReason (10-500 characters):"
+    );
+    if (reason === null) return;
+    const trimmed = reason.trim();
+    if (trimmed.length < 10 || trimmed.length > 500) {
+      alert("Enter a reason of 10 to 500 characters.");
+      return;
+    }
+    setBusy(true);
+    const table = entry.kind === "rev" ? "revenue_entries" : "expense_entries";
+    const now = new Date().toISOString();
+    const { error } = await supabase().from(table).update({
+      voided_at: now,
+      voided_by: member.user_id,
+      void_reason: trimmed,
+      updated_at: now,
+      updated_by: member.user_id,
+    }).eq("id", entry.id).eq("company_id", company.id).is("voided_at", null);
+    setBusy(false);
+    if (error) alert("Could not void: " + error.message);
+    else compute();
   }
 
   if (loading || checking || !company) return <p>Loading…</p>;
@@ -342,6 +446,28 @@ export default function ProfitabilityPage() {
               onSave={() => saveEntry("exp", expForm, setExpForm)}
             />
           </div>
+          <EntriesList
+            title="Revenue entries in this range"
+            entries={revEntries}
+            locations={locations}
+            auditReady={auditReady}
+            editing={editing}
+            setEditing={setEditing}
+            busy={busy}
+            onSaveEdit={saveEdit}
+            onVoid={voidEntry}
+          />
+          <EntriesList
+            title="Expense entries in this range"
+            entries={expEntries}
+            locations={locations}
+            auditReady={auditReady}
+            editing={editing}
+            setEditing={setEditing}
+            busy={busy}
+            onSaveEdit={saveEdit}
+            onVoid={voidEntry}
+          />
           <p style={{ fontSize: "0.85rem", color: "var(--muted)", marginTop: 16 }}>
             Tip: set each team member's hourly rate on the{" "}
             <Link href={`/app/${company.id}/team`} style={{ color: "var(--brand-deep)", fontWeight: 700 }}>
@@ -376,6 +502,115 @@ function Stat({ label, value, highlight }) {
         {value < 0 ? "−" : ""}${Math.abs(value).toFixed(2)}
       </div>
     </div>
+  );
+}
+
+function EntriesList({ title, entries, locations, auditReady, editing, setEditing, busy, onSaveEdit, onVoid }) {
+  if (!entries || entries.length === 0) return null;
+  const locName = (id) => (locations.find((l) => l.id === id) || {}).name || "No location";
+  return (
+    <section className="panel" style={{ padding: 22, marginTop: 18 }}>
+      <h3 style={{ marginTop: 0 }}>{title}</h3>
+      <div style={{ display: "grid", gap: 10 }}>
+        {entries.map((e) => {
+          if (editing && editing.id === e.id && editing.kind === e.kind) {
+            return (
+              <div key={e.kind + e.id} style={{ borderTop: "1px solid var(--line)", paddingTop: 10, display: "grid", gap: 8, maxWidth: 520 }}>
+                <select
+                  value={editing.location_id}
+                  onChange={(ev) => setEditing({ ...editing, location_id: ev.target.value })}
+                  style={input}
+                >
+                  <option value="">No location</option>
+                  {locations.map((l) => (
+                    <option key={l.id} value={l.id}>{l.name}</option>
+                  ))}
+                </select>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <label style={{ flex: 1, fontSize: "0.9rem", color: "var(--muted)" }}>
+                    Amount ($)
+                    <input
+                      type="number"
+                      min="0"
+                      step="any"
+                      value={editing.amount}
+                      onChange={(ev) => setEditing({ ...editing, amount: ev.target.value })}
+                      style={{ ...input, marginTop: 6 }}
+                    />
+                  </label>
+                  <label style={{ flex: 1, fontSize: "0.9rem", color: "var(--muted)" }}>
+                    Date
+                    <input
+                      type="date"
+                      value={editing.entry_date}
+                      onChange={(ev) => setEditing({ ...editing, entry_date: ev.target.value })}
+                      style={{ ...input, marginTop: 6 }}
+                    />
+                  </label>
+                </div>
+                <input
+                  value={editing.description}
+                  onChange={(ev) => setEditing({ ...editing, description: ev.target.value })}
+                  placeholder="Description (optional)"
+                  style={input}
+                />
+                <div style={{ display: "flex", gap: 8 }}>
+                  <button onClick={onSaveEdit} disabled={busy} style={button}>
+                    {busy ? "Saving…" : "Save correction"}
+                  </button>
+                  <button onClick={() => setEditing(null)} disabled={busy} style={smallButton}>
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            );
+          }
+          const voided = !!e.voided_at;
+          return (
+            <div key={e.kind + e.id} style={{ borderTop: "1px solid var(--line)", paddingTop: 10, opacity: voided ? 0.65 : 1 }}>
+              <div style={{ display: "flex", gap: 10, alignItems: "baseline", flexWrap: "wrap" }}>
+                <strong style={{ textDecoration: voided ? "line-through" : "none" }}>
+                  ${Number(e.amount).toFixed(2)}
+                </strong>
+                <span>{e.entry_date}</span>
+                <span style={{ color: "var(--muted)" }}>{locName(e.location_id)}</span>
+                {e.description && <span style={{ color: "var(--muted)" }}>{e.description}</span>}
+                <span style={{ flex: 1 }} />
+                {!voided && (
+                  <>
+                    <button
+                      onClick={() => setEditing({
+                        kind: e.kind,
+                        id: e.id,
+                        location_id: e.location_id || "",
+                        amount: String(e.amount),
+                        description: e.description || "",
+                        entry_date: e.entry_date,
+                      })}
+                      disabled={busy}
+                      style={smallButton}
+                    >
+                      Edit
+                    </button>
+                    {auditReady && (
+                      <button onClick={() => onVoid(e)} disabled={busy} style={smallButton}>
+                        Void
+                      </button>
+                    )}
+                  </>
+                )}
+              </div>
+              {voided && (
+                <div style={{ fontSize: "0.85rem", color: "var(--muted)", marginTop: 4 }}>
+                  Voided {String(e.voided_at).slice(0, 10)}
+                  {e.void_reason ? ` — ${e.void_reason}` : ""} · not counted in totals
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </section>
   );
 }
 
@@ -455,4 +690,14 @@ const chip = {
   fontWeight: 700,
   cursor: "pointer",
   fontSize: "0.85rem",
+};
+
+const smallButton = {
+  border: "1px solid var(--line)",
+  borderRadius: 999,
+  padding: "5px 14px",
+  fontWeight: 700,
+  cursor: "pointer",
+  fontSize: "0.85rem",
+  background: "#fff",
 };
