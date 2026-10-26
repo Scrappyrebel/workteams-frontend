@@ -9,6 +9,7 @@ import { isSupervisorRole } from "../../../../lib/roles";
 import { canUseWithRole } from "../../../../lib/tiers";
 import { chicagoToday } from "../../../../lib/dates";
 import { validatePhotoFile } from "../../../../lib/inspection-photos";
+import { INSPECTION_STARTERS, starterById } from "../../../../lib/inspection-starters";
 
 const SCORE_LABELS = { 1: "1 — Poor", 2: "2 — Fair", 3: "3 — Good", 4: "4 — Very good", 5: "5 — Excellent" };
 const CHECKLIST = [
@@ -39,6 +40,13 @@ export default function InspectionsPage() {
   const [newSection, setNewSection] = useState(emptySection);
   const [saving, setSaving] = useState(false);
   const [overallNotes, setOverallNotes] = useState("");
+  // Section plan: a starter template or the structure of a previous
+  // inspection. It pre-fills section names one at a time (with the focus
+  // checklist items and a look-for note for starters). Scores, checklist
+  // passes, notes, and photos are always entered live by the inspector.
+  const [startFrom, setStartFrom] = useState("blank");
+  const [plan, setPlan] = useState(null);
+  const [planPos, setPlanPos] = useState(0);
 
   const canInspect = isSupervisorRole(member?.role);
   const allowed = canUseWithRole(company?.effectiveTier || company?.tier, "inspections", member?.role);
@@ -47,7 +55,7 @@ export default function InspectionsPage() {
     const sb = supabase();
     const { data } = await sb
       .from("inspections")
-      .select("id, inspection_date, score, notes, inspector_id, locations(name)")
+      .select("id, location_id, inspection_date, score, notes, inspector_id, locations(name)")
       .eq("company_id", company.id)
       .order("inspection_date", { ascending: false });
     const rows = data || [];
@@ -87,10 +95,52 @@ export default function InspectionsPage() {
       inspection_date: inspDate,
       notes: overallNotes.trim() || null,
     }).select("id").single();
+    if (error) { setSaving(false); alert("Could not start inspection: " + error.message); return; }
+    // Build the section plan, if one was chosen. A starter contributes its
+    // sections with focus items and look-for notes; a copied inspection
+    // contributes only its section names and order — never its scores,
+    // checklist passes, notes, or photos.
+    let nextPlan = null;
+    if (startFrom.startsWith("starter:")) {
+      const starter = starterById(startFrom.slice("starter:".length));
+      if (starter) {
+        nextPlan = {
+          label: starter.name,
+          sections: starter.sections.map((s) => ({ name: s.name, focus: s.focus || [], lookFor: s.lookFor || "" })),
+        };
+      }
+    } else if (startFrom.startsWith("copy:")) {
+      const { data: srcItems } = await sb
+        .from("inspection_items")
+        .select("section_name, sort_order")
+        .eq("inspection_id", startFrom.slice("copy:".length))
+        .order("sort_order");
+      if (srcItems && srcItems.length > 0) {
+        nextPlan = {
+          label: "Copied inspection",
+          sections: srcItems.map((s) => ({ name: s.section_name, focus: [], lookFor: "" })),
+        };
+      }
+    }
     setSaving(false);
-    if (error) { alert("Could not start inspection: " + error.message); return; }
     setActiveId(data.id);
     setSections([]);
+    setPlan(nextPlan);
+    setPlanPos(0);
+    setNewSection(nextPlan && nextPlan.sections.length > 0 ? { ...emptySection, name: nextPlan.sections[0].name } : emptySection);
+  }
+
+  // Move the plan to the section after `pos` and pre-fill its name.
+  function advancePlan(pos) {
+    if (!plan) return;
+    const next = pos + 1;
+    setPlanPos(next);
+    setNewSection(next < plan.sections.length ? { ...emptySection, name: plan.sections[next].name } : emptySection);
+  }
+
+  function dropPlan() {
+    setPlan(null);
+    setPlanPos(0);
     setNewSection(emptySection);
   }
 
@@ -120,7 +170,8 @@ export default function InspectionsPage() {
     }
     setSaving(false);
     setSections([...sections, { ...newSection, id: item.id, photoCount: newSection.photos.length }]);
-    setNewSection(emptySection);
+    if (plan && planPos < plan.sections.length) advancePlan(planPos);
+    else setNewSection(emptySection);
   }
 
   async function finishInspection() {
@@ -133,6 +184,9 @@ export default function InspectionsPage() {
     setSections([]);
     setLocationId("");
     setOverallNotes("");
+    setStartFrom("blank");
+    setPlan(null);
+    setPlanPos(0);
     load();
   }
 
@@ -151,6 +205,11 @@ export default function InspectionsPage() {
   }
 
   const activeLocation = locations.find((l) => l.id === locationId);
+  const planSection = plan && planPos < plan.sections.length ? plan.sections[planPos] : null;
+  const planFocus = new Set(planSection?.focus || []);
+  const orderedChecklist = planSection
+    ? [...CHECKLIST.filter((c) => planFocus.has(c)), ...CHECKLIST.filter((c) => !planFocus.has(c))]
+    : CHECKLIST;
 
   return (
     <div>
@@ -174,6 +233,47 @@ export default function InspectionsPage() {
             </label>
             <textarea value={overallNotes} onChange={(e) => setOverallNotes(e.target.value)}
               placeholder="Overall notes (optional)…" rows={2} style={{ ...input, resize: "vertical" }} />
+            <label style={{ fontSize: "0.9rem", color: "var(--muted)" }}>
+              Start from
+              <select value={startFrom}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  setStartFrom(v);
+                  if (v.startsWith("copy:")) {
+                    const src = inspections.find((i) => i.id === v.slice("copy:".length));
+                    if (src?.location_id) setLocationId(src.location_id);
+                  }
+                }}
+                style={{ ...input, marginTop: 6 }}>
+                <option value="blank">Blank — I'll build the sections as I go</option>
+                <optgroup label="Starter templates">
+                  {INSPECTION_STARTERS.map((s) => (
+                    <option key={s.id} value={`starter:${s.id}`}>{s.name} ({s.sections.length} sections)</option>
+                  ))}
+                </optgroup>
+                {inspections.length > 0 && (
+                  <optgroup label="Copy a previous inspection's sections">
+                    {inspections.map((i) => (
+                      <option key={i.id} value={`copy:${i.id}`}>
+                        {i.inspection_date} — {i.locations?.name || "No location"} ({i.section_count} section{i.section_count === 1 ? "" : "s"})
+                      </option>
+                    ))}
+                  </optgroup>
+                )}
+              </select>
+            </label>
+            {startFrom.startsWith("starter:") && starterById(startFrom.slice("starter:".length)) && (
+              <p style={{ fontSize: "0.88rem", color: "var(--muted)", margin: 0 }}>
+                {starterById(startFrom.slice("starter:".length)).blurb} The sections pre-fill one at a
+                time — you still score, check, and photograph each one as you walk it.
+              </p>
+            )}
+            {startFrom.startsWith("copy:") && (
+              <p style={{ fontSize: "0.88rem", color: "var(--muted)", margin: 0 }}>
+                Only the section names and order are copied — never scores, checklist
+                results, notes, or photos.
+              </p>
+            )}
             <button onClick={startInspection} disabled={saving} style={button}>
               {saving ? "Starting…" : "Start inspection →"}
             </button>
@@ -187,6 +287,33 @@ export default function InspectionsPage() {
           <p style={{ fontSize: "0.9rem", color: "var(--muted)" }}>
             Add each room or area as its own section. Score it, note issues, snap photos as you go.
           </p>
+
+          {plan && planSection && (
+            <div style={{ border: "1px dashed var(--brand)", borderRadius: 12, padding: 12, marginBottom: 12, background: "var(--bg-soft)" }}>
+              <p style={{ margin: "0 0 4px", fontWeight: 700, fontSize: "0.9rem" }}>
+                📋 Section plan — {plan.label}: section {planPos + 1} of {plan.sections.length}
+              </p>
+              {planSection.lookFor && (
+                <p style={{ margin: "0 0 4px", fontSize: "0.88rem", color: "var(--muted)" }}>
+                  Look for: {planSection.lookFor}
+                </p>
+              )}
+              {planPos + 1 < plan.sections.length && (
+                <p style={{ margin: 0, fontSize: "0.85rem", color: "var(--muted)" }}>
+                  Still to come: {plan.sections.slice(planPos + 1).map((s) => s.name).join(", ")}
+                </p>
+              )}
+              <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+                <button type="button" onClick={() => advancePlan(planPos)} style={smallGhost}>Skip this section</button>
+                <button type="button" onClick={dropPlan} style={smallGhost}>Drop the plan</button>
+              </div>
+            </div>
+          )}
+          {plan && !planSection && (
+            <p style={{ fontSize: "0.9rem", color: "var(--muted)", margin: "0 0 12px" }}>
+              ✅ Section plan complete — add any extra sections below, or finish the inspection.
+            </p>
+          )}
 
           {sections.map((s, i) => (
             <div key={s.id || i} style={{ border: "1px solid var(--line)", borderRadius: 12, padding: 14, marginBottom: 10 }}>
@@ -220,7 +347,7 @@ export default function InspectionsPage() {
               placeholder="Notes for this section — what needs attention…" rows={2} style={{ ...input, resize: "vertical" }} />
             <div style={{ display: "grid", gap: 6 }}>
               <p style={{ fontSize: "0.9rem", fontWeight: 700, margin: "4px 0 2px" }}>Checklist — tick what passed</p>
-              {CHECKLIST.map((item) => (
+              {orderedChecklist.map((item) => (
                 <label key={item} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: "0.9rem", cursor: "pointer" }}>
                   <input type="checkbox" checked={newSection.checks.includes(item)}
                     onChange={(e) => setNewSection({
@@ -231,6 +358,9 @@ export default function InspectionsPage() {
                     })}
                     style={{ width: 18, height: 18 }} />
                   {item}
+                  {planFocus.has(item) && (
+                    <span style={{ fontSize: "0.78rem", fontWeight: 700, color: "var(--brand-deep)" }}>⭐ focus</span>
+                  )}
                 </label>
               ))}
             </div>
@@ -270,3 +400,4 @@ export default function InspectionsPage() {
 const input = { padding: "11px 13px", borderRadius: 12, border: "1px solid var(--line)", fontSize: "1rem", width: "100%" };
 const button = { padding: "12px", borderRadius: 999, border: "none", background: "var(--brand)", color: "#fff", fontWeight: 800, cursor: "pointer" };
 const secondaryBtn = { padding: "10px", borderRadius: 999, border: "1px solid var(--line)", background: "#fff", fontWeight: 700, cursor: "pointer" };
+const smallGhost = { padding: "6px 14px", borderRadius: 999, border: "1px solid var(--line)", background: "#fff", fontWeight: 700, cursor: "pointer", fontSize: "0.85rem" };
