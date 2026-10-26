@@ -14,6 +14,7 @@ import { supabase } from "../lib/supabase";
 const NAV = [
   { key: "dashboard", label: "Dashboard", href: (c) => `/app/${c}`, minRole: null },
   { key: "scheduling", label: "Schedule", href: (c) => `/app/${c}/schedule`, minRole: null },
+  { key: "myschedule", label: "My Schedule", href: (c) => `/app/${c}/my-schedule`, minRole: null },
   { key: "timeclock", label: "Time Clock", href: (c) => `/app/${c}/time`, minRole: null },
   { key: "payroll", label: "My Hours / Payroll", href: (c) => `/app/${c}/payroll`, minRole: null },
   { key: "locations", label: "Locations", href: (c) => `/app/${c}/locations`, minRole: "supervisor" },

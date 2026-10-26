@@ -49,6 +49,9 @@ export default function InvoiceDetailPage() {
   const [payForm, setPayForm] = useState({ amount: "", payment_date: "", method: "", reference: "", note: "" });
   const [voidPayment, setVoidPayment] = useState({ id: null, reason: "" });
   const [voidInvoice, setVoidInvoice] = useState({ open: false, reason: "" });
+  const [emailTo, setEmailTo] = useState("");
+  const [sending, setSending] = useState(false);
+  const [sentMsg, setSentMsg] = useState("");
 
   const isManager = member && (member.role === "owner" || member.role === "admin");
   const isDraft = invoice?.status === "draft";
@@ -73,6 +76,9 @@ export default function InvoiceDetailPage() {
       return;
     }
     setInvoice(data);
+    if (data.client_contact && data.client_contact.includes("@")) {
+      setEmailTo(data.client_contact);
+    }
     setHeader({
       location_id: data.location_id || "",
       client_name: data.client_name || "",
@@ -260,6 +266,42 @@ export default function InvoiceDetailPage() {
     load();
   }
 
+  // Delivery is read-only: emailing renders the stored invoice, its line
+  // items, and its payment-ledger state. Nothing here writes to the invoice.
+  async function sendInvoice() {
+    setError("");
+    setSentMsg("");
+    const to = emailTo.trim();
+    if (!to || !to.includes("@")) {
+      setError("Enter the client's email address first.");
+      return;
+    }
+    if (!confirm(`Email invoice #${invoice.invoice_number} to ${to}?`)) return;
+    setSending(true);
+    try {
+      const { data: { session } } = await supabase().auth.getSession();
+      const res = await fetch("/api/invoices/send", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
+        },
+        body: JSON.stringify({ invoiceId: invoice.id, to }),
+      });
+      const out = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setError(out.error || "Could not email the invoice.");
+      } else if (out.emailed) {
+        setSentMsg(`Invoice emailed to ${to}.`);
+      } else {
+        setError("The email service didn't send it — you can print or save a PDF instead." + (out.emailDebug ? ` (${out.emailDebug})` : ""));
+      }
+    } catch {
+      setError("Could not email the invoice.");
+    }
+    setSending(false);
+  }
+
   async function confirmVoidPayment() {
     setError("");
     const reason = voidPayment.reason.trim();
@@ -386,6 +428,30 @@ export default function InvoiceDetailPage() {
           <p style={{ color: "var(--muted)", marginBottom: 0 }}>
             Reason: {invoice.void_reason || "—"}
             {invoice.voided_at && <> • {new Date(invoice.voided_at).toLocaleString()}</>}
+          </p>
+        </section>
+      )}
+
+      {(invoice.status === "issued" || invoice.status === "paid") && (
+        <section className="panel" style={{ padding: 20, margin: "16px 0" }}>
+          <h3 style={{ marginTop: 0 }}>Send or print this invoice</h3>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "end" }}>
+            <label style={{ ...labelStyle, flex: "1 1 240px" }}>
+              Client email
+              <input type="email" value={emailTo} onChange={(e) => setEmailTo(e.target.value)} style={input} placeholder="client@example.com" />
+            </label>
+            <button onClick={sendInvoice} disabled={sending} style={button}>
+              {sending ? "Sending…" : "✉️ Email invoice"}
+            </button>
+            <a href={`/print/invoice/${invoice.id}`} target="_blank" rel="noreferrer"
+              style={{ ...button, textDecoration: "none", display: "inline-block" }}>
+              🖨 Print / PDF
+            </a>
+          </div>
+          {sentMsg && <p style={{ color: "#1c6b32", fontWeight: 700, marginBottom: 0 }}>{sentMsg}</p>}
+          <p style={{ color: "var(--muted)", fontSize: "0.88rem", marginBottom: 0 }}>
+            The email carries the full invoice — line items, payments received, and the
+            balance due — exactly as recorded. Sending never changes any amount.
           </p>
         </section>
       )}
