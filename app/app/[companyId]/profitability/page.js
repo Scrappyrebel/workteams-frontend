@@ -58,27 +58,45 @@ export default function ProfitabilityPage() {
     const bidLoc = {};
     const lineIds = [];
     let bidTotals = {};
+    // Money with no location is never dropped: it collects in an explicit
+    // "No location" bucket (with counts) that is rendered as its own row
+    // and included in the page totals.
+    let unallocBidRevenue = 0;
+    let unallocBidCount = 0;
+    const unallocLineBidIds = new Set();
     for (const b of bids || []) {
       bidLoc[b.id] = b.location_id;
       const mode = b.pricing_mode || "line_items";
       if (mode === "line_items") {
         lineIds.push(b.id);
+        if (!b.location_id) {
+          unallocLineBidIds.add(b.id);
+          unallocBidCount += 1;
+        }
         continue;
       }
       const lid = b.location_id;
-      if (!lid) continue;
       const amt =
         mode === "hourly"
           ? Number(b.hours || 0) * Number(b.hourly_rate || 0)
           : Number(b.square_footage || 0) * Number(b.rate_per_sqft || 0);
+      if (!lid) {
+        unallocBidRevenue += amt;
+        unallocBidCount += 1;
+        continue;
+      }
       bidTotals[lid] = (bidTotals[lid] || 0) + amt;
     }
     if (lineIds.length > 0) {
       const { data: items } = await sb.from("bid_items").select("bid_id, quantity, unit_price").in("bid_id", lineIds);
       for (const it of items || []) {
         const lid = bidLoc[it.bid_id];
-        if (!lid) continue;
-        bidTotals[lid] = (bidTotals[lid] || 0) + Number(it.quantity) * Number(it.unit_price);
+        const amt = Number(it.quantity) * Number(it.unit_price);
+        if (!lid) {
+          if (unallocLineBidIds.has(it.bid_id)) unallocBidRevenue += amt;
+          continue;
+        }
+        bidTotals[lid] = (bidTotals[lid] || 0) + amt;
       }
     }
 
@@ -87,8 +105,14 @@ export default function ProfitabilityPage() {
     if (since) revQ = revQ.gte("entry_date", since);
     const { data: revs } = await revQ;
     let revTotals = {};
+    let unallocRev = 0;
+    let unallocRevCount = 0;
     for (const r of revs || []) {
-      if (!r.location_id) continue;
+      if (!r.location_id) {
+        unallocRev += Number(r.amount);
+        unallocRevCount += 1;
+        continue;
+      }
       revTotals[r.location_id] = (revTotals[r.location_id] || 0) + Number(r.amount);
     }
 
@@ -97,8 +121,14 @@ export default function ProfitabilityPage() {
     if (since) expQ = expQ.gte("entry_date", since);
     const { data: exps } = await expQ;
     let expTotals = {};
+    let unallocExp = 0;
+    let unallocExpCount = 0;
     for (const e of exps || []) {
-      if (!e.location_id) continue;
+      if (!e.location_id) {
+        unallocExp += Number(e.amount);
+        unallocExpCount += 1;
+        continue;
+      }
       expTotals[e.location_id] = (expTotals[e.location_id] || 0) + Number(e.amount);
     }
 
@@ -120,11 +150,20 @@ export default function ProfitabilityPage() {
     const payByMember = {};
     for (const p of pay || []) payByMember[p.member_id] = p;
     let laborTotals = {};
+    let unallocLabor = 0;
+    let unallocLaborCount = 0;
     for (const e of entries || []) {
-      if (!e.location_id) continue;
       const hours = (new Date(e.clock_out) - new Date(e.clock_in)) / 3600000;
       if (hours <= 0) continue;
-      laborTotals[e.location_id] = (laborTotals[e.location_id] || 0) + hours * resolveEntryPayRate(e, payByMember[e.member_id]);
+      const cost = hours * resolveEntryPayRate(e, payByMember[e.member_id]);
+      if (!e.location_id) {
+        // Manager-stamped shifts carry no location. Their labor is real
+        // cost: count it in the No location bucket, never drop it.
+        unallocLabor += cost;
+        unallocLaborCount += 1;
+        continue;
+      }
+      laborTotals[e.location_id] = (laborTotals[e.location_id] || 0) + cost;
     }
 
     const out = locList.map((l) => {
@@ -135,6 +174,25 @@ export default function ProfitabilityPage() {
       const profit = revenue - cost;
       return { id: l.id, name: l.name, revenue, labor, expenses, cost, profit };
     });
+    if (unallocBidCount > 0 || unallocRevCount > 0 || unallocExpCount > 0 || unallocLaborCount > 0) {
+      const revenue = unallocBidRevenue + unallocRev;
+      const cost = unallocLabor + unallocExp;
+      out.push({
+        id: "__unallocated",
+        name: "No location",
+        revenue,
+        labor: unallocLabor,
+        expenses: unallocExp,
+        cost,
+        profit: revenue - cost,
+        unallocated: {
+          bids: unallocBidCount,
+          revEntries: unallocRevCount,
+          expEntries: unallocExpCount,
+          shifts: unallocLaborCount,
+        },
+      });
+    }
     setRows(out);
     setComputing(false);
   }
@@ -205,8 +263,9 @@ export default function ProfitabilityPage() {
       <h2 style={{ fontSize: "1.8rem" }}>Job profitability</h2>
       <p style={{ color: "var(--muted)", fontSize: "0.9rem" }}>
         Revenue from accepted bids + manual entries. Cost = clocked hours × each shift's
-        pay rate (the same rate the payroll report uses) + manual expenses. Informational
-        only — WorkTeams never runs payroll.
+        pay rate (the same rate the payroll report uses) + manual expenses. Anything with
+        no location is grouped under "No location" below and still counts in the totals.
+        Informational only — WorkTeams never runs payroll.
       </p>
 
       <div style={{ display: "flex", gap: 6, flexWrap: "wrap", margin: "14px 0" }}>
@@ -254,6 +313,12 @@ export default function ProfitabilityPage() {
                     Revenue ${r.revenue.toFixed(2)} • Labor ${r.labor.toFixed(2)} • Expenses ${r.expenses.toFixed(2)}
                     {r.revenue > 0 && ` • Margin ${margin.toFixed(0)}%`}
                   </div>
+                  {r.unallocated && (
+                    <div style={{ fontSize: "0.85rem", color: "var(--muted)", marginTop: 4 }}>
+                      Counts {unallocatedParts(r.unallocated)} with no location assigned — included in
+                      the totals above, never dropped.
+                    </div>
+                  )}
                 </div>
               );
             })}
@@ -288,6 +353,19 @@ export default function ProfitabilityPage() {
       )}
     </div>
   );
+}
+
+function counted(n, one, many) {
+  return `${n} ${n === 1 ? one : many}`;
+}
+
+function unallocatedParts(u) {
+  const parts = [];
+  if (u.bids) parts.push(counted(u.bids, "accepted bid", "accepted bids"));
+  if (u.revEntries) parts.push(counted(u.revEntries, "revenue entry", "revenue entries"));
+  if (u.expEntries) parts.push(counted(u.expEntries, "expense entry", "expense entries"));
+  if (u.shifts) parts.push(counted(u.shifts, "shift", "shifts"));
+  return parts.join(", ");
 }
 
 function Stat({ label, value, highlight }) {
