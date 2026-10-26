@@ -23,6 +23,53 @@ export default function TeamPage() {
   const isManager = member && (member.role === "owner" || member.role === "admin");
   const isOwner = member && member.role === "owner";
 
+  // My profile (migration 068): the member row from the layout is selected
+  // with *, so the contact columns are simply absent until the migration
+  // runs — that absence is the probe. No columns = read-only note, no crash.
+  const profileReady = !!member && Object.prototype.hasOwnProperty.call(member, "phone");
+  const [profileForm, setProfileForm] = useState(null);
+  const [profileSaving, setProfileSaving] = useState(false);
+  const [profileSaved, setProfileSaved] = useState(false);
+
+  useEffect(() => {
+    if (member && profileForm === null) {
+      setProfileForm({
+        display_name: member.display_name || "",
+        phone: member.phone || "",
+        emergency_contact_name: member.emergency_contact_name || "",
+        emergency_contact_phone: member.emergency_contact_phone || "",
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [member]);
+
+  async function saveProfile(e) {
+    e.preventDefault();
+    if (!profileForm.display_name.trim()) {
+      alert("Your name can't be blank.");
+      return;
+    }
+    setProfileSaving(true);
+    // The ONLY self-service write path for member rows: a narrow RPC that
+    // updates the caller's own name + contact fields — never role, pay,
+    // departments or email.
+    const { error } = await supabase().rpc("update_my_profile", {
+      p_company_id: company.id,
+      p_display_name: profileForm.display_name.trim(),
+      p_phone: profileForm.phone.trim(),
+      p_emergency_contact_name: profileForm.emergency_contact_name.trim(),
+      p_emergency_contact_phone: profileForm.emergency_contact_phone.trim(),
+    });
+    setProfileSaving(false);
+    if (error) {
+      alert("Could not save your profile: " + error.message);
+      return;
+    }
+    setProfileSaved(true);
+    // Refresh so the new name shows in the header and everywhere else.
+    setTimeout(() => window.location.reload(), 800);
+  }
+
   // Department assignment: null/empty = all departments.
   const DEPTS = [
     { key: "hr", label: "👥 HR" },
@@ -54,21 +101,25 @@ export default function TeamPage() {
     // role — no emails, no user ids.
     let data = null;
     if (isManager) {
-      // Try with departments; fall back if migration 045 hasn't run yet.
-      const withDepts = await supabase()
-        .from("company_members")
-        .select("id, user_id, email, display_name, role, created_at, departments")
-        .eq("company_id", company.id)
-        .order("display_name");
-      if (withDepts.error && /departments/i.test(withDepts.error.message || "")) {
-        const fallback = await supabase()
-          .from("company_members")
-          .select("id, user_id, email, display_name, role, created_at")
-          .eq("company_id", company.id)
-          .order("display_name");
-        data = fallback.data;
+      // Widest select first (departments from 045, contact fields from
+      // 068); step down on the specific missing column rather than ever
+      // locking a manager out over a not-yet-run migration.
+      const selectMembers = (cols) =>
+        supabase().from("company_members").select(cols).eq("company_id", company.id).order("display_name");
+      const widest = await selectMembers(
+        "id, user_id, email, display_name, role, created_at, departments, phone, emergency_contact_name, emergency_contact_phone"
+      );
+      if (!widest.error) {
+        data = widest.data;
+      } else if (/phone|emergency_contact/i.test(widest.error.message || "")) {
+        const withDepts = await selectMembers("id, user_id, email, display_name, role, created_at, departments");
+        data = withDepts.error
+          ? (await selectMembers("id, user_id, email, display_name, role, created_at")).data
+          : withDepts.data;
+      } else if (/departments/i.test(widest.error.message || "")) {
+        data = (await selectMembers("id, user_id, email, display_name, role, created_at")).data;
       } else {
-        data = withDepts.data;
+        data = widest.data;
       }
     } else {
       const res = await supabase()
@@ -254,6 +305,69 @@ export default function TeamPage() {
       <p className="eyebrow">TEAM</p>
       <h2 style={{ fontSize: "1.8rem" }}>Team members</h2>
 
+      <section className="panel" style={{ padding: 22, margin: "18px 0" }}>
+        <h3 style={{ marginTop: 0 }}>👤 My profile</h3>
+        {profileReady && profileForm ? (
+          <form onSubmit={saveProfile} style={{ display: "grid", gap: 10, maxWidth: 520 }}>
+            <label style={{ fontSize: "0.85rem", color: "var(--muted)" }}>
+              Your name (as the team sees it)
+              <input
+                value={profileForm.display_name}
+                onChange={(e) => setProfileForm({ ...profileForm, display_name: e.target.value })}
+                placeholder="Name"
+                maxLength={80}
+                required
+                style={input}
+              />
+            </label>
+            <label style={{ fontSize: "0.85rem", color: "var(--muted)" }}>
+              Your phone
+              <input
+                type="tel"
+                value={profileForm.phone}
+                onChange={(e) => setProfileForm({ ...profileForm, phone: e.target.value })}
+                placeholder="Phone (optional)"
+                maxLength={40}
+                style={input}
+              />
+            </label>
+            <label style={{ fontSize: "0.85rem", color: "var(--muted)" }}>
+              Emergency contact — name
+              <input
+                value={profileForm.emergency_contact_name}
+                onChange={(e) => setProfileForm({ ...profileForm, emergency_contact_name: e.target.value })}
+                placeholder="Emergency contact name (optional)"
+                maxLength={80}
+                style={input}
+              />
+            </label>
+            <label style={{ fontSize: "0.85rem", color: "var(--muted)" }}>
+              Emergency contact — phone
+              <input
+                type="tel"
+                value={profileForm.emergency_contact_phone}
+                onChange={(e) => setProfileForm({ ...profileForm, emergency_contact_phone: e.target.value })}
+                placeholder="Emergency contact phone (optional)"
+                maxLength={40}
+                style={input}
+              />
+            </label>
+            <button type="submit" disabled={profileSaving} style={button}>
+              {profileSaving ? "Saving…" : profileSaved ? "Saved ✓ — refreshing…" : "Save my profile"}
+            </button>
+            <p style={{ color: "var(--muted)", fontSize: "0.85rem", margin: 0 }}>
+              Only your name and contact details live here. Your role, pay and schedule
+              are managed by your owner/manager.
+            </p>
+          </form>
+        ) : (
+          <p style={{ color: "var(--muted)", margin: 0 }}>
+            Profile editing turns on with the latest WorkTeams update. Until then,
+            ask an owner or manager to update your details.
+          </p>
+        )}
+      </section>
+
       {isManager && (
         <section className="panel" style={{ padding: 22, margin: "18px 0" }}>
           <h3 style={{ marginTop: 0 }}>Invite a team member</h3>
@@ -321,6 +435,17 @@ export default function TeamPage() {
                   </>
                 )}
                 <div style={{ fontSize: "0.85rem", color: "var(--brand-deep)", fontWeight: 700 }}>{roleLabel(m.role)}</div>
+                {isManager && (m.phone || m.emergency_contact_name || m.emergency_contact_phone) && (
+                  <div style={{ fontSize: "0.82rem", color: "var(--muted)", marginTop: 2 }}>
+                    {m.phone && <span>📞 {m.phone}</span>}
+                    {(m.emergency_contact_name || m.emergency_contact_phone) && (
+                      <span>
+                        {m.phone ? " · " : ""}Emergency: {m.emergency_contact_name || ""}
+                        {m.emergency_contact_phone ? ` ${m.emergency_contact_phone}` : ""}
+                      </span>
+                    )}
+                  </div>
+                )}
                 {isManager && (
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginTop: 8, maxWidth: 420 }}>
                     {[

@@ -6,10 +6,40 @@ import { supabase } from "../../../../lib/supabase";
 import { ensurePush, enablePush, disablePush } from "../../../../lib/push-client";
 import EmergencyButton from "../../../../components/EmergencyButton";
 
+// Per-category phone-notification choices (migration 068). A member with
+// no saved row has every category ON. Until the migration runs, the panel
+// explains itself and stays disabled — nothing here ever errors.
+const PREF_CATEGORIES = [
+  {
+    key: "schedule_changes",
+    label: "Schedule changes",
+    help: "New time-off and swap requests, decisions on your requests, and swap answers. These honor your choice now.",
+  },
+  {
+    key: "messages",
+    label: "Messages & announcements",
+    help: "Crew chat and announcements. These don't send phone notifications yet — your choice is saved and will apply when they do.",
+  },
+  {
+    key: "customer_replies",
+    label: "Customer replies",
+    help: "When a customer replies in the client portal. These don't send phone notifications yet — your choice is saved and will apply when they do.",
+  },
+  {
+    key: "pay",
+    label: "Pay & payroll",
+    help: "Payroll-ready and pay alerts. These don't send phone notifications yet — your choice is saved and will apply when they do.",
+  },
+];
+
 export default function NotificationSettingsPage() {
   const { company, member, loading } = useCompany();
   const [status, setStatus] = useState("unknown");
   const isOwner = member?.role === "owner";
+
+  const [prefs, setPrefs] = useState(null); // null = still loading
+  const [prefsReady, setPrefsReady] = useState(true);
+  const [savingKey, setSavingKey] = useState(null);
 
   useEffect(() => {
     if (!company?.id) return;
@@ -19,6 +49,49 @@ export default function NotificationSettingsPage() {
       onStatus: setStatus,
     });
   }, [company?.id]);
+
+  useEffect(() => {
+    if (!company?.id || !member?.id) return;
+    (async () => {
+      const { data, error } = await supabase()
+        .from("member_notification_preferences")
+        .select("schedule_changes, messages, customer_replies, pay")
+        .eq("company_id", company.id)
+        .eq("member_id", member.id)
+        .maybeSingle();
+      if (error) {
+        // Table not there yet (migration 068 not run): show the panel in
+        // its honest "turns on with the update" state.
+        setPrefsReady(false);
+        setPrefs({ schedule_changes: true, messages: true, customer_replies: true, pay: true });
+        return;
+      }
+      setPrefs({
+        schedule_changes: data?.schedule_changes !== false,
+        messages: data?.messages !== false,
+        customer_replies: data?.customer_replies !== false,
+        pay: data?.pay !== false,
+      });
+    })();
+  }, [company?.id, member?.id]);
+
+  async function togglePref(key) {
+    if (!prefsReady || savingKey) return;
+    const next = { ...prefs, [key]: !prefs[key] };
+    setPrefs(next);
+    setSavingKey(key);
+    const { error } = await supabase()
+      .from("member_notification_preferences")
+      .upsert(
+        { company_id: company.id, member_id: member.id, [key]: next[key], updated_at: new Date().toISOString() },
+        { onConflict: "company_id,member_id" }
+      );
+    setSavingKey(null);
+    if (error) {
+      setPrefs(prefs); // put it back — never show a choice that didn't save
+      alert("Could not save that choice: " + error.message);
+    }
+  }
 
   if (loading || !company) return <p>Loading…</p>;
 
@@ -63,6 +136,50 @@ export default function NotificationSettingsPage() {
           )}
         </div>
         {status === "blocked" && <p style={{ color: "#b3261e", fontWeight: 700 }}>Notifications are blocked in your device/browser settings. Allow notifications for WorkTeams, then return here.</p>}
+      </section>
+
+      <section className="panel" style={{ padding: 20, marginTop: 16 }}>
+        <h3>Which alerts buzz your phone</h3>
+        <p style={{ color: "var(--muted)" }}>
+          Pick the kinds of phone notifications you want. Everything starts on.
+          Emergency and help alerts are not in this list — those always come through.
+        </p>
+        {!prefsReady && (
+          <p style={{ color: "var(--muted)", fontWeight: 700 }}>
+            Per-type choices turn on with the latest WorkTeams update.
+          </p>
+        )}
+        <div style={{ display: "grid", gap: 12 }}>
+          {PREF_CATEGORIES.map((c) => (
+            <label
+              key={c.key}
+              style={{
+                display: "flex",
+                gap: 12,
+                alignItems: "flex-start",
+                border: "1px solid var(--line)",
+                borderRadius: 12,
+                padding: "12px 14px",
+                cursor: prefsReady ? "pointer" : "default",
+                opacity: prefsReady ? 1 : 0.6,
+              }}
+            >
+              <input
+                type="checkbox"
+                checked={prefs ? prefs[c.key] : true}
+                disabled={!prefsReady || !prefs || savingKey === c.key}
+                onChange={() => togglePref(c.key)}
+                style={{ width: 22, height: 22, marginTop: 2 }}
+              />
+              <span>
+                <strong>{c.label}</strong>
+                <span style={{ display: "block", color: "var(--muted)", fontSize: "0.88rem", marginTop: 2 }}>
+                  {c.help}
+                </span>
+              </span>
+            </label>
+          ))}
+        </div>
       </section>
 
       {isOwner && (
