@@ -9,7 +9,7 @@ import { supabase } from "../lib/supabase";
 // tables are owner/admin at the RLS level).
 //
 // Behavior contract:
-// * Before migration 068 runs, or before QuickBooks is connected, this
+// * Before migration 070 runs, or before QuickBooks is connected, this
 //   panel stays calm and quiet -- an invoice is never blocked by it.
 // * Sending is idempotent: the server short-circuits a posted invoice
 //   and keys the QuickBooks create to the sync item, so double-taps

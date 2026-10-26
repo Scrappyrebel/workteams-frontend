@@ -44,7 +44,7 @@ export default function ConnectionsPage() {
       .eq("provider", "quickbooks")
       .maybeSingle();
     if (error) {
-      // Table missing (migration 068 not run yet) or RLS: show the calm
+      // Table missing (migration 070 not run yet) or RLS: show the calm
       // setup-pending state, never a crash and never a lockout.
       setQbo("setup");
       return;

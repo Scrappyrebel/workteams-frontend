@@ -4,7 +4,7 @@ import { readFileSync, existsSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 const read = (p) => readFileSync(p, "utf8");
 
-// QuickBooks integration (migration 068) invariants, per the owner's
+// QuickBooks integration (migration 070) invariants, per the owner's
 // accounting handoff extension section 15:
 // * Accounting scope ONLY -- the payments scope is never requested.
 // * Tokens are reachable only from server code: the tokens table is
@@ -16,7 +16,7 @@ const read = (p) => readFileSync(p, "utf8");
 // * Gusto stays honestly "coming soon" -- no connect path -- and every
 //   other static card stays "Not connected".
 
-const SQL_PATH = "supabase/068_quickbooks_integration.sql";
+const SQL_PATH = "supabase/070_quickbooks_integration.sql";
 const TABLES = [
   "integration_connections",
   "integration_tokens",
@@ -42,8 +42,8 @@ const fileText = new Map(appFiles.map((p) => [p, read(p)]));
 // string it forbids.
 const PAYMENT_SCOPE = ["com.intuit.quickbooks", "payment"].join(".");
 
-test("Migration 068 exists and creates the seven integration tables with RLS on", () => {
-  assert.ok(existsSync(SQL_PATH), "migration 068 must exist");
+test("Migration 070 exists and creates the seven integration tables with RLS on", () => {
+  assert.ok(existsSync(SQL_PATH), "migration 070 must exist");
   const sql = read(SQL_PATH);
   const sqlLower = sql.toLowerCase();
   for (const t of TABLES) {
@@ -98,7 +98,7 @@ test("Status/mapping/queue tables are owner/admin only at the RLS level", () => 
   assert.ok(!sqlLower.includes("'supervisor'"), "no integration policy may grant supervisors access");
 });
 
-test("Migration 068 adds no columns to companies (migration-024 lesson)", () => {
+test("Migration 070 adds no columns to companies (migration-024 lesson)", () => {
   const sqlLower = read(SQL_PATH).toLowerCase();
   assert.ok(!sqlLower.includes("alter table public.companies"), "integration must live in side tables, never companies columns");
   assert.ok(!sqlLower.includes("alter table companies"), "integration must live in side tables, never companies columns");

@@ -1,4 +1,4 @@
--- 068: QuickBooks Online connection layer (accounting integration v1).
+-- 070: QuickBooks Online connection layer (accounting integration v1).
 --
 -- Design (owner's accounting handoff extension, section 15, applied to
 -- WorkTeams' mid-weight accounting):
@@ -79,7 +79,7 @@ create policy "integration connections owner/admin read" on public.integration_c
       and m.role in ('owner', 'admin')));
 
 comment on table public.integration_connections is
- 'Per-company outside-accounting connections (migration 068). STATUS ONLY -- this table never holds token values; tokens live in integration_tokens (service role only). QuickBooks is the books of record once connected; WorkTeams remains the operational system.';
+ 'Per-company outside-accounting connections (migration 070). STATUS ONLY -- this table never holds token values; tokens live in integration_tokens (service role only). QuickBooks is the books of record once connected; WorkTeams remains the operational system.';
 
 -- ============ 2. OAuth tokens -- SERVICE ROLE ONLY ============
 create table if not exists public.integration_tokens (
@@ -101,7 +101,7 @@ revoke all on public.integration_tokens from authenticated, anon;
 grant all on public.integration_tokens to service_role;
 
 comment on table public.integration_tokens is
- 'OAuth tokens for integration connections (migration 068). SERVICE ROLE ONLY: RLS on, no policies, no authenticated/anon grants. Never expose token values to the client, logs, or any other company.';
+ 'OAuth tokens for integration connections (migration 070). SERVICE ROLE ONLY: RLS on, no policies, no authenticated/anon grants. Never expose token values to the client, logs, or any other company.';
 
 -- ============ 3. OAuth state nonces -- SERVICE ROLE ONLY ============
 create table if not exists public.integration_oauth_states (
@@ -118,7 +118,7 @@ revoke all on public.integration_oauth_states from authenticated, anon;
 grant all on public.integration_oauth_states to service_role;
 
 comment on table public.integration_oauth_states is
- 'Short-lived CSRF nonces for integration OAuth callbacks (migration 068). SERVICE ROLE ONLY. Rows are deleted when the callback consumes them and expire after 10 minutes.';
+ 'Short-lived CSRF nonces for integration OAuth callbacks (migration 070). SERVICE ROLE ONLY. Rows are deleted when the callback consumes them and expire after 10 minutes.';
 
 -- ============ 4. Chart-of-accounts mapping + unmapped queue anchor ============
 create table if not exists public.integration_account_mappings (
@@ -174,7 +174,7 @@ create policy "integration mappings owner/admin delete" on public.integration_ac
       and m.role in ('owner', 'admin')));
 
 comment on table public.integration_account_mappings is
- 'Per-company mapping from WorkTeams categories to the company''s own QuickBooks chart of accounts / tax codes (migration 068). A transaction whose category is unmapped never auto-posts; it waits in the sync queue (integration_sync_items).';
+ 'Per-company mapping from WorkTeams categories to the company''s own QuickBooks chart of accounts / tax codes (migration 070). A transaction whose category is unmapped never auto-posts; it waits in the sync queue (integration_sync_items).';
 
 -- ============ 5. Sync items: post links, queue, idempotency ============
 create table if not exists public.integration_sync_items (
@@ -216,7 +216,7 @@ create policy "integration sync items owner/admin read" on public.integration_sy
       and m.role in ('owner', 'admin')));
 
 comment on table public.integration_sync_items is
- 'One row per WorkTeams record posted (or waiting to post) to a provider (migration 068). idempotency_key is sent to QuickBooks as the create requestid, so retries never duplicate. Posting NEVER edits the source record: this table holds the link and status only.';
+ 'One row per WorkTeams record posted (or waiting to post) to a provider (migration 070). idempotency_key is sent to QuickBooks as the create requestid, so retries never duplicate. Posting NEVER edits the source record: this table holds the link and status only.';
 
 -- ============ 6. Sync log: the audit trail ============
 create table if not exists public.integration_sync_log (
@@ -245,7 +245,7 @@ create policy "integration sync log owner/admin read" on public.integration_sync
       and m.role in ('owner', 'admin')));
 
 comment on table public.integration_sync_log is
- 'Append-only audit of integration activity (migration 068): what was sent, what was acknowledged, what failed, and who initiated it. Summaries never contain token values.';
+ 'Append-only audit of integration activity (migration 070): what was sent, what was acknowledged, what failed, and who initiated it. Summaries never contain token values.';
 
 -- ============ 7. Remote records cache (webhook fetch-after-notify) ============
 create table if not exists public.integration_remote_records (
@@ -274,6 +274,6 @@ create policy "integration remote records owner/admin read" on public.integratio
       and m.role in ('owner', 'admin')));
 
 comment on table public.integration_remote_records is
- 'Cache of provider records fetched after webhook notifications or on-demand reads (migration 068). Display-only: summaries of QuickBooks invoices/payments/expenses, always labeled as QuickBooks data in the UI. QuickBooks remains the record; this cache is never edited back.';
+ 'Cache of provider records fetched after webhook notifications or on-demand reads (migration 070). Display-only: summaries of QuickBooks invoices/payments/expenses, always labeled as QuickBooks data in the UI. QuickBooks remains the record; this cache is never edited back.';
 
 COMMIT;
