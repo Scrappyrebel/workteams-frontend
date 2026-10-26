@@ -194,7 +194,7 @@ export default function SchedulePage() {
   });
   const [monthShifts, setMonthShifts] = useState([]);
   const [selectedDay, setSelectedDay] = useState(() => chicagoToday());
-  // Time-off / swap requests (migration 067). Probed: if the table is not
+  // Time-off / swap requests (migration 069). Probed: if the table is not
   // there yet, requestsReady flips false and every request UI stays hidden.
   const [requestsReady, setRequestsReady] = useState(true);
   const [pendingRequests, setPendingRequests] = useState([]);

@@ -1,4 +1,4 @@
--- WorkTeams employee scheduling self-service (067).
+-- WorkTeams employee scheduling self-service (069).
 -- Until now regular (non-temp) employees had no way to tell management when
 -- they can work, and no way to ask for time off or a shift swap: availability
 -- existed only inside the temp application (046/048), and scheduling was

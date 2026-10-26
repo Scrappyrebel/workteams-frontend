@@ -6,7 +6,7 @@ import { useCompany } from "../../../../lib/company-context";
 import { chicagoToday, formatTime12h } from "../../../../lib/dates";
 
 // My Schedule: employee self-service for (1) weekly availability,
-// (2) time-off and shift-swap requests. Both live in migration 067. When
+// (2) time-off and shift-swap requests. Both live in migration 069. When
 // that migration has not been run yet, each section says so plainly instead
 // of failing — the app never locks anyone out over a missing table.
 
@@ -55,7 +55,7 @@ function StatusChip({ status }) {
 
 export default function MySchedulePage() {
   const { company, member, loading } = useCompany();
-  const [unavailable, setUnavailable] = useState(false); // migration 067 not run yet
+  const [unavailable, setUnavailable] = useState(false); // migration 069 not run yet
 
   // Availability
   const [week, setWeek] = useState(() =>

@@ -38,7 +38,7 @@ function fmtTime(t) {
 }
 
 // POST { companyId, requestId, event: "created" | "decided" | "swap_answered" }
-// Pushes about schedule requests (migration 067), honoring each recipient's
+// Pushes about schedule requests (migration 069), honoring each recipient's
 // per-category preferences (migration 068, read tolerantly — missing table
 // means everyone is all-on). Requests themselves are records; this route
 // only notifies. The actual schedule is never changed here.

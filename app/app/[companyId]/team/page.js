@@ -12,7 +12,7 @@ export default function TeamPage() {
   const [form, setForm] = useState({ email: "", display_name: "", role: "employee" });
   const [editingId, setEditingId] = useState(null);
   const [editForm, setEditForm] = useState({ display_name: "", email: "" });
-  // Team availability (migration 067): null = table not there yet / section
+  // Team availability (migration 069): null = table not there yet / section
   // hidden; otherwise the company's availability rows for the viewer below.
   const [availability, setAvailability] = useState(null);
   // Two-tap confirm when changing the email of a member who already signed in.
@@ -91,7 +91,7 @@ export default function TeamPage() {
     }
     setMembers(rows);
     if (isManager) {
-      // Availability is probed: until migration 067 runs, the section
+      // Availability is probed: until migration 069 runs, the section
       // simply stays hidden — never an error in a manager's face.
       const av = await supabase()
         .from("employee_availability")
