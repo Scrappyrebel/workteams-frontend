@@ -41,6 +41,10 @@ export default function NotificationSettingsPage() {
   const [prefsReady, setPrefsReady] = useState(true);
   const [savingKey, setSavingKey] = useState(null);
 
+  const [quiet, setQuiet] = useState(null); // { start: "HH:MM"|"", end: "HH:MM"|"" }
+  const [quietReady, setQuietReady] = useState(true);
+  const [savingQuiet, setSavingQuiet] = useState(false);
+
   useEffect(() => {
     if (!company?.id) return;
     ensurePush({
@@ -74,6 +78,65 @@ export default function NotificationSettingsPage() {
       });
     })();
   }, [company?.id, member?.id]);
+
+  // Quiet hours (migration 072) load in their OWN probe, separate from
+  // the category read above: until that migration runs, the two columns
+  // don't exist, this read errors, and only the quiet-hours section
+  // shows its "turns on with the update" note — the category panel is
+  // never affected.
+  useEffect(() => {
+    if (!company?.id || !member?.id) return;
+    (async () => {
+      const { data, error } = await supabase()
+        .from("member_notification_preferences")
+        .select("quiet_hours_start, quiet_hours_end")
+        .eq("company_id", company.id)
+        .eq("member_id", member.id)
+        .maybeSingle();
+      if (error) {
+        setQuietReady(false);
+        setQuiet({ start: "", end: "" });
+        return;
+      }
+      setQuiet({
+        start: data?.quiet_hours_start ? String(data.quiet_hours_start).slice(0, 5) : "",
+        end: data?.quiet_hours_end ? String(data.quiet_hours_end).slice(0, 5) : "",
+      });
+    })();
+  }, [company?.id, member?.id]);
+
+  // Save a quiet-hours window; pass { start: "", end: "" } to turn it
+  // off. Both blank = off; a start equal to its end is also saved as
+  // off (the send paths read an equal start/end as no window).
+  async function saveQuiet(next) {
+    if (!quietReady || savingQuiet || !next) return;
+    const start = next.start || "";
+    const end = next.end || "";
+    if ((start && !end) || (!start && end)) {
+      alert("Set both a start and an end time for quiet hours, or clear both to turn quiet hours off.");
+      return;
+    }
+    const off = !start || start === end;
+    setSavingQuiet(true);
+    const { error } = await supabase()
+      .from("member_notification_preferences")
+      .upsert(
+        {
+          company_id: company.id,
+          member_id: member.id,
+          quiet_hours_start: off ? null : start,
+          quiet_hours_end: off ? null : end,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: "company_id,member_id" }
+      );
+    setSavingQuiet(false);
+    if (error) {
+      alert("Could not save quiet hours: " + error.message);
+      return;
+    }
+    setQuiet(off ? { start: "", end: "" } : { start, end });
+  }
 
   async function togglePref(key) {
     if (!prefsReady || savingKey) return;
@@ -179,6 +242,59 @@ export default function NotificationSettingsPage() {
               </span>
             </label>
           ))}
+        </div>
+      </section>
+
+      <section className="panel" style={{ padding: 20, marginTop: 16 }}>
+        <h3>Quiet hours</h3>
+        <p style={{ color: "var(--muted)" }}>
+          Set a window and non-urgent phone notifications will not buzz your phone during it — they still
+          appear in the app as usual, they just don't buzz, and one that arrives during quiet hours is not
+          re-sent later. Emergency and help alerts always come through, quiet hours or not. Both times use
+          your company's timezone. Leave both blank to turn quiet hours off.
+        </p>
+        {!quietReady && (
+          <p style={{ color: "var(--muted)", fontWeight: 700 }}>
+            Quiet hours turn on with the latest WorkTeams update.
+          </p>
+        )}
+        <div style={{ display: "flex", gap: 14, alignItems: "flex-end", flexWrap: "wrap" }}>
+          <label style={{ display: "grid", gap: 6 }}>
+            <span style={{ fontWeight: 700 }}>Start</span>
+            <input
+              type="time"
+              value={quiet?.start || ""}
+              disabled={!quietReady || !quiet || savingQuiet}
+              onChange={(e) => setQuiet({ ...(quiet || { start: "", end: "" }), start: e.target.value })}
+              style={{ padding: "10px 12px", borderRadius: 10, border: "1px solid var(--line)", fontSize: "1rem" }}
+            />
+          </label>
+          <label style={{ display: "grid", gap: 6 }}>
+            <span style={{ fontWeight: 700 }}>End</span>
+            <input
+              type="time"
+              value={quiet?.end || ""}
+              disabled={!quietReady || !quiet || savingQuiet}
+              onChange={(e) => setQuiet({ ...(quiet || { start: "", end: "" }), end: e.target.value })}
+              style={{ padding: "10px 12px", borderRadius: 10, border: "1px solid var(--line)", fontSize: "1rem" }}
+            />
+          </label>
+          <button
+            onClick={() => saveQuiet(quiet)}
+            disabled={!quietReady || !quiet || savingQuiet}
+            style={{ padding: "10px 18px", borderRadius: 999, border: 0, background: "var(--brand)", color: "#fff", fontWeight: 800 }}
+          >
+            {savingQuiet ? "Saving…" : "Save quiet hours"}
+          </button>
+          {(quiet?.start || quiet?.end) && (
+            <button
+              onClick={() => saveQuiet({ start: "", end: "" })}
+              disabled={!quietReady || savingQuiet}
+              style={{ padding: "10px 18px", borderRadius: 999, border: "1px solid var(--line)", background: "#fff", fontWeight: 800 }}
+            >
+              Turn off quiet hours
+            </button>
+          )}
         </div>
       </section>
 

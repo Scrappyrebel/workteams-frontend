@@ -1,7 +1,12 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { sendPush, pushConfigured } from "../../../../lib/push";
-import { getNotificationPrefs, wantsNotification } from "../../../../lib/notification-prefs";
+import {
+  getNotificationPrefs,
+  wantsNotification,
+  getCompanyTimezone,
+  pushHeldByQuietHours,
+} from "../../../../lib/notification-prefs";
 import { appUrlFrom } from "../../../../lib/app-url";
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -164,10 +169,16 @@ export async function POST(req) {
       return NextResponse.json({ ok: true, pushed: 0 });
     }
 
-    // Honor per-category preferences (missing table / no row = all on).
+    // Honor per-category preferences (missing table / no row = all on),
+    // then quiet hours (migration 072): a recipient inside their saved
+    // window is not buzzed. The request itself is already saved in the
+    // app — only the push is held, and nothing is queued or re-sent.
     const prefs = await getNotificationPrefs(sb, outbox.map((o) => o.memberId));
-    const targets = outbox.filter((o) => wantsNotification(prefs, o.memberId, "schedule_changes"));
-    if (targets.length === 0) return NextResponse.json({ ok: true, pushed: 0 });
+    const timeZone = await getCompanyTimezone(sb, companyId);
+    const wants = outbox.filter((o) => wantsNotification(prefs, o.memberId, "schedule_changes"));
+    const targets = wants.filter((o) => !pushHeldByQuietHours(prefs, o.memberId, timeZone));
+    const held = wants.length - targets.length;
+    if (targets.length === 0) return NextResponse.json({ ok: true, pushed: 0, held });
 
     const { data: subs } = await sb
       .from("push_subscriptions")
@@ -191,7 +202,7 @@ export async function POST(req) {
       }
     }
     if (dead.length) await sb.from("push_subscriptions").delete().in("id", dead);
-    return NextResponse.json({ ok: true, pushed });
+    return NextResponse.json({ ok: true, pushed, held });
   } catch (e) {
     console.error("schedule request notify error", e);
     return NextResponse.json({ error: "Could not send notifications." }, { status: 500 });
