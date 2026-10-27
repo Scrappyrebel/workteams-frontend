@@ -42,21 +42,42 @@ export default function MessagesPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loading, company, allowed]);
 
+  // Best-effort phone push to the rest of the crew, honoring each member's
+  // saved "messages" preference (migration 068). The message itself is
+  // already saved before this runs; a failed notify never affects it.
+  async function notify(messageId) {
+    try {
+      const { data: { session } } = await supabase().auth.getSession();
+      await fetch("/api/messages/notify", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
+        },
+        body: JSON.stringify({ companyId: company.id, messageId }),
+      });
+    } catch {
+      // Notifications are best-effort; the message itself is what matters.
+    }
+  }
+
   async function send(e) {
     e.preventDefault();
     const text = draft.trim();
     if (!text) return;
     setSending(true);
-    const { error } = await supabase().from("messages").insert({
+    const { data: inserted, error } = await supabase().from("messages").insert({
       company_id: company.id,
       sender_id: member.id,
       content: text,
-    });
+    }).select("id");
     setSending(false);
     if (error) alert("Could not send: " + error.message);
     else {
       setDraft("");
       load(true);
+      const messageId = inserted?.[0]?.id;
+      if (messageId) notify(messageId);
     }
   }
 
