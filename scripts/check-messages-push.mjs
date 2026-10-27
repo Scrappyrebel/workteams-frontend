@@ -17,9 +17,11 @@ const read = (p) => readFileSync(p, "utf8");
 //   notify call AFTER the message saves; a failed notify never affects
 //   the message.
 // * Honesty wording moves only where it became false: the notifications
-//   page "messages" help now says the choice is honored, while the
-//   customer_replies and pay categories — still without a member push —
-//   keep the "don't send phone notifications yet" note.
+//   page "messages" help now says the choice is honored, while the pay
+//   category — still without a member push — keeps the "don't send
+//   phone notifications yet" note. (Customer replies gained their member
+//   push in the follow-up build; see scripts/check-customer-reply-push.mjs,
+//   which now pins that category's wording.)
 // * Protected areas stay untouched: no time clock, shift video or
 //   Communication Book surface appears in the new route.
 
@@ -68,10 +70,9 @@ test("notifications page honesty wording matches what now sends", () => {
     "messages help says the choice is honored now");
   assert.ok(!messagesBlock.includes("don't send phone notifications yet"),
     "messages help no longer claims nothing sends");
-  // Still true, still stated: these two categories have no member push yet.
-  const repliesBlock = page.slice(page.indexOf('key: "customer_replies"'), page.indexOf('key: "pay"'));
-  assert.ok(repliesBlock.includes("don't send phone notifications yet"),
-    "customer replies help stays honest");
+  // Customer replies gained a member push in the follow-up build — its
+  // wording is pinned by scripts/check-customer-reply-push.mjs. Still
+  // true, still stated: the pay category has no member push yet.
   const payBlock = page.slice(page.indexOf('key: "pay"'));
   assert.ok(payBlock.includes("don't send phone notifications yet"),
     "pay help stays honest");

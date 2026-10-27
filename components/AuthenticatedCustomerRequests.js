@@ -196,6 +196,17 @@ export default function AuthenticatedCustomerRequests({companyId,locationId,lang
    setReplyDrafts(previous=>({...previous,[item.id]:""}));
    setNotice(t("Reply saved. Management has been alerted.",
     "Respuesta guardada. Se avisó a la gerencia."));
+   // Member phone push for this reply (the "customer_replies"
+   // preference's send path): best-effort — the reply is saved and the
+   // in-app management alert already fired either way.
+   try{
+    const {data:{session}}=await supabase().auth.getSession();
+    if(session?.access_token){
+     await fetch("/api/portal/customer-reply-notify",{method:"POST",
+      headers:{"Content-Type":"application/json",Authorization:`Bearer ${session.access_token}`},
+      body:JSON.stringify({companyId,locationId,messageId:item.id,replyId:data.reply_id})});
+    }
+   }catch{/* push is best-effort; management keeps its in-app alert */}
    await loadConversation(item.id,()=>stillCurrent());
    await refresh(()=>stillCurrent());
   }catch{

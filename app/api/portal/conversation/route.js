@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { checkRateLimit, clientIp } from "../../../../lib/rate-limit";
+import { appUrlFrom } from "../../../../lib/app-url";
+import { pushCustomerReplyToManagement } from "../../../../lib/customer-reply-push";
 
 const PRIVATE_HEADERS = {
   "Cache-Control": "private, no-store, max-age=0",
@@ -64,6 +66,31 @@ export async function POST(req) {
           },
           503
         );
+      }
+      if (data?.ok === true) {
+        // Member phone push for this customer reply (the saved
+        // "customer_replies" preference's send path). The reply is
+        // already saved and the RPC already raised the in-app
+        // management alert; this only adds the push, honoring each
+        // manager's preference and quiet hours. Strictly best-effort —
+        // any failure is swallowed and the reply response is unchanged.
+        try {
+          const svcKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+          if (svcKey) {
+            const svc = createClient(
+              process.env.NEXT_PUBLIC_SUPABASE_URL,
+              svcKey,
+              { auth: { persistSession: false } }
+            );
+            await pushCustomerReplyToManagement(svc, {
+              messageId: message_id,
+              replyId: data.reply_id,
+              baseUrl: appUrlFrom(req),
+            });
+          }
+        } catch {
+          /* push is best-effort; the reply response never changes */
+        }
       }
       return reply(data, data?.ok === true ? 200 : 400);
     }
