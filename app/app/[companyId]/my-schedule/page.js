@@ -67,6 +67,8 @@ export default function MySchedulePage() {
   // Requests
   const [myRequests, setMyRequests] = useState([]);
   const [incoming, setIncoming] = useState([]);
+  const [askedSwaps, setAskedSwaps] = useState([]);
+  const [swapEvents, setSwapEvents] = useState({});
   const [shiftInfo, setShiftInfo] = useState({});
   const [myShifts, setMyShifts] = useState([]);
   const [teammates, setTeammates] = useState([]);
@@ -151,6 +153,37 @@ export default function MySchedulePage() {
     if (!inb.error) {
       setIncoming(inb.data || []);
       loadShiftInfo(inb.data || []);
+    }
+
+    // Every swap I was ever asked about, so I can see how the ones I
+    // answered ended up — not just the ones still waiting on me.
+    const asked = await sb
+      .from("schedule_requests")
+      .select("id, request_type, shift_id, member_id, swap_status, reason, status, decision_note, created_at")
+      .eq("company_id", company.id)
+      .eq("swap_with_member_id", member.id)
+      .order("created_at", { ascending: false })
+      .limit(20);
+    if (!asked.error) {
+      setAskedSwaps(asked.data || []);
+      loadShiftInfo(asked.data || []);
+    }
+
+    // Swap step history (migration 074's audit trail). Probed like
+    // everything else on this page: until the events table exists,
+    // requests simply show without their step trail.
+    const reqIds = [...new Set([...(mine.data || []), ...(asked.data || [])].map((r) => r.id))];
+    if (reqIds.length > 0) {
+      const ev = await sb
+        .from("schedule_request_events")
+        .select("request_id, event, created_at")
+        .in("request_id", reqIds)
+        .order("created_at", { ascending: true });
+      if (!ev.error) {
+        const byReq = {};
+        for (const e of ev.data || []) (byReq[e.request_id] ||= []).push(e);
+        setSwapEvents(byReq);
+      }
     }
 
     const today = chicagoToday(company?.timezone);
@@ -278,6 +311,28 @@ export default function MySchedulePage() {
     const s = shiftInfo[shiftId];
     if (!s) return "a shift";
     return `${fmtDay(s.shift_date)} · ${formatTime12h(s.start_time)}–${formatTime12h(s.end_time)}${s.locations?.name ? ` · ${s.locations.name}` : ""}`;
+  }
+
+  // Step trail from migration 074's audit table, when it is there:
+  // Offered → Accepted → Approved → Shift moved, each with its day.
+  const EVENT_LABEL = {
+    offered: "Offered",
+    accepted: "Accepted",
+    declined: "Declined",
+    approved: "Approved",
+    denied: "Denied",
+    cancelled: "Cancelled",
+    reassigned: "Shift moved",
+  };
+
+  function eventTrail(requestId) {
+    const evs = swapEvents[requestId] || [];
+    if (evs.length === 0) return null;
+    return (
+      <div style={{ color: "var(--muted)", fontSize: "0.8rem", marginTop: 4 }}>
+        {evs.map((e) => `${EVENT_LABEL[e.event] || e.event} · ${fmtDay(e.created_at)}`).join("  →  ")}
+      </div>
+    );
   }
 
   const nameOf = (id) => {
@@ -495,6 +550,12 @@ export default function MySchedulePage() {
                   Manager note: {r.decision_note}
                 </div>
               )}
+              {r.request_type === "swap" && r.status === "approved" && (
+                <div style={{ fontSize: "0.9rem", marginTop: 4 }}>
+                  Approved — this shift now belongs to {nameOf(r.swap_with_member_id)}.
+                </div>
+              )}
+              {r.request_type === "swap" && eventTrail(r.id)}
               {r.status === "pending" && (
                 <button onClick={() => cancelRequest(r)} style={{ ...secondaryButton, marginTop: 8 }}>
                   Cancel request
@@ -504,6 +565,42 @@ export default function MySchedulePage() {
           ))}
         </div>
       </section>
+
+      {askedSwaps.filter((r) => !(r.status === "pending" && r.swap_status === "pending_counterpart")).length > 0 && (
+        <section className="panel" style={{ padding: 22, marginTop: 18 }}>
+          <h3 style={{ marginTop: 0 }}>🔁 Swaps you were asked about</h3>
+          <div style={{ display: "grid", gap: 8 }}>
+            {askedSwaps
+              .filter((r) => !(r.status === "pending" && r.swap_status === "pending_counterpart"))
+              .map((r) => (
+                <div key={r.id} style={{ border: "1px solid var(--line)", borderRadius: 12, padding: "12px 14px" }}>
+                  <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                    <strong>🔁 Shift swap</strong>
+                    <StatusChip status={r.status} />
+                    <span style={{ fontSize: "0.8rem", color: "var(--muted)" }}>
+                      You: {r.swap_status === "pending_counterpart" ? "not answered yet" : r.swap_status}
+                    </span>
+                  </div>
+                  <div style={{ marginTop: 4 }}>
+                    {nameOf(r.member_id)} — {shiftLabel(r.shift_id)}
+                  </div>
+                  <div style={{ color: "var(--muted)", fontSize: "0.9rem" }}>“{r.reason}”</div>
+                  {r.decision_note && (
+                    <div style={{ fontSize: "0.9rem", marginTop: 4 }}>
+                      Manager note: {r.decision_note}
+                    </div>
+                  )}
+                  {r.status === "approved" && (
+                    <div style={{ fontSize: "0.9rem", marginTop: 4 }}>
+                      Approved — this shift is yours now.
+                    </div>
+                  )}
+                  {eventTrail(r.id)}
+                </div>
+              ))}
+          </div>
+        </section>
+      )}
     </div>
   );
 }
