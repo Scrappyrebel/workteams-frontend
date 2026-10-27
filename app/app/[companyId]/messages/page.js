@@ -5,13 +5,17 @@ import { useEffect, useRef, useState } from "react";
 import { supabase } from "../../../../lib/supabase";
 import { useCompany } from "../../../../lib/company-context";
 import { canUseWithRole } from "../../../../lib/tiers";
+import { roleRank } from "../../../../lib/roles";
 
 export default function MessagesPage() {
   const { company, member, loading } = useCompany();
   const [messages, setMessages] = useState([]);
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
+  const [receipts, setReceipts] = useState(null);
+  const [roster, setRoster] = useState([]);
   const bottomRef = useRef(null);
+  const lastMarkedRef = useRef(null);
 
   const allowed = canUseWithRole(company?.effectiveTier || company?.tier, "messaging", member?.role);
 
@@ -32,6 +36,86 @@ export default function MessagesPage() {
     }
     setMessages(rows.map((r) => ({ ...r, sender_name: names[r.sender_id] || "Unknown" })));
     if (scroll) setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: "smooth" }), 100);
+    markSeenThrough(rows);
+    loadReceipts();
+  }
+
+  // Read receipts (migration 073): opening the chat records how far this
+  // member has seen — the created_at of the newest message they actually
+  // loaded. One watermark row per member, advanced only, always in a
+  // try/catch: a receipt must never break reading or posting the chat,
+  // and until migration 073 runs the table simply is not there and every
+  // call below fails quietly.
+  async function markSeenThrough(rows) {
+    if (!member || !rows || rows.length === 0) return;
+    const newest = rows[rows.length - 1]?.created_at;
+    if (!newest) return;
+    if (lastMarkedRef.current && Date.parse(lastMarkedRef.current) >= Date.parse(newest)) return;
+    lastMarkedRef.current = newest;
+    try {
+      await supabase()
+        .from("message_read_receipts")
+        .upsert(
+          {
+            company_id: company.id,
+            member_id: member.id,
+            seen_through_at: newest,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: "company_id,member_id" }
+        );
+    } catch {
+      // Receipts are best-effort; the chat itself is what matters.
+    }
+  }
+
+  async function loadReceipts() {
+    const sb = supabase();
+    try {
+      const { data: marks } = await sb
+        .from("message_read_receipts")
+        .select("member_id, seen_through_at")
+        .eq("company_id", company.id);
+      if (marks) {
+        const map = {};
+        for (const r of marks) map[r.member_id] = r.seen_through_at;
+        setReceipts(map);
+        const mine = map[member.id];
+        if (mine && (!lastMarkedRef.current || Date.parse(mine) > Date.parse(lastMarkedRef.current))) {
+          lastMarkedRef.current = mine;
+        }
+      }
+    } catch {
+      // No receipts table yet (or a failed read): no seen-by UI, chat unchanged.
+    }
+    try {
+      const { data: people } = await sb
+        .from("team_directory")
+        .select("id, display_name, role")
+        .eq("company_id", company.id);
+      if (people) setRoster(people);
+    } catch {
+      // Roster is only for the seen-by list; its failure changes nothing else.
+    }
+  }
+
+  // Seen / not-yet-seen line for one message. Only the poster and managers
+  // (owner/admin — roleRank >= 2) ever see it; the poster is never listed
+  // as waiting on their own message.
+  function seenLine(m) {
+    if (!receipts || roster.length === 0) return null;
+    const isPoster = m.sender_id === member.id;
+    const isManager = roleRank(member.role) >= 2;
+    if (!isPoster && !isManager) return null;
+    const others = roster.filter((p) => p.id !== m.sender_id);
+    if (others.length === 0) return null;
+    const seenAt = (p) => receipts[p.id] && Date.parse(receipts[p.id]) >= Date.parse(m.created_at);
+    const seenNames = others.filter(seenAt).map((p) => p.display_name || "Unknown");
+    const waitingNames = others.filter((p) => !seenAt(p)).map((p) => p.display_name || "Unknown");
+    if (seenNames.length === 0) return `Not seen yet: ${waitingNames.join(", ")}`;
+    let line = `Seen by ${seenNames.join(", ")}`;
+    if (waitingNames.length > 0) line += ` · Not yet: ${waitingNames.join(", ")}`;
+    return line;
   }
 
   useEffect(() => {
@@ -143,6 +227,9 @@ export default function MessagesPage() {
               <div style={{ fontSize: "0.7rem", opacity: 0.7, marginTop: 4 }}>
                 {new Date(m.created_at).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit", hour12: true })}
               </div>
+              {seenLine(m) && (
+                <div style={{ fontSize: "0.68rem", opacity: 0.75, marginTop: 2 }}>{seenLine(m)}</div>
+              )}
             </div>
           );
         })}
