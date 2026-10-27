@@ -16,11 +16,13 @@ const UUID_RE =
 // (migration 065). The SECURITY DEFINER RPCs re-validate the exact token and
 // request ownership in the database; this route only rate-limits and relays
 // their whitelisted results. Without `body` it reads the thread; with `body`
-// it appends a customer reply and alerts management.
+// it appends a customer reply and alerts management. With `mark_seen` and no
+// `body` (migration 071) it clears the customer's "new reply" flag for the
+// thread — the flag itself is computed by the read RPCs.
 export async function POST(req) {
   try {
     const submitted = await req.json();
-    const { token, message_id, body } = submitted || {};
+    const { token, message_id, body, mark_seen } = submitted || {};
     if (typeof token !== "string" || !token || token.length > 128)
       return reply({ ok: false, error: "This location link is not valid." }, 400);
     if (typeof message_id !== "string" || !UUID_RE.test(message_id))
@@ -71,6 +73,20 @@ export async function POST(req) {
     });
     if (!rl.ok)
       return reply({ ok: false, error: "Too many requests. Try again shortly." }, 429);
+    if (mark_seen === true) {
+      const { data, error } = await sb.rpc(
+        "mark_portal_conversation_seen_with_token",
+        { tok: token, p_message_id: message_id }
+      );
+      if (error) {
+        // Best-effort by design: before migration 071 runs, or on any
+        // failure, the flag simply stays set for the next open and the
+        // read/reply flows are untouched.
+        console.error("portal conversation mark-seen failed", error.message);
+        return reply({ ok: false, error: "Conversation could not be updated." }, 503);
+      }
+      return reply(data, data?.ok === true ? 200 : 400);
+    }
     const { data, error } = await sb.rpc("get_portal_message_conversation", {
       tok: token,
       p_message_id: message_id,

@@ -495,6 +495,18 @@ export default function ClientPortalPage() {
       await loadThreads([message.id]);
       await load();
       setThreadNotice(tr("Reply sent. The customer can read it and reply back from their portal.","Respuesta enviada. El cliente puede leerla y responder desde su portal."));
+      // Migration 071: best-effort customer email notice for this reply.
+      // The reply is already saved; if the notice cannot be sent (for
+      // example RESEND_API_KEY is not configured) its record stays
+      // honestly pending in the database and never blocks this flow.
+      try{
+        const {data:{session}}=await supabase().auth.getSession();
+        if(session?.access_token){
+          await fetch("/api/portal/reply-notify",{method:"POST",
+            headers:{"Content-Type":"application/json",Authorization:`Bearer ${session.access_token}`},
+            body:JSON.stringify({replyId:data.reply_id})});
+        }
+      }catch{/* email notice is best-effort; the in-portal flag still applies */}
     }catch(error){
       setResponseError(error instanceof Error?error.message:tr("Reply status unknown. Check the conversation before resending.","Estado de la respuesta desconocido. Revise la conversación antes de reenviar."));
     }finally{

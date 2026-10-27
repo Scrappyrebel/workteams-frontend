@@ -150,6 +150,16 @@ export default function AuthenticatedCustomerRequests({companyId,locationId,lang
     return;
    }
    setThreads(previous=>({...previous,[messageId]:data.replies}));
+   // Migration 071: opening the conversation clears its "new reply"
+   // flag. Best-effort — a failed mark (or 071 not yet run) leaves the
+   // flag for the next open and changes nothing else.
+   try{
+    await supabase().rpc("mark_workteams_authenticated_customer_conversation_seen",{
+     p_company_id:companyId,p_location_id:locationId,p_message_id:messageId
+    });
+    if(isCurrent()&&request===threadSequence.current&&scopeRef.current===key)
+     setItems(previous=>previous.map(x=>x.id===messageId?{...x,has_unseen_reply:false}:x));
+   }catch{/* the flag clears on a later open */}
   }catch{
    if(!isCurrent()||request!==threadSequence.current||scopeRef.current!==key)return;
    setThreadError(t("Conversation could not be verified. Please recheck your account.",
@@ -236,6 +246,9 @@ export default function AuthenticatedCustomerRequests({companyId,locationId,lang
     <p style={{whiteSpace:"pre-wrap",overflowWrap:"anywhere"}}>{item.message}</p>
     {item.response&&<p style={{whiteSpace:"pre-wrap",overflowWrap:"anywhere"}}>
      <strong>{t("Manager response","Respuesta del responsable")}:</strong> {item.response}
+    </p>}
+    {item.has_unseen_reply===true&&<p role="status" style={{fontWeight:700,color:"var(--brand,#3457d5)",margin:"6px 0 0"}}>
+     ● {t("New reply from management","Nueva respuesta de la gerencia")}
     </p>}
     <button type="button" disabled={loading||sending||replyBusy===item.id}
      onClick={()=>toggleConversation(item)} style={{marginTop:8}}>
