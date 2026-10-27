@@ -448,14 +448,50 @@ export default function SchedulePage() {
     );
   }
 
+  // Migration 074's approve function is probed the same way as its
+  // tables: until 074 runs, swap approvals use the 069 record-only
+  // decision below, exactly as before.
+  function swapCompletionMissing(error) {
+    if (!error) return false;
+    const msg = String(error.message || "");
+    return (
+      error.code === "42883" ||
+      error.code === "PGRST202" ||
+      /could not find the function|does not exist/i.test(msg)
+    );
+  }
+
   async function decideRequest(r, decision) {
     const note = (decisionNotes[r.id] || "").trim();
-    const patch = { status: decision };
-    if (note) patch.decision_note = note.slice(0, 500);
-    const { error } = await supabase().from("schedule_requests").update(patch).eq("id", r.id);
-    if (error) {
-      alert("Could not save the decision: " + error.message);
-      return;
+    let movedShift = false;
+    // Approving a swap is the one decision that also moves a shift, so
+    // it goes through the approve_shift_swap database function
+    // (migration 074): the shift is reassigned to the teammate who
+    // accepted and the decision is recorded in the same transaction —
+    // and a shift that already has recorded time on it is refused
+    // outright, with the plain reason shown. Every other decision
+    // keeps the 069 record-only update.
+    if (r.request_type === "swap" && decision === "approved") {
+      const { error } = await supabase().rpc("approve_shift_swap", {
+        p_request_id: r.id,
+        p_decision_note: note ? note.slice(0, 500) : null,
+      });
+      if (!error) {
+        movedShift = true;
+      } else if (!swapCompletionMissing(error)) {
+        alert("Could not approve this swap: " + error.message);
+        loadRequests();
+        return;
+      }
+    }
+    if (!movedShift) {
+      const patch = { status: decision };
+      if (note) patch.decision_note = note.slice(0, 500);
+      const { error } = await supabase().from("schedule_requests").update(patch).eq("id", r.id);
+      if (error) {
+        alert("Could not save the decision: " + error.message);
+        return;
+      }
     }
     try {
       const { data: { session } } = await supabase().auth.getSession();
@@ -471,6 +507,9 @@ export default function SchedulePage() {
       // Best-effort: the decision itself is saved either way.
     }
     loadRequests();
+    // A swap approval changed who a shift belongs to: refresh the
+    // visible schedule too, not just the request queue.
+    if (movedShift) refreshVisible();
   }
 
   useEffect(() => {
@@ -928,6 +967,12 @@ export default function SchedulePage() {
                         : "hasn't answered yet"}
                   </div>
                 )}
+                {r.request_type === "swap" && r.swap_status === "accepted" && (
+                  <div style={{ fontSize: "0.8rem", color: "var(--muted)", marginTop: 4 }}>
+                    Approving moves this shift to {r.swapWithName}. A shift with recorded
+                    time on it can't be swapped.
+                  </div>
+                )}
                 <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
                   <input
                     value={decisionNotes[r.id] || ""}
@@ -960,7 +1005,9 @@ export default function SchedulePage() {
           </div>
           <p style={{ color: "var(--muted)", fontSize: "0.85rem", marginBottom: 0 }}>
             Recording a decision here never changes the schedule or anyone's time by itself —
-            edit the shifts themselves when a change is needed.
+            edit the shifts themselves when a change is needed. The one exception is approving
+            a swap: that moves the shift to the teammate who accepted it. Recorded time itself
+            is never changed by a decision here.
           </p>
         </section>
       )}
