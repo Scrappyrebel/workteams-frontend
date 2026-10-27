@@ -18,7 +18,7 @@ const PREF_CATEGORIES = [
   {
     key: "messages",
     label: "Messages & announcements",
-    help: "Crew chat and announcements. These don't send phone notifications yet — your choice is saved and will apply when they do.",
+    help: "Crew chat and announcements. These honor your choice now.",
   },
   {
     key: "customer_replies",
