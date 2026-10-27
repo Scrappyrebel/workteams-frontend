@@ -161,6 +161,21 @@ export default function PortalPage() {
     }finally{setHistoryRefreshing(false)}
   }
 
+  // Migration 071: opening a conversation clears its "new reply" flag.
+  // Best-effort — if the mark fails (or 071 has not run yet) the flag
+  // simply stays for the next open; nothing else depends on it.
+  async function markConversationSeen(request){
+    try{
+      const res=await fetch("/api/portal/conversation",{
+        method:"POST",headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({token,message_id:request.id,mark_seen:true}),cache:"no-store"
+      });
+      const payload=await res.json().catch(()=>null);
+      if(currentPortalToken.current!==token||!res.ok||payload?.ok!==true)return;
+      setData(p=>p?.ok===true?{...p,customer_requests:(p.customer_requests||[]).map(x=>x.id===request.id?{...x,has_unseen_reply:false}:x)}:p);
+    }catch{/* the flag clears on a later open */}
+  }
+
   async function toggleConversation(request){
     if(openConvo===request.id){setOpenConvo(null);return;}
     setOpenConvo(request.id);
@@ -178,6 +193,7 @@ export default function PortalPage() {
         return;
       }
       setConversations(p=>({...p,[request.id]:payload.replies}));
+      void markConversationSeen(request);
     }catch{
       if(currentPortalToken.current===token)
         setConvoErrors(p=>({...p,[request.id]:t("Conversation could not be loaded.","No se pudo cargar la conversación.")}));
@@ -214,6 +230,7 @@ export default function PortalPage() {
       const thread=await check.json();
       if(currentPortalToken.current===token&&check.ok&&thread?.ok===true&&Array.isArray(thread.replies))
         setConversations(p=>({...p,[request.id]:thread.replies}));
+      void markConversationSeen(request);
       void refreshCustomerRequests(true);
     }catch(err){
       if(currentPortalToken.current===token)
@@ -738,6 +755,9 @@ export default function PortalPage() {
                   </p>
                   {r.response&&<p style={{whiteSpace:"pre-wrap",margin:"8px 0 0"}}>
                     <strong>{t("Business response / Respuesta:","Respuesta del negocio:")}</strong> {r.response}
+                  </p>}
+                  {r.has_unseen_reply===true&&<p role="status" style={{margin:"8px 0 0",fontWeight:800,color:"var(--brand)"}}>
+                    ● {t("New reply from the business","Nueva respuesta del negocio")}
                   </p>}
                   <button type="button" disabled={Boolean(portalAction.current)||convoBusy===r.id}
                     onClick={()=>void toggleConversation(r)}
