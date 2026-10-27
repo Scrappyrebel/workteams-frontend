@@ -8,6 +8,8 @@ import { useCompany } from "../../../../../lib/company-context";
 import { useClockedIn, requireClockedIn } from "../../../../../lib/use-clocked-in";
 import { canUseWithRole } from "../../../../../lib/tiers";
 import { storagePathFromUrl, validatePhotoFile, withSignedUrls } from "../../../../../lib/inspection-photos";
+import InspectionChecklistDetails from "../../../../../components/InspectionChecklistDetails";
+import { buildItemResultRows, saveItemResults, loadItemResultsBySection, ITEM_OUTCOME_LABELS } from "../../../../../lib/inspection-item-results";
 
 const SCORE_LABELS = { 1: "1 — Poor", 2: "2 — Fair", 3: "3 — Good", 4: "4 — Very good", 5: "5 — Excellent" };
 const CHECKLIST = [
@@ -44,6 +46,7 @@ export default function InspectionDetailPage() {
   const [newSecNotes, setNewSecNotes] = useState("");
   const [newSecPhotos, setNewSecPhotos] = useState([]);
   const [newSecChecks, setNewSecChecks] = useState([]);
+  const [newSecItemDetails, setNewSecItemDetails] = useState({});
   const [secSaving, setSecSaving] = useState(false);
   const [editingSec, setEditingSec] = useState(null);
 
@@ -81,9 +84,17 @@ export default function InspectionDetailPage() {
       .select("*, inspection_photos(*)")
       .eq("inspection_id", inspectionId)
       .order("sort_order");
+    // Per-item structured results (migration 076), grouped by section.
+    // Fail-soft: until 076 runs there is no table, this returns {}, and
+    // sections render exactly as they did before.
+    const resultsBySection = await loadItemResultsBySection(sb, inspectionId);
     const withUrls = [];
     for (const it of items || []) {
-      withUrls.push({ ...it, photos: await withSignedUrls(sb, it.inspection_photos || []) });
+      withUrls.push({
+        ...it,
+        photos: await withSignedUrls(sb, it.inspection_photos || []),
+        itemResults: resultsBySection[it.id] || [],
+      });
     }
     setSections(withUrls);
     // Legacy: photos attached directly to the inspection (no section).
@@ -168,8 +179,12 @@ export default function InspectionDetailPage() {
       if (upErr) { alert("Photo upload failed: " + upErr.message); continue; }
       await sb.from("inspection_photos").insert({ inspection_id: inspectionId, inspection_item_id: item.id, photo_url: path });
     }
+    // Per-item structured results (migration 076) ride along with the
+    // section — best-effort, so a pre-076 database saves the section
+    // exactly as it always has.
+    await saveItemResults(sb, buildItemResultRows(inspectionId, item.id, CHECKLIST, newSecItemDetails));
     setSecSaving(false);
-    setNewSecName(""); setNewSecScore("5"); setNewSecNotes(""); setNewSecPhotos([]); setNewSecChecks([]);
+    setNewSecName(""); setNewSecScore("5"); setNewSecNotes(""); setNewSecPhotos([]); setNewSecChecks([]); setNewSecItemDetails({});
     load();
   }
 
@@ -319,6 +334,25 @@ export default function InspectionDetailPage() {
                       {s.checklist.map((c, ci) => <li key={ci}>✓ {c}</li>)}
                     </ul>
                   )}
+                  {Array.isArray(s.itemResults) && s.itemResults.length > 0 && (
+                    <div style={{ margin: "0 0 10px" }}>
+                      <p style={{ fontSize: "0.85rem", fontWeight: 700, margin: "0 0 4px" }}>Item results</p>
+                      <ul style={{ margin: 0, paddingLeft: 20, fontSize: "0.9rem" }}>
+                        {s.itemResults.map((r) => (
+                          <li key={r.id} style={{ marginBottom: 3 }}>
+                            {r.outcome && (
+                              <span style={{ fontWeight: 700, color: r.outcome === "pass" ? "#1e8e4d" : r.outcome === "issue" ? "#b3261e" : "var(--muted)" }}>
+                                {ITEM_OUTCOME_LABELS[r.outcome] || r.outcome}{" "}
+                              </span>
+                            )}
+                            {r.item_label}
+                            {r.score !== null && r.score !== undefined && <span> • Score {r.score}/5</span>}
+                            {r.note && <span style={{ color: "var(--muted)", whiteSpace: "pre-wrap" }}> — {r.note}</span>}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
                   {s.notes && <p style={{ color: "var(--muted)", whiteSpace: "pre-wrap", margin: "0 0 10px" }}>{s.notes}</p>}
                   {s.photos.length > 0 && (
                     <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(130px, 1fr))", gap: 8, marginBottom: 8 }}>
@@ -397,16 +431,12 @@ export default function InspectionDetailPage() {
             </div>
             <div style={{ display: "grid", gap: 6 }}>
               <p style={{ fontSize: "0.9rem", fontWeight: 700, margin: "4px 0 2px" }}>Checklist — tick what passed</p>
-              {CHECKLIST.map((item) => (
-                <label key={item} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: "0.9rem", cursor: "pointer" }}>
-                  <input type="checkbox" checked={newSecChecks.includes(item)}
-                    onChange={(e) => setNewSecChecks(e.target.checked
-                      ? [...newSecChecks, item]
-                      : newSecChecks.filter((c) => c !== item))}
-                    style={{ width: 18, height: 18 }} />
-                  {item}
-                </label>
-              ))}
+              <InspectionChecklistDetails
+                items={CHECKLIST}
+                checks={newSecChecks}
+                details={newSecItemDetails}
+                onChange={({ checks, details }) => { setNewSecChecks(checks); setNewSecItemDetails(details); }}
+              />
             </div>
             <textarea value={newSecNotes} onChange={(e) => setNewSecNotes(e.target.value)}
               placeholder="Notes for this section…" rows={2} style={{ ...input, resize: "vertical" }} />

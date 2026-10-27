@@ -10,6 +10,8 @@ import { canUseWithRole } from "../../../../lib/tiers";
 import { chicagoToday } from "../../../../lib/dates";
 import { validatePhotoFile } from "../../../../lib/inspection-photos";
 import { INSPECTION_STARTERS, starterById } from "../../../../lib/inspection-starters";
+import InspectionChecklistDetails from "../../../../components/InspectionChecklistDetails";
+import { buildItemResultRows, saveItemResults } from "../../../../lib/inspection-item-results";
 
 const SCORE_LABELS = { 1: "1 — Poor", 2: "2 — Fair", 3: "3 — Good", 4: "4 — Very good", 5: "5 — Excellent" };
 const CHECKLIST = [
@@ -22,7 +24,7 @@ const CHECKLIST = [
   "Kitchen / break room — counters, sink, microwave wiped",
   "High-touch areas disinfected — handles, switches",
 ];
-const emptySection = { name: "", score: "5", notes: "", photos: [], checks: [] };
+const emptySection = { name: "", score: "5", notes: "", photos: [], checks: [], itemDetails: {} };
 
 export default function InspectionsPage() {
   const { company, member, loading } = useCompany();
@@ -168,6 +170,10 @@ export default function InspectionsPage() {
       if (upErr) { alert("Photo upload failed: " + upErr.message); continue; }
       await sb.from("inspection_photos").insert({ inspection_id: activeId, inspection_item_id: item.id, photo_url: path });
     }
+    // Per-item structured results (migration 076) ride along with the
+    // section — best-effort, so a pre-076 database saves the section
+    // exactly as it always has.
+    await saveItemResults(sb, buildItemResultRows(activeId, item.id, orderedChecklist, newSection.itemDetails));
     setSaving(false);
     setSections([...sections, { ...newSection, id: item.id, photoCount: newSection.photos.length }]);
     if (plan && planPos < plan.sections.length) advancePlan(planPos);
@@ -347,22 +353,13 @@ export default function InspectionsPage() {
               placeholder="Notes for this section — what needs attention…" rows={2} style={{ ...input, resize: "vertical" }} />
             <div style={{ display: "grid", gap: 6 }}>
               <p style={{ fontSize: "0.9rem", fontWeight: 700, margin: "4px 0 2px" }}>Checklist — tick what passed</p>
-              {orderedChecklist.map((item) => (
-                <label key={item} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: "0.9rem", cursor: "pointer" }}>
-                  <input type="checkbox" checked={newSection.checks.includes(item)}
-                    onChange={(e) => setNewSection({
-                      ...newSection,
-                      checks: e.target.checked
-                        ? [...newSection.checks, item]
-                        : newSection.checks.filter((c) => c !== item),
-                    })}
-                    style={{ width: 18, height: 18 }} />
-                  {item}
-                  {planFocus.has(item) && (
-                    <span style={{ fontSize: "0.78rem", fontWeight: 700, color: "var(--brand-deep)" }}>⭐ focus</span>
-                  )}
-                </label>
-              ))}
+              <InspectionChecklistDetails
+                items={orderedChecklist}
+                focus={planFocus}
+                checks={newSection.checks}
+                details={newSection.itemDetails}
+                onChange={({ checks, details }) => setNewSection({ ...newSection, checks, itemDetails: details })}
+              />
             </div>
             {newSection.photos.length > 0 && <p style={{ fontSize: "0.85rem", color: "var(--muted)", margin: 0 }}>{newSection.photos.length} photo(s) selected</p>}
             <button type="submit" disabled={saving} style={secondaryBtn}>
