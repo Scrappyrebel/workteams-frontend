@@ -23,7 +23,7 @@ const PREF_CATEGORIES = [
   {
     key: "customer_replies",
     label: "Customer replies",
-    help: "When a customer replies in the client portal. These don't send phone notifications yet — your choice is saved and will apply when they do.",
+    help: "When a customer replies in the client portal. These honor your choice now.",
   },
   {
     key: "pay",
