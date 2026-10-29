@@ -95,10 +95,18 @@ export default function MySchedulePage() {
   async function loadShiftInfo(requests) {
     const ids = [...new Set(requests.map((r) => r.shift_id).filter(Boolean))];
     if (ids.length === 0) return;
-    const { data } = await supabase()
+    // department (079) is probed: until that migration runs, shift
+    // labels simply show without it.
+    let { data } = await supabase()
       .from("shifts")
-      .select("id, shift_date, start_time, end_time, locations(name)")
+      .select("id, shift_date, start_time, end_time, department, locations(name)")
       .in("id", ids);
+    if (!data) {
+      ({ data } = await supabase()
+        .from("shifts")
+        .select("id, shift_date, start_time, end_time, locations(name)")
+        .in("id", ids));
+    }
     const map = {};
     for (const s of data || []) map[s.id] = s;
     setShiftInfo((prev) => ({ ...prev, ...map }));
@@ -187,15 +195,21 @@ export default function MySchedulePage() {
     }
 
     const today = chicagoToday(company?.timezone);
-    const up = await sb
+    // department (079) rides along when the column exists; until the
+    // migration runs, my shifts load exactly as before.
+    const fetchMine = (cols) => sb
       .from("shifts")
-      .select("id, shift_date, start_time, end_time, locations(name)")
+      .select(cols)
       .eq("company_id", company.id)
       .eq("member_id", member.id)
       .gte("shift_date", today)
       .order("shift_date", { ascending: true })
       .order("start_time", { ascending: true })
       .limit(50);
+    let up = await fetchMine("id, shift_date, start_time, end_time, department, locations(name)");
+    if (up.error && /department/i.test(up.error.message || "")) {
+      up = await fetchMine("id, shift_date, start_time, end_time, locations(name)");
+    }
     if (!up.error) setMyShifts(up.data || []);
 
     const dir = await sb
@@ -310,7 +324,7 @@ export default function MySchedulePage() {
   function shiftLabel(shiftId) {
     const s = shiftInfo[shiftId];
     if (!s) return "a shift";
-    return `${fmtDay(s.shift_date)} · ${formatTime12h(s.start_time)}–${formatTime12h(s.end_time)}${s.locations?.name ? ` · ${s.locations.name}` : ""}`;
+    return `${fmtDay(s.shift_date)} · ${formatTime12h(s.start_time)}–${formatTime12h(s.end_time)}${s.locations?.name ? ` · ${s.locations.name}` : ""}${s.department ? ` · ${s.department}` : ""}`;
   }
 
   // Step trail from migration 074's audit table, when it is there:
@@ -484,7 +498,7 @@ export default function MySchedulePage() {
                   <option value="">Pick one of your upcoming shifts…</option>
                   {myShifts.map((s) => (
                     <option key={s.id} value={s.id}>
-                      {fmtDay(s.shift_date)} · {formatTime12h(s.start_time)}–{formatTime12h(s.end_time)}{s.locations?.name ? ` · ${s.locations.name}` : ""}
+                      {fmtDay(s.shift_date)} · {formatTime12h(s.start_time)}–{formatTime12h(s.end_time)}{s.locations?.name ? ` · ${s.locations.name}` : ""}{s.department ? ` · ${s.department}` : ""}
                     </option>
                   ))}
                 </select>

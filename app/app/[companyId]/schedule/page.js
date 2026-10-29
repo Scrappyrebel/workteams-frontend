@@ -12,6 +12,42 @@ const WEEKDAY_SHORT = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const MONTH_NAMES_FULL = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 
+// "Working as" choices for a shift (079): the company's departments from
+// the Team page's assignment (045). company_members.departments stores
+// the keys; null/empty there means every department. The value stored on
+// the shift is the label, so cards — and later payroll — read it plainly
+// even if the person's departments change afterwards.
+const WORK_DEPARTMENTS = [
+  { key: "hr", label: "HR" },
+  { key: "sales", label: "Sales" },
+  { key: "service", label: "Customer Service" },
+  { key: "accounting", label: "Accounting" },
+  { key: "field", label: "Field Ops" },
+  { key: "compliance", label: "Compliance" },
+];
+const DEFAULT_WORK_LABEL = "Cleaning / Field Work";
+
+// Options for one member: their own departments by label, plus the plain
+// field-work default. No recorded departments (null = all) gets the full
+// standard list.
+function workOptionsFor(memberRow) {
+  const keys = memberRow && memberRow.departments;
+  const mine = Array.isArray(keys) && keys.length > 0
+    ? WORK_DEPARTMENTS.filter((d) => keys.includes(d.key))
+    : WORK_DEPARTMENTS;
+  return [...mine.map((d) => d.label), DEFAULT_WORK_LABEL];
+}
+
+// With exactly one recorded department, that is the obvious preselect.
+function presetDepartmentFor(memberRow) {
+  const keys = memberRow && memberRow.departments;
+  if (Array.isArray(keys) && keys.length === 1) {
+    const found = WORK_DEPARTMENTS.find((d) => d.key === keys[0]);
+    if (found) return found.label;
+  }
+  return "";
+}
+
 // Parse "YYYY-MM-DD" as local noon so timezone shifts can't move the day.
 function parseDay(iso) {
   const [y, m, d] = String(iso).split("-").map(Number);
@@ -165,7 +201,7 @@ function toTypedTime(hhmm) {
   return `${h12}:${m[2]} ${ap}`;
 }
 
-const EMPTY_FORM = { location_id: "", member_id: "", shift_date: "", start_time: "", end_time: "", notes: "", repeat: "once", repeat_until: "" };
+const EMPTY_FORM = { location_id: "", member_id: "", department: "", shift_date: "", start_time: "", end_time: "", notes: "", repeat: "once", repeat_until: "" };
 
 export default function SchedulePage() {
   const { company, member, loading } = useCompany();
@@ -176,7 +212,7 @@ export default function SchedulePage() {
   const [confirmDeleteId, setConfirmDeleteId] = useState(null);
   const [confirmSeriesId, setConfirmSeriesId] = useState(null);
   const [editingId, setEditingId] = useState(null);
-  const [editForm, setEditForm] = useState({ location_id: "", member_id: "", shift_date: "", start_time: "", end_time: "", notes: "" });
+  const [editForm, setEditForm] = useState({ location_id: "", member_id: "", department: "", shift_date: "", start_time: "", end_time: "", notes: "" });
   // "pick" = native calendar/clock pickers, "type" = type dates/times as text.
   const [dateEntry, setDateEntry] = useState("pick");
   // When editing a repeat-series shift: "one" = just this shift,
@@ -374,9 +410,18 @@ export default function SchedulePage() {
     setLocations(locs || []);
     if (isManager) {
       // Emails stay manager-only: the assign dropdown needs them, the
-      // roster view does not.
-      const { data: mems } = await sb.from("company_members").select("id, display_name, email").eq("company_id", company.id).order("display_name");
-      setMembers(mems || []);
+      // roster view does not. departments (045) rides along for the
+      // "Working as" picker — probed like the Team page probes it, so
+      // scheduling never locks a manager out over a not-yet-run
+      // migration.
+      const memCols = "id, display_name, email";
+      const withDepts = await sb.from("company_members").select(memCols + ", departments").eq("company_id", company.id).order("display_name");
+      if (!withDepts.error) {
+        setMembers(withDepts.data || []);
+      } else {
+        const { data: mems } = await sb.from("company_members").select(memCols).eq("company_id", company.id).order("display_name");
+        setMembers(mems || []);
+      }
     } else {
       setMembers([]);
     }
@@ -545,6 +590,20 @@ export default function SchedulePage() {
       return;
     }
     const f = { ...form, shift_date: norm.shift_date, start_time: norm.start_time, end_time: norm.end_time, repeat_until: norm.repeat_until };
+    // "Working as" (079): the job this shift is for, chosen from the
+    // assignee's own departments. Required when there is a real choice;
+    // a single-option list resolves itself. Unassigned shifts carry
+    // none yet — the job is set when someone is assigned.
+    const assignee = members.find((m) => m.id === f.member_id) || null;
+    let department = null;
+    if (assignee) {
+      const options = workOptionsFor(assignee);
+      department = f.department || (options.length === 1 ? options[0] : "");
+      if (!department) {
+        alert("Choose what this shift is for — use the “Working as” list.");
+        return;
+      }
+    }
     const pattern = f.repeat || "once";
     const until = pattern === "once" ? f.shift_date : (f.repeat_until || defaultUntil(f.shift_date));
     const dates = buildOccurrences(f.shift_date, pattern, until);
@@ -561,6 +620,7 @@ export default function SchedulePage() {
         company_id: company.id,
         location_id: f.location_id || null,
         member_id: f.member_id || null,
+        department,
         shift_date: d,
         start_time: f.start_time,
         end_time: f.end_time,
@@ -573,7 +633,18 @@ export default function SchedulePage() {
       }
       return row;
     });
-    const { error } = await sb.from("shifts").insert(rows);
+    // If migration 079 has not run yet, the department column does not
+    // exist: retry once without it so scheduling keeps working exactly
+    // as before (the tolerant-write pattern used for earlier columns).
+    let { error } = await sb.from("shifts").insert(rows);
+    if (error && /department|position_name/i.test(error.message || "")) {
+      const plainRows = rows.map((row) => {
+        const copy = { ...row };
+        delete copy.department;
+        return copy;
+      });
+      ({ error } = await sb.from("shifts").insert(plainRows));
+    }
     if (error) {
       if (error.message && error.message.includes("series_id")) {
         console.error("repeat-shift insert failed (missing 031 columns):", error.message);
@@ -593,6 +664,7 @@ export default function SchedulePage() {
     const base = {
       location_id: s.location_id || "",
       member_id: s.member_id || "",
+      department: s.department || "",
       shift_date: s.shift_date || "",
       start_time: s.start_time || "",
       end_time: s.end_time || "",
@@ -621,18 +693,25 @@ export default function SchedulePage() {
       start_time: norm.start_time,
       end_time: norm.end_time,
       notes: editForm.notes || null,
+      // "Working as" (079) rides along on edits too; an unassigned
+      // shift or a blank picker stores null, like rows from before 079.
+      department: editForm.member_id ? (editForm.department || null) : null,
     };
-    let error;
-    if (editScope === "series" && s.series_id) {
-      // Apply time/location/person/notes to this and all future shifts in
-      // the series. Each shift keeps its own date.
-      ({ error } = await supabase().from("shifts").update(patch)
+    const applyPatch = (p) => editScope === "series" && s.series_id
+      ? supabase().from("shifts").update(p)
+        // Apply time/location/person/notes to this and all future
+        // shifts in the series. Each shift keeps its own date.
         .eq("company_id", company.id)
         .eq("series_id", s.series_id)
-        .gte("shift_date", s.shift_date));
-    } else {
-      ({ error } = await supabase().from("shifts").update({ ...patch, shift_date: norm.shift_date })
-        .eq("id", s.id));
+        .gte("shift_date", s.shift_date)
+      : supabase().from("shifts").update({ ...p, shift_date: norm.shift_date })
+        .eq("id", s.id);
+    let { error } = await applyPatch(patch);
+    if (error && /department|position_name/i.test(error.message || "")) {
+      // 079 not run yet: save everything else exactly as before.
+      const rest = { ...patch };
+      delete rest.department;
+      ({ error } = await applyPatch(rest));
     }
     if (error) alert("Could not save: " + error.message);
     else {
@@ -759,10 +838,24 @@ export default function SchedulePage() {
               <option value="">Choose a location…</option>
               {locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
             </select>
-            <select value={editForm.member_id} onChange={(e) => setEditForm({ ...editForm, member_id: e.target.value })} style={input}>
+            <select value={editForm.member_id} onChange={(e) => {
+              const picked = members.find((m) => m.id === e.target.value) || null;
+              setEditForm({ ...editForm, member_id: e.target.value, department: presetDepartmentFor(picked) });
+            }} style={input}>
               <option value="">Assign to… (optional)</option>
               {members.map((m) => <option key={m.id} value={m.id}>{m.display_name} ({m.email})</option>)}
             </select>
+            {editForm.member_id && (
+              <select value={editForm.department} onChange={(e) => setEditForm({ ...editForm, department: e.target.value })} style={input} aria-label="Working as">
+                <option value="">Working as… (not set)</option>
+                {editForm.department && !workOptionsFor(members.find((m) => m.id === editForm.member_id) || null).includes(editForm.department) && (
+                  <option value={editForm.department}>{editForm.department}</option>
+                )}
+                {workOptionsFor(members.find((m) => m.id === editForm.member_id) || null).map((label) => (
+                  <option key={label} value={label}>{label}</option>
+                ))}
+              </select>
+            )}
             {entryToggle(editForm, setEditForm)}
             {dateTimeFields(editForm, setEditForm)}
             <input value={editForm.notes} onChange={(e) => setEditForm({ ...editForm, notes: e.target.value })} placeholder="Notes (optional)" style={input} />
@@ -776,6 +869,7 @@ export default function SchedulePage() {
             <span className="card-kicker">
               {s.shift_date} • {formatTime12h(s.start_time)}–{formatTime12h(s.end_time)}
               {s.recurrence_label && <span style={chip}>↻ {s.recurrence_label}</span>}
+              {s.department && <span style={chip}>🏷️ {s.department}</span>}
             </span>
             <h3 style={{ margin: "6px 0" }}>{s.locations?.name || "No location"}</h3>
             <p style={{ color: "var(--muted)", marginBottom: 6 }}>{s.assignee_name || "Unassigned"}</p>
@@ -1020,10 +1114,24 @@ export default function SchedulePage() {
               <option value="">Choose a location…</option>
               {locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
             </select>
-            <select value={form.member_id} onChange={(e) => setForm({ ...form, member_id: e.target.value })} style={input}>
+            <select value={form.member_id} onChange={(e) => {
+              const picked = members.find((m) => m.id === e.target.value) || null;
+              setForm({ ...form, member_id: e.target.value, department: presetDepartmentFor(picked) });
+            }} style={input}>
               <option value="">Assign to… (optional)</option>
               {members.map((m) => <option key={m.id} value={m.id}>{m.display_name} ({m.email})</option>)}
             </select>
+            {form.member_id && (
+              <label style={labelStyle}>
+                Working as
+                <select value={form.department} onChange={(e) => setForm({ ...form, department: e.target.value })} style={input}>
+                  <option value="">Choose what this shift is for…</option>
+                  {workOptionsFor(members.find((m) => m.id === form.member_id) || null).map((label) => (
+                    <option key={label} value={label}>{label}</option>
+                  ))}
+                </select>
+              </label>
+            )}
             {entryToggle(form, setForm)}
             {dateTimeFields(form, setForm)}
             <input value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} placeholder="Notes (optional)" style={input} />
