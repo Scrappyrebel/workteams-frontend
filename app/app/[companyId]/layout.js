@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useParams, useRouter, usePathname } from "next/navigation";
 import AppShell from "../../../components/AppShell";
+import IosInstallHint from "../../../components/IosInstallHint";
 import { supabase } from "../../../lib/supabase";
 import { getUser, linkMemberOnSignIn } from "../../../lib/session";
 import { CompanyContext } from "../../../lib/company-context";
@@ -100,6 +101,7 @@ export default function CompanyLayout({ children }) {
 
   return (
     <CompanyContext.Provider value={state}>
+      <IosInstallHint />
       <AppShell company={state.company} member={state.member}>
         {children}
       </AppShell>

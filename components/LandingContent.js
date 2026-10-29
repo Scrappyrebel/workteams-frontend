@@ -198,6 +198,7 @@ export default function LandingContent() {
       <CommercialConstructionNotice />
       <SiteNav />
       <Hero />
+      <CrewSignInStrip />
       <BadgeStrip />
       <FounderStrip />
       <Features />
@@ -313,6 +314,25 @@ function Hero() {
           <p className="wt2-m-cta-note">7-day free trial · No card required</p>
         </div>
         <HeroPhones />
+      </div>
+    </section>
+  );
+}
+
+/* Crew front door: returning crew land on this marketing page first, and
+   the only way in used to be the small nav link. This strip says it in
+   plain words, right under the hero, and goes straight to /login. */
+function CrewSignInStrip() {
+  return (
+    <section className="wt2-m-crewstrip" aria-label="Crew sign in">
+      <div className="wt2-m-crewstrip-inner">
+        <p>
+          <strong>Already use WorkTeams with your crew?</strong>{" "}
+          Sign in to see your shifts and clock in.
+        </p>
+        <Link href="/login" className="wt2-m-btn wt2-m-btn-primary wt2-m-crewstrip-btn">
+          Sign in {I.arrow}
+        </Link>
       </div>
     </section>
   );
