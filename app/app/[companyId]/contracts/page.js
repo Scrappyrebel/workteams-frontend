@@ -5,6 +5,7 @@ import { supabase } from "../../../../lib/supabase";
 import { useCompany } from "../../../../lib/company-context";
 import { canUseWithRole } from "../../../../lib/tiers";
 import { buildContractText } from "../../../../lib/contracts";
+import { getUser } from "../../../../lib/session";
 
 function makeToken() {
   const bytes = crypto.getRandomValues(new Uint8Array(32));
@@ -30,6 +31,9 @@ export default function ContractsPage() {
   const [amendFor, setAmendFor] = useState(null);
   const [amendForm, setAmendForm] = useState({ title: "", description: "", price_per_visit: "", visits_per_week: "", end_date: "" });
   const [amendBusy, setAmendBusy] = useState(false);
+  const [cancelFor, setCancelFor] = useState(null);
+  const [cancelReason, setCancelReason] = useState("");
+  const [cancelBusy, setCancelBusy] = useState(false);
 
   const isManager = member && (member.role === "owner" || member.role === "admin");
   const allowed = canUseWithRole(company?.effectiveTier || company?.tier, "contracts", member?.role);
@@ -134,6 +138,39 @@ export default function ContractsPage() {
     const { error } = await supabase().from("contracts").delete().eq("id", id);
     if (error) alert("Could not delete: " + error.message);
     else load();
+  }
+
+  // A contract that has left draft is a record, not a draft: it is never
+  // deleted. Cancelling keeps the contract, its terms, and (when signed)
+  // the client's signature on file, marked cancelled with the reason,
+  // date, and manager recorded — the same pattern as invoice voids.
+  async function cancelContract(e) {
+    e.preventDefault();
+    if (!cancelFor) return;
+    const reason = cancelReason.trim();
+    if (reason.length < 10 || reason.length > 500) {
+      alert("Give a reason of 10–500 characters — it stays on the contract record.");
+      return;
+    }
+    setCancelBusy(true);
+    try {
+      const user = await getUser();
+      if (!user?.id) throw new Error("Sign in as an owner or admin first.");
+      const { error } = await supabase().from("contracts").update({
+        status: "cancelled",
+        cancelled_at: new Date().toISOString(),
+        cancelled_by: user.id,
+        cancel_reason: reason,
+      }).eq("id", cancelFor.id);
+      if (error) throw error;
+      setCancelFor(null);
+      setCancelReason("");
+      await load();
+    } catch (err) {
+      alert("Could not cancel contract: " + err.message);
+    } finally {
+      setCancelBusy(false);
+    }
   }
 
   async function createAmendment(e) {
@@ -261,7 +298,7 @@ export default function ContractsPage() {
       <div style={{ display: "grid", gap: 10, marginTop: 18 }}>
         {contracts.length === 0 && <p style={{ color: "var(--muted)" }}>No contracts yet.</p>}
         {contracts.map((c) => (
-          <div key={c.id} className="portal-card" style={{ minHeight: 0, padding: "16px 20px" }}>
+          <div key={c.id} className="portal-card" style={{ minHeight: 0, padding: "16px 20px", ...(c.status === "cancelled" ? { opacity: 0.75 } : {}) }}>
             <span className="card-kicker">
               <strong style={{ color: statusColor(c.status) }}>{c.status.toUpperCase()}</strong>
               {" • "}{c.client_name}{c.locations?.name ? ` • ${c.locations.name}` : ""}
@@ -281,8 +318,15 @@ export default function ContractsPage() {
                 )}
               </div>
             )}
+            {c.status === "cancelled" && (
+              <p style={{ margin: "6px 0 0", fontSize: "0.9rem", color: "var(--muted)" }}>
+                Cancelled{c.cancelled_at ? ` on ${new Date(c.cancelled_at).toLocaleDateString()}` : ""}
+                {c.cancel_reason ? ` — ${c.cancel_reason}` : ""}
+                {" "}This contract stays on file as a record and can&apos;t be deleted.
+              </p>
+            )}
             <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
-              {c.sign_token && c.status !== "signed" && (
+              {c.sign_token && !["signed", "cancelled", "expired"].includes(c.status) && (
                 <>
                   <button onClick={() => copyLink(c.sign_token)} style={smallButton}>Copy signing link</button>
                   {c.status === "draft" && <button onClick={() => markSent(c.id)} style={smallButton}>Mark as sent</button>}
@@ -291,7 +335,12 @@ export default function ContractsPage() {
               {(c.status === "sent" || c.status === "signed") && (
                 <button onClick={() => setAmendFor(c)} style={smallButton}>Propose amendment</button>
               )}
-              <button onClick={() => deleteContract(c.id)} style={smallDanger}>Delete</button>
+              {["sent", "viewed", "signed"].includes(c.status) && (
+                <button onClick={() => { setCancelFor(c); setCancelReason(""); }} style={smallDanger}>Cancel contract</button>
+              )}
+              {c.status === "draft" && (
+                <button onClick={() => deleteContract(c.id)} style={smallDanger}>Delete</button>
+              )}
             </div>
             {c.terms_text && (
               <details style={{ marginTop: 10 }}>
@@ -338,6 +387,27 @@ export default function ContractsPage() {
           </form>
         </div>
       )}
+
+      {cancelFor && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50, padding: 16 }}>
+          <form onSubmit={cancelContract} style={{ background: "#fff", borderRadius: 16, padding: 24, maxWidth: 520, width: "100%", display: "grid", gap: 12, maxHeight: "90vh", overflowY: "auto" }}>
+            <h3 style={{ margin: 0 }}>Cancel this contract?</h3>
+            <p style={{ margin: 0, fontSize: "0.9rem", color: "var(--muted)" }}>
+              For {cancelFor.client_name}.{" "}
+              {cancelFor.status === "signed"
+                ? "This contract is signed, and signed contracts are legal records — they aren't deleted. Cancelling keeps the contract, its terms, and the client's signature on file, marked cancelled, with your reason recorded."
+                : "This contract has been sent to the client, so it isn't deleted. Cancelling keeps it on file, marked cancelled with your reason recorded, and the client can no longer sign it."}
+            </p>
+            <label style={lbl}>Why is this contract being cancelled? (10–500 characters)
+              <textarea required value={cancelReason} onChange={(e) => setCancelReason(e.target.value)} rows={3} placeholder="e.g. Client closed this location; replaced by a new contract…" style={input} />
+            </label>
+            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+              <button type="button" onClick={() => setCancelFor(null)} style={secondaryButton}>Keep contract</button>
+              <button type="submit" disabled={cancelBusy} style={dangerButton}>{cancelBusy ? "Cancelling…" : "Cancel contract"}</button>
+            </div>
+          </form>
+        </div>
+      )}
     </div>
   );
 }
@@ -345,6 +415,7 @@ export default function ContractsPage() {
 const input = { padding: "11px 13px", borderRadius: 12, border: "1px solid var(--line)", fontSize: "1rem", width: "100%" };
 const lbl = { flex: 1, fontSize: "0.85rem", color: "var(--muted)", display: "grid", gap: 4 };
 const button = { padding: "12px 22px", borderRadius: 999, border: "none", background: "var(--brand)", color: "#fff", fontWeight: 800, cursor: "pointer" };
+const dangerButton = { padding: "12px 22px", borderRadius: 999, border: "none", background: "#b3261e", color: "#fff", fontWeight: 800, cursor: "pointer" };
 const secondaryButton = { padding: "12px 22px", borderRadius: 999, border: "1px solid var(--line)", background: "#fff", fontWeight: 700, cursor: "pointer" };
 const smallButton = { border: "1px solid var(--line)", background: "#fff", borderRadius: 999, padding: "7px 14px", fontWeight: 700, cursor: "pointer", fontSize: "0.85rem" };
 const smallDanger = { border: "1px solid #f0c9c4", background: "#fff", color: "#b3261e", borderRadius: 999, padding: "7px 14px", fontWeight: 700, cursor: "pointer", fontSize: "0.85rem" };
