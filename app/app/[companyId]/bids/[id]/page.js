@@ -169,6 +169,7 @@ export default function BidDetailPage() {
 
   async function addItem(e) {
     e.preventDefault();
+    if (!isDraft) return; // Sent/accepted/declined bids are locked — see the Line items section.
     if (!form.description.trim() || !form.unit_price) {
       alert("Describe the line item and set a price.");
       return;
@@ -189,6 +190,7 @@ export default function BidDetailPage() {
   }
 
   async function removeItem(id) {
+    if (!isDraft) return; // Locked once the bid leaves draft.
     if (!confirm("Remove this line item?")) return;
     const { error } = await supabase().from("bid_items").delete().eq("id", id);
     if (error) alert("Could not remove: " + error.message);
@@ -263,6 +265,55 @@ export default function BidDetailPage() {
     const { error } = await supabase().from("bids").delete().eq("id", bidId);
     if (error) alert("Could not delete: " + error.message);
     else router.replace(`/app/${company.id}/bids`);
+  }
+
+  // The change path for a bid that has left draft: the sent/accepted bid
+  // itself never changes — a fresh draft copy carries the same client,
+  // pricing and line items, and edits happen there instead.
+  async function createRevisedCopy() {
+    if (!confirm("Create a revised copy of this bid? The copy starts as a new draft with the same pricing and line items — this bid stays exactly as it is.")) return;
+    setSaving(true);
+    const sb = supabase();
+    const baseTitle = (bid.title || "Bid").replace(/ \(revised copy\)$/, "");
+    const { data: nb, error } = await sb.from("bids").insert({
+      company_id: company.id,
+      client_name: bid.client_name,
+      client_email: bid.client_email || null,
+      title: `${baseTitle} (revised copy)`,
+      description: bid.description || null,
+      location_id: bid.location_id || null,
+      valid_until: bid.valid_until || null,
+      status: "draft",
+      pricing_mode: bid.pricing_mode || "line_items",
+      hours: bid.pricing_mode === "hourly" ? bid.hours ?? null : null,
+      hourly_rate: bid.pricing_mode === "hourly" ? bid.hourly_rate ?? null : null,
+      square_footage: bid.pricing_mode === "sqft" ? bid.square_footage ?? null : null,
+      rate_per_sqft: bid.pricing_mode === "sqft" ? bid.rate_per_sqft ?? null : null,
+      frequency: bid.frequency || null,
+      job_type: bid.job_type || "commercial",
+    }).select("id").single();
+    if (error) {
+      setSaving(false);
+      alert("Could not create the revised copy: " + error.message);
+      return;
+    }
+    if (items.length > 0) {
+      const rows = items.map((it) => ({
+        bid_id: nb.id,
+        description: it.description,
+        quantity: it.quantity,
+        unit_price: it.unit_price,
+      }));
+      const { error: iErr } = await sb.from("bid_items").insert(rows);
+      if (iErr) {
+        setSaving(false);
+        alert("The revised copy was created, but its line items could not be copied: " + iErr.message);
+        router.push(`/app/${company.id}/bids/${nb.id}`);
+        return;
+      }
+    }
+    setSaving(false);
+    router.push(`/app/${company.id}/bids/${nb.id}`);
   }
 
   async function startWalkthrough() {
@@ -464,7 +515,20 @@ export default function BidDetailPage() {
             </button>
           </>
         ) : (
-          <p style={{ color: "var(--muted)", marginTop: 0 }}>{pricingSummary}</p>
+          <>
+            <p style={{ color: "var(--muted)", marginTop: 0 }}>{pricingSummary}</p>
+            {mode !== "line_items" && (bid.status === "sent" || bid.status === "accepted") && (
+              <>
+                <p style={{ color: "var(--muted)" }}>
+                  Pricing is locked because this bid has been {bid.status === "accepted" ? "accepted at these prices" : "sent to the client"}.
+                  To change it, create a revised copy — the copy starts as a new draft, and this bid stays exactly as it is.
+                </p>
+                <button onClick={createRevisedCopy} disabled={saving} style={{ ...button, marginBottom: 10 }}>
+                  {saving ? "Creating…" : "Create revised copy"}
+                </button>
+              </>
+            )}
+          </>
         )}
         <p style={{ fontWeight: 800, fontSize: "1.2rem", marginBottom: 0 }}>
           {bid?.frequency === "one-time" ? (
@@ -490,7 +554,7 @@ export default function BidDetailPage() {
       {mode === "line_items" && (
       <section className="panel" style={{ padding: 22, margin: "18px 0" }}>
         <h3 style={{ marginTop: 0 }}>Line items</h3>
-        {items.length === 0 && <p style={{ color: "var(--muted)" }}>No line items yet — add the first below.</p>}
+        {items.length === 0 && <p style={{ color: "var(--muted)" }}>{isDraft ? "No line items yet — add the first below." : "No line items."}</p>}
         <div style={{ display: "grid", gap: 8, marginBottom: 14 }}>
           {items.map((it) => (
             <div key={it.id} className="portal-card" style={{ minHeight: 0, padding: "12px 16px", display: "flex", alignItems: "center", gap: 10 }}>
@@ -501,10 +565,11 @@ export default function BidDetailPage() {
                 </div>
               </div>
               <strong>${(Number(it.quantity) * Number(it.unit_price)).toFixed(2)}</strong>
-              <button onClick={() => removeItem(it.id)} style={dangerButton}>✕</button>
+              {isDraft && <button onClick={() => removeItem(it.id)} style={dangerButton}>✕</button>}
             </div>
           ))}
         </div>
+        {isDraft ? (
         <form onSubmit={addItem} style={{ display: "grid", gap: 10, maxWidth: 520, marginTop: 12 }}>
           <input
             value={form.description}
@@ -540,6 +605,24 @@ export default function BidDetailPage() {
             {saving ? "Adding…" : "Add line item"}
           </button>
         </form>
+        ) : (
+          <div style={{ marginTop: 12 }}>
+            <p style={{ color: "var(--muted)", marginTop: 0 }}>
+              {bid.status === "accepted" ? (
+                <>These line items are locked — the client accepted this bid at exactly these prices. To offer different pricing, create a revised copy: it starts as a new draft with the same items, and this bid stays as accepted.</>
+              ) : bid.status === "sent" ? (
+                <>These line items are locked — the client sees exactly these prices on the bid you sent. To change pricing, create a revised copy: it starts as a new draft with the same items, and this bid stays as sent.</>
+              ) : (
+                <>These line items are locked because this bid was declined. Mark it as a draft below to edit it again, or start a fresh bid.</>
+              )}
+            </p>
+            {(bid.status === "sent" || bid.status === "accepted") && (
+              <button onClick={createRevisedCopy} disabled={saving} style={button}>
+                {saving ? "Creating…" : "Create revised copy"}
+              </button>
+            )}
+          </div>
+        )}
       </section>
       )}
 
