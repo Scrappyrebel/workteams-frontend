@@ -93,6 +93,7 @@ export default function RepeatsPage() {
       endTime: first.end_time,
       location: first.locations?.name || "—",
       assignee: first.member_id ? (nameById[first.member_id] || "—") : "Unassigned",
+      department: first.department || null,
       notes: first.notes,
       firstDate: rows[0].shift_date,
       lastDate: rows[rows.length - 1].shift_date,
@@ -121,7 +122,7 @@ export default function RepeatsPage() {
                   <div style={{ fontWeight: 800 }}>{g.label}</div>
                   <div style={{ fontSize: "0.9rem", color: "var(--muted)" }}>
                     {g.startTime ? formatTime12h(g.startTime) : ""}{g.endTime ? ` – ${formatTime12h(g.endTime)}` : ""}
-                    {" · "}{g.location}{" · "}{g.assignee}
+                    {" · "}{g.location}{" · "}{g.assignee}{g.department ? ` · ${g.department}` : ""}
                   </div>
                   <div style={{ fontSize: "0.85rem", marginTop: 4 }}>
                     {g.rows.length} upcoming shift{g.rows.length === 1 ? "" : "s"} · {friendlyDate(g.firstDate)} → {friendlyDate(g.lastDate)}
@@ -175,6 +176,7 @@ export default function RepeatsPage() {
                 {s.start_time ? formatTime12h(s.start_time) : ""}{s.end_time ? ` – ${formatTime12h(s.end_time)}` : ""}
                 {" · "}{s.locations?.name || "—"}
                 {" · "}{s.member_id ? (nameById[s.member_id] || "—") : "Unassigned"}
+                {s.department ? ` · ${s.department}` : ""}
               </div>
               {s.notes && <div style={{ fontSize: "0.85rem", color: "var(--muted)", marginTop: 2 }}>{s.notes}</div>}
             </div>
