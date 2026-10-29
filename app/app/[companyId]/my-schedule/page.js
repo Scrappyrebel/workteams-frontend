@@ -5,10 +5,11 @@ import { supabase } from "../../../../lib/supabase";
 import { useCompany } from "../../../../lib/company-context";
 import { chicagoToday, formatTime12h } from "../../../../lib/dates";
 
-// My Schedule: employee self-service for (1) weekly availability,
-// (2) time-off and shift-swap requests. Both live in migration 069. When
-// that migration has not been run yet, each section says so plainly instead
-// of failing — the app never locks anyone out over a missing table.
+// My Schedule: employee self-service for (1) their own upcoming shifts,
+// (2) weekly availability, (3) time-off and shift-swap requests.
+// Availability and requests live in migration 069. When that migration
+// has not been run yet, each section says so plainly instead of failing —
+// the app never locks anyone out over a missing table.
 
 const DAYS = [
   { dow: 1, label: "Monday" },
@@ -35,6 +36,30 @@ function fmtDay(iso) {
   const [y, m, d] = String(iso).slice(0, 10).split("-").map(Number);
   const dt = new Date(Date.UTC(y, (m || 1) - 1, d || 1));
   return dt.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", timeZone: "UTC" });
+}
+
+// "Working as" label (migration 079, display only): the department /
+// position stored on the shift itself — the same label the who's-working
+// roster prints for managers. position_name wins when a shift carries
+// one; null on shifts without either, and then no label shows.
+function workingAsLabel(shift) {
+  const value = shift?.position_name || shift?.department;
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+// Scheduled length from a shift's start/end times ("6 hrs", "6.5 hrs").
+// An end at or before the start means the shift runs past midnight.
+function shiftLength(start, end) {
+  const mins = (t) => {
+    const [h, m] = String(t || "").slice(0, 5).split(":").map(Number);
+    return Number.isFinite(h) ? h * 60 + (m || 0) : null;
+  };
+  const a = mins(start);
+  let b = mins(end);
+  if (a === null || b === null) return null;
+  if (b <= a) b += 24 * 60;
+  const hrs = (b - a) / 60;
+  return `${Number.isInteger(hrs) ? hrs : hrs.toFixed(1)} hrs`;
 }
 
 const STATUS_STYLE = {
@@ -195,8 +220,9 @@ export default function MySchedulePage() {
     }
 
     const today = chicagoToday(company?.timezone);
-    // department (079) rides along when the column exists; until the
-    // migration runs, my shifts load exactly as before.
+    // department + position_name (079) ride along when the columns
+    // exist; until that migration runs, my shifts load exactly as
+    // before — each retry below drops one probed column.
     const fetchMine = (cols) => sb
       .from("shifts")
       .select(cols)
@@ -206,7 +232,10 @@ export default function MySchedulePage() {
       .order("shift_date", { ascending: true })
       .order("start_time", { ascending: true })
       .limit(50);
-    let up = await fetchMine("id, shift_date, start_time, end_time, department, locations(name)");
+    let up = await fetchMine("id, shift_date, start_time, end_time, department, position_name, locations(name)");
+    if (up.error && /position_name/i.test(up.error.message || "")) {
+      up = await fetchMine("id, shift_date, start_time, end_time, department, locations(name)");
+    }
     if (up.error && /department/i.test(up.error.message || "")) {
       up = await fetchMine("id, shift_date, start_time, end_time, locations(name)");
     }
@@ -376,6 +405,40 @@ export default function MySchedulePage() {
     <div>
       <p className="eyebrow">MY SCHEDULE</p>
       <h2 style={{ fontSize: "1.8rem" }}>My availability & requests</h2>
+
+      <section className="panel" style={{ padding: 22, marginTop: 18 }}>
+        <h3 style={{ marginTop: 0 }}>📅 My upcoming shifts</h3>
+        {myShifts.length === 0 ? (
+          <p style={{ color: "var(--muted)", margin: 0 }}>
+            You have no upcoming shifts scheduled. When your manager schedules
+            you, your shifts will show up here.
+          </p>
+        ) : (
+          <div style={{ display: "grid", gap: 8 }}>
+            {myShifts.map((s) => {
+              const workingAs = workingAsLabel(s);
+              const length = shiftLength(s.start_time, s.end_time);
+              return (
+                <div key={s.id} style={{ border: "1px solid var(--line)", borderRadius: 12, padding: "12px 14px" }}>
+                  <div style={{ fontWeight: 700 }}>
+                    {fmtDay(s.shift_date)} · {formatTime12h(s.start_time)}–{formatTime12h(s.end_time)}
+                    {length && (
+                      <span style={{ color: "var(--muted)", fontWeight: 400 }}> ({length})</span>
+                    )}
+                  </div>
+                  {(s.locations?.name || workingAs) && (
+                    <div style={{ color: "var(--muted)", fontSize: "0.9rem", marginTop: 2 }}>
+                      {[s.locations?.name, workingAs ? `Working as: ${workingAs}` : null]
+                        .filter(Boolean)
+                        .join(" · ")}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </section>
 
       {incoming.length > 0 && (
         <section className="panel" style={{ padding: 22, marginTop: 18, borderColor: "var(--brand)" }}>
