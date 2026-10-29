@@ -1562,3 +1562,15 @@ h2 {
    validation, and submit are untouched; the page just sits in the
    green family with a branded top edge. */
 .wt2-t-book-panel { border-top: 8px solid var(--t-brand); }
+
+/* Crew sign-in strip — landing page, directly under the hero. Added with
+   the front-door work (2026-10-29) so returning crew get a plain-words way
+   in, not just the trial CTAs. New classes only; nothing above is changed. */
+.wt2-m-crewstrip { background: var(--b-soft); border-bottom: 1px solid var(--b-line); }
+.wt2-m-crewstrip-inner {
+  width: min(1120px, calc(100% - 40px)); margin: 0 auto; padding: 16px 0;
+  display: flex; align-items: center; justify-content: center;
+  gap: 10px 24px; flex-wrap: wrap; text-align: center;
+}
+.wt2-m-crewstrip p { font-size: 1rem; color: var(--b-ink); }
+.wt2-m-crewstrip-btn { padding: 9px 22px; }
