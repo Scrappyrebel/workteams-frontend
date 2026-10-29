@@ -7,7 +7,8 @@ import { canUseWithRole } from "../../../../lib/tiers";
 import { isManagerRole, isSupervisorRole } from "../../../../lib/roles";
 import EmergencyButton from "../../../../components/EmergencyButton";
 import EndShiftProof from "../../../../components/EndShiftProof";
-import { chooseAssignedShift } from "../../../../lib/attendance-shifts.mjs";
+import { chooseAssignedShift, shiftBounds } from "../../../../lib/attendance-shifts.mjs";
+import { dateInTz } from "../../../../lib/dates";
 import { proofRequired } from "../../../../lib/proof-policy";
 
 function getPosition() {
@@ -42,6 +43,59 @@ function chicagoDate(value) {
   return `${p("year")}-${p("month")}-${p("day")}`;
 }
 
+// "Working as" label for the who's-working roster (migration 079,
+// display only): the department/position stored on the shift itself.
+// position_name wins when a shift ever carries one; WorkTeams shifts
+// store the choice in department. Null on older shifts — no label.
+function workingAsLabel(shift) {
+  const value = shift?.position_name || shift?.department;
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+// Pick the shift an unlinked clock-in belongs to, for the roster label
+// only. Prefer a shift whose scheduled window contains the clock-in;
+// otherwise the earliest shift that day. Same-location shifts win ties.
+// If the shifts that could match disagree on the label, return null —
+// never guess a wrong label.
+function chooseRosterShift(entry, candidates, timeZone) {
+  if (!entry || !candidates?.length) return null;
+  const at = new Date(entry.clock_in).getTime();
+  if (!Number.isFinite(at)) return null;
+  const rank = (s) => (entry.location_id && s.location_id !== entry.location_id ? 1 : 0);
+  const byRankThenStart = (a, b) =>
+    rank(a) - rank(b) || String(a.start_time || "").localeCompare(String(b.start_time || ""));
+  const decide = (pool) => {
+    if (!pool.length) return null;
+    const sorted = [...pool].sort(byRankThenStart);
+    const best = sorted[0];
+    const rivals = sorted.filter(
+      (s) => rank(s) === rank(best) && String(s.start_time || "") === String(best.start_time || "")
+    );
+    const labels = [...new Set(rivals.map(workingAsLabel).filter(Boolean))];
+    if (labels.length > 1) return null;
+    if (labels.length === 1) return rivals.find((s) => workingAsLabel(s)) || best;
+    return best;
+  };
+  const containing = candidates.filter((s) => {
+    if (!s.shift_date || !s.start_time || !s.end_time) return false;
+    const { start, end } = shiftBounds(s, timeZone);
+    return at >= start.getTime() && at <= end.getTime();
+  });
+  if (containing.length) {
+    let pool = containing;
+    if (entry.location_id) {
+      const atLocation = pool.filter((s) => s.location_id === entry.location_id);
+      if (atLocation.length) pool = atLocation;
+    }
+    // Overlapping shifts that disagree on the label are ambiguous —
+    // show nothing rather than guess.
+    const labels = [...new Set(pool.map(workingAsLabel).filter(Boolean))];
+    if (labels.length > 1) return null;
+    return decide(pool);
+  }
+  return decide(candidates);
+}
+
 export default function TimeClockPage() {
   const { company, member, loading } = useCompany();
   const [open, setOpen] = useState(null);
@@ -54,6 +108,8 @@ export default function TimeClockPage() {
   const [locationId, setLocationId] = useState("");
   const [filter, setFilter] = useState("everyone");
   const [onClock, setOnClock] = useState([]);
+  // Roster "Working as" labels by time entry id (079, display only).
+  const [workingAsByEntry, setWorkingAsByEntry] = useState({});
   const [teamOffClock, setTeamOffClock] = useState([]);
   const [busy, setBusy] = useState(false);
   // Hats the member can clock in as (e.g. Cleaner vs Manager). Shown only
@@ -186,6 +242,65 @@ export default function TimeClockPage() {
         .is("clock_out", null)
         .order("clock_in", { ascending: false });
       setOnClock(openTeam || []);
+      // "Working as" labels for the roster (079, display only — this
+      // never writes anything). A normal clock-in is linked to its
+      // shift (time_entries.shift_id, set by the clock-in route), so
+      // the label comes straight from that shift. Entries with no link
+      // (manager overrides, older rows) fall back to the member's
+      // shifts on the clock-in day. Any failure leaves the roster
+      // exactly as before, with no labels.
+      try {
+        const team = openTeam || [];
+        const tz = company.timezone || "America/Chicago";
+        const shiftCols = "id, member_id, location_id, shift_date, start_time, end_time, department, position_name";
+        const baseCols = "id, member_id, location_id, shift_date, start_time, end_time";
+        const fetchShifts = async (build) => {
+          let res = await build(shiftCols);
+          if (res.error && /department|position_name/i.test(res.error.message || "")) {
+            res = await build(baseCols);
+          }
+          return res;
+        };
+        const linkedById = {};
+        const linkedIds = [...new Set(team.map((e) => e.shift_id).filter(Boolean))];
+        if (linkedIds.length) {
+          const { data: linked } = await fetchShifts((cols) => sb
+            .from("shifts")
+            .select(cols)
+            .eq("company_id", company.id)
+            .in("id", linkedIds));
+          for (const s of linked || []) linkedById[s.id] = s;
+        }
+        const unlinked = team.filter((e) => !e.shift_id);
+        let dayShifts = [];
+        if (unlinked.length) {
+          const memberIds = [...new Set(unlinked.map((e) => e.member_id))];
+          const dates = [...new Set(unlinked.map((e) => dateInTz(new Date(e.clock_in), tz)))];
+          const { data: ds } = await fetchShifts((cols) => sb
+            .from("shifts")
+            .select(cols)
+            .eq("company_id", company.id)
+            .in("member_id", memberIds)
+            .in("shift_date", dates)
+            .order("start_time", { ascending: true }));
+          dayShifts = ds || [];
+        }
+        const labels = {};
+        for (const e of team) {
+          let shift = e.shift_id ? linkedById[e.shift_id] || null : null;
+          if (!e.shift_id) {
+            const day = dateInTz(new Date(e.clock_in), tz);
+            shift = chooseRosterShift(
+              e,
+              dayShifts.filter((s) => s.member_id === e.member_id && s.shift_date === day),
+              tz
+            );
+          }
+          const label = workingAsLabel(shift);
+          if (label) labels[e.id] = label;
+        }
+        setWorkingAsByEntry(labels);
+      } catch { /* labels are decoration — the roster still renders */ }
       // Team members NOT on the clock (for manager clock-in).
       if (isManager) {
         const onClockIds = new Set((openTeam || []).map((e) => e.member_id));
@@ -200,6 +315,7 @@ export default function TimeClockPage() {
       }
     } else {
       setOnClock([]);
+      setWorkingAsByEntry({});
       setTeamOffClock([]);
     }
   }
@@ -529,7 +645,8 @@ export default function TimeClockPage() {
                   <div style={{ flex: 1 }}>
                     <strong>{e.company_members?.display_name || "Unknown"}</strong>
                     <span style={{ color: "var(--muted)" }}>
-                      {" "}• {e.locations?.name || "No location"} • since{" "}
+                      {" "}• {e.locations?.name || "No location"}
+                      {workingAsByEntry[e.id] ? ` • Working as: ${workingAsByEntry[e.id]}` : ""} • since{" "}
                       {new Date(e.clock_in).toLocaleTimeString([], { hour: "numeric", minute: "2-digit", hour12: true })}
                     </span>
                   </div>
