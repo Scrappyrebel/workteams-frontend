@@ -125,7 +125,7 @@ export async function POST(req){
    }
    const unsigned={kind:"workteams-b2-parts",version:1,mimeType:details.mimeType,
      bytes:confirmed,companyId,memberId:member.id,entryId,parts:verified,
-     expiresAt:Date.now()+7*86400000};
+     expiresAt:details.expiresAt+7*86400000};
    const index={...unsigned,signature:signature(Buffer.from(JSON.stringify(unsigned)).toString("base64url"),config)};
    const path=companyId+"/"+member.id+"/b2-"+signature(body.grant,config).slice(0,30)+".parts.json";
    const payload=JSON.stringify(index);
