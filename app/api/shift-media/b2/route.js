@@ -57,6 +57,68 @@ async function authorized(db,user,companyId,entryId){
  if(entryError||!entry)return null;
  return member;
 }
+// B2 objects are versioned evidence. Never delete a part by an unsigned
+// browser path or remove a held recording during scheduled retention.
+async function removePrivateVideo(db,config,video,{expiredOnly}){
+ const path=video.video_url;
+ if(typeof path!=="string"||!path.endsWith(".parts.json")||
+    !path.startsWith(video.company_id+"/"+video.member_id+"/b2-")||
+    path.includes(".."))throw Error("Invalid private video address.");
+ const {data:manifestBlob,error:readError}=await db.storage.from("shift-videos").download(path);
+ if(readError||!manifestBlob||manifestBlob.size>18000)throw Error("Private video index missing.");
+ const index=JSON.parse(await manifestBlob.text());
+ const {signature:mac,...unsigned}=index||{};
+ if(typeof mac!=="string")throw Error("Unsigned video manifest.");
+ const expected=signature(Buffer.from(JSON.stringify(unsigned)).toString("base64url"),config);
+ const a=Buffer.from(mac),b=Buffer.from(expected);
+ if(a.length!==b.length||!timingSafeEqual(a,b))throw Error("Untrusted video manifest.");
+ if(index.kind!=="workteams-b2-parts"||index.version!==1||
+    index.companyId!==video.company_id||index.memberId!==video.member_id||
+    !Array.isArray(index.parts)||index.parts.length<1||index.parts.length>25||
+    !Number.isSafeInteger(index.bytes)||index.bytes<1||
+    index.bytes>MAX_VIDEO_BYTES)throw Error("Video manifest scope failed.");
+ const expectedPrefix="workteams/"+video.company_id+"/"+index.entryId+"/video/";
+ let bytes=0;
+ for(const part of index.parts){
+   if(typeof part?.key!=="string"||!part.key.startsWith(expectedPrefix)||
+      !Number.isSafeInteger(part.bytes)||part.bytes<1||part.bytes>PART_BYTES||
+      typeof part.versionId!=="string"||!part.versionId)
+     throw Error("Unsafe B2 deletion target.");
+   bytes+=part.bytes;
+ }
+ if(bytes!==index.bytes)throw Error("B2 video manifest size mismatch.");
+ for(const part of index.parts){
+   if(expiredOnly){
+     // An owner may have placed a hold since the cron selected this record.
+     const {data:stillExpired,error}=await db.from("shift_videos")
+       .select("id").eq("id",video.id).eq("company_id",video.company_id)
+       .eq("keep_video",false).lte("video_expires_at",new Date().toISOString())
+       .eq("video_url",path).maybeSingle();
+     if(error||!stillExpired)throw Error("Evidence retention changed; preserving recording.");
+   }
+   const check=presignPrivateB2Object({config,method:"HEAD",objectKey:part.key,expiresSeconds:90});
+   const head=await fetch(check.signedUrl,{method:"HEAD",cache:"no-store",
+     redirect:"error",signal:AbortSignal.timeout(10000)});
+   if(head.status===404)continue;
+   if(!head.ok||Number(head.headers.get("content-length"))!==part.bytes||
+      head.headers.get("x-amz-version-id")!==part.versionId)
+     throw Error("Private B2 version could not be verified.");
+   const signed=presignPrivateB2Object({config,method:"DELETE",objectKey:part.key,
+     versionId:part.versionId,expiresSeconds:90});
+   const done=await fetch(signed.signedUrl,{method:"DELETE",cache:"no-store",
+     redirect:"error",signal:AbortSignal.timeout(10000)});
+   if(!done.ok&&done.status!==404)throw Error("Private B2 version deletion failed.");
+ }
+ let rowDelete=db.from("shift_videos").delete().eq("id",video.id)
+   .eq("company_id",video.company_id).eq("video_url",path);
+ if(expiredOnly)rowDelete=rowDelete.eq("keep_video",false)
+   .lte("video_expires_at",new Date().toISOString());
+ const {data:removed,error:rowError}=await rowDelete.select("id").maybeSingle();
+ if(rowError||!removed)throw Error("Could not finalize video retention.");
+ const {error:cleanupError}=await db.storage.from("shift-videos").remove([path]);
+ if(cleanupError)throw Error("Private video deleted; index cleanup needs review.");
+ return true;
+}
 // Disabled until WorkTeams has its own B2 bucket/key and private playback
 // integration. Never attach a B2 reference as approved proof in this route.
 export async function POST(req){
@@ -71,9 +133,25 @@ export async function POST(req){
    if(!user)return json({error:"Sign in required."},401);
    const body=await req.json();
    const {action,companyId,entryId}=body||{};
-   if(typeof companyId!=="string"||typeof entryId!=="string")
-     return json({error:"Missing company or time entry."},400);
+   if(typeof companyId!=="string"||!companyId)
+     return json({error:"Missing company."},400);
    const db=serviceClient();
+   if(action==="delete"){
+     const {data:manager}=await db.from("company_members").select("id,role")
+       .eq("company_id",companyId).eq("user_id",user.id).maybeSingle();
+     if(!manager||!["owner","admin"].includes(manager.role))
+       return json({error:"Only managers may delete videos."},403);
+     if(typeof body.videoId!=="string")return json({error:"Missing video ID."},400);
+     const {data:video,error:readError}=await db.from("shift_videos")
+       .select("id,company_id,member_id,video_url").eq("company_id",companyId)
+       .eq("id",body.videoId).maybeSingle();
+     if(readError||!video)return json({error:"Video not found."},404);
+     try{await removePrivateVideo(db,config,video,{expiredOnly:false});}
+     catch{return json({error:"Could not verify and delete every private video part."},503);}
+     return json({deleted:true});
+   }
+   if(typeof entryId!=="string"||!entryId)
+     return json({error:"Missing time entry."},400);
    const member=await authorized(db,user,companyId,entryId);
    if(!member)return json({error:"Time entry does not belong to this employee."},403);
    if(action==="begin"){
@@ -139,5 +217,31 @@ export async function POST(req){
    return json({status:"verified-not-attached",storagePath:path,bytes:confirmed,parts:verified.length});
  }catch(error){
    return json({error:"Private WorkTeams media upload is unavailable."},503);
+ }
+}
+
+export async function GET(req){
+ if(process.env.VERCEL_ENV!=="production"||
+    process.env.WORKTEAMS_B2_RETENTION_ENABLED!=="true"||
+    !process.env.CRON_SECRET||
+    req.headers.get("authorization")!=="Bearer "+process.env.CRON_SECRET)
+   return json({error:"Not authorized."},403);
+ try{
+   const config=readPrivateB2MediaConfig();
+   if(!config)return json({error:"Private media storage unavailable."},503);
+   const db=serviceClient();
+   const {data:expired,error}=await db.from("shift_videos")
+     .select("id,company_id,member_id,video_url")
+     .eq("keep_video",false).lte("video_expires_at",new Date().toISOString())
+     .like("video_url","%/b2-%.parts.json").limit(10);
+   if(error)return json({error:"Could not load expired private videos."},503);
+   let removed=0,failed=0;
+   for(const video of expired||[]){
+     try{await removePrivateVideo(db,config,video,{expiredOnly:true});removed++;}
+     catch{failed++;}
+   }
+   return json({checked:(expired||[]).length,removed,failed});
+ }catch{
+   return json({error:"Private media retention unavailable."},503);
  }
 }
