@@ -211,6 +211,10 @@ export default function SchedulePage() {
   const [form, setForm] = useState(EMPTY_FORM);
   const [confirmDeleteId, setConfirmDeleteId] = useState(null);
   const [confirmSeriesId, setConfirmSeriesId] = useState(null);
+  // Add-shift confirmation: the prepared rows + summary facts for a
+  // create that has been reviewed but not yet inserted (see addShift).
+  const [confirmAdd, setConfirmAdd] = useState(null);
+  const [adding, setAdding] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [editForm, setEditForm] = useState({ location_id: "", member_id: "", department: "", shift_date: "", start_time: "", end_time: "", notes: "" });
   // "pick" = native calendar/clock pickers, "type" = type dates/times as text.
@@ -236,6 +240,11 @@ export default function SchedulePage() {
   const [pendingRequests, setPendingRequests] = useState([]);
   const [approvedOff, setApprovedOff] = useState([]);
   const [decisionNotes, setDecisionNotes] = useState({});
+
+  // The add-shift confirmation summary is only ever live for the exact
+  // form it was prepared from: any later edit disarms it, so what a
+  // manager confirms is always what the form currently says.
+  useEffect(() => { setConfirmAdd(null); }, [form]);
 
   // Sunday of the week containing the selected date (Sun–Sat).
   function startOfWeekISO(iso) {
@@ -579,15 +588,16 @@ export default function SchedulePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [view]);
 
-  async function addShift(e) {
-    e.preventDefault();
-    const sb = supabase();
+  // Validates the add form and builds the exact rows a create would
+  // insert — the same checks, in the same order, with the same alerts
+  // this flow has always had. Returns null when validation stops it.
+  function prepareAddShift() {
     const norm = normalizeDateTime(form);
     if (!norm.ok) {
       alert(dateEntry === "type"
         ? "Check the typed date/time — use MM/DD/YYYY for dates and 2:30 PM for times."
         : "Date, start time and end time are required.");
-      return;
+      return null;
     }
     const f = { ...form, shift_date: norm.shift_date, start_time: norm.start_time, end_time: norm.end_time, repeat_until: norm.repeat_until };
     // "Working as" (079): the job this shift is for, chosen from the
@@ -601,7 +611,7 @@ export default function SchedulePage() {
       department = f.department || (options.length === 1 ? options[0] : "");
       if (!department) {
         alert("Choose what this shift is for — use the “Working as” list.");
-        return;
+        return null;
       }
     }
     const pattern = f.repeat || "once";
@@ -609,7 +619,7 @@ export default function SchedulePage() {
     const dates = buildOccurrences(f.shift_date, pattern, until);
     if (dates.length === 0) {
       alert("No shift dates fall in that range — check the date and the repeat-until date.");
-      return;
+      return null;
     }
     // Repeats materialize as ordinary shift rows sharing one series_id, so
     // schedule/payroll/time-clock keep working unchanged.
@@ -633,6 +643,51 @@ export default function SchedulePage() {
       }
       return row;
     });
+    return { rows, dates, pattern, label, department };
+  }
+
+  // Row equality for the confirmation check below, ignoring series_id:
+  // a fresh prepare mints a new one, and it identifies the series rather
+  // than describing the shifts being confirmed.
+  function sameShiftRows(a, b) {
+    if (a.length !== b.length) return false;
+    return a.every((r, i) => {
+      const x = { ...r };
+      const y = { ...b[i] };
+      delete x.series_id;
+      delete y.series_id;
+      return JSON.stringify(x) === JSON.stringify(y);
+    });
+  }
+
+  // Submitting the form no longer creates anything by itself: it prepares
+  // the rows and shows a confirmation summary (who / where / when /
+  // working as / which company) so the manager gets one clear look before
+  // the insert. The wrong-company assignment in the Ervin incident had no
+  // such pause. Create (below) is the only insert path for a new shift.
+  function addShift(e) {
+    e.preventDefault();
+    const prep = prepareAddShift();
+    if (prep) setConfirmAdd(prep);
+  }
+
+  async function confirmAddShift() {
+    if (!confirmAdd || adding) return;
+    // Rebuild from the current form and compare: if anything changed
+    // since the summary was prepared, show the fresh summary instead of
+    // creating something different from what was just reviewed.
+    const prep = prepareAddShift();
+    if (!prep) {
+      setConfirmAdd(null);
+      return;
+    }
+    if (!sameShiftRows(prep.rows, confirmAdd.rows)) {
+      setConfirmAdd(prep);
+      return;
+    }
+    const sb = supabase();
+    const rows = prep.rows;
+    setAdding(true);
     // If migration 079 has not run yet, the department column does not
     // exist: retry once without it so scheduling keeps working exactly
     // as before (the tolerant-write pattern used for earlier columns).
@@ -645,6 +700,7 @@ export default function SchedulePage() {
       });
       ({ error } = await sb.from("shifts").insert(plainRows));
     }
+    setAdding(false);
     if (error) {
       if (error.message && error.message.includes("series_id")) {
         console.error("repeat-shift insert failed (missing 031 columns):", error.message);
@@ -654,6 +710,7 @@ export default function SchedulePage() {
       }
       return;
     }
+    setConfirmAdd(null);
     setForm(EMPTY_FORM);
     refreshVisible();
   }
@@ -803,6 +860,26 @@ export default function SchedulePage() {
   const nthOptionLabel24 = previewShiftDate
     ? `2nd & 4th ${WEEKDAY_NAMES[parseDay(previewShiftDate).getDay()]} of each month`
     : "2nd & 4th weekday of each month";
+
+  // Confirmation summary for a prepared add: derived from the prepared
+  // rows themselves, so it always describes exactly what Create inserts.
+  const addSummary = (() => {
+    if (!confirmAdd) return null;
+    const first = confirmAdd.rows[0];
+    const who = members.find((m) => m.id === first.member_id) || null;
+    const where = locations.find((l) => l.id === first.location_id) || null;
+    const d0 = parseDay(first.shift_date);
+    const dN = parseDay(confirmAdd.dates[confirmAdd.dates.length - 1]);
+    const fmtDay = (d) => `${WEEKDAY_NAMES[d.getDay()]}, ${MONTH_NAMES_FULL[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`;
+    const fmtShort = (d) => `${MONTHS[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`;
+    return {
+      who,
+      where,
+      first,
+      when: `${fmtDay(d0)} · ${formatTime12h(first.start_time)} – ${formatTime12h(first.end_time)}`,
+      range: `${fmtShort(d0)} – ${fmtShort(dN)}`,
+    };
+  })();
 
   // One shift card, shared by the list view and the week view — edit and
   // delete work the same in both.
@@ -1161,7 +1238,33 @@ export default function SchedulePage() {
                 This will create {previewDates.length} shift{previewDates.length === 1 ? "" : "s"} — each one can still be edited or deleted on its own.
               </p>
             )}
-            <button type="submit" style={button}>Add shift</button>
+            {confirmAdd && addSummary ? (
+              <div style={{ display: "grid", gap: 8, border: "1px solid var(--line)", borderRadius: 12, padding: 14 }}>
+                <strong>Check this shift before you create it</strong>
+                <ul style={{ margin: 0, paddingLeft: 18, display: "grid", gap: 4, fontSize: "0.92rem" }}>
+                  <li>Company: <strong>{company.name}</strong></li>
+                  <li>Who: <strong>{addSummary.who ? `${addSummary.who.display_name} (${addSummary.who.email})` : "Unassigned — open shift"}</strong></li>
+                  <li>Where: <strong>{addSummary.where ? addSummary.where.name : "No location"}</strong></li>
+                  <li>When: <strong>{addSummary.when}</strong></li>
+                  {confirmAdd.department && <li>Working as: <strong>{confirmAdd.department}</strong></li>}
+                  {confirmAdd.pattern !== "once" && (
+                    <li>Repeats: <strong>{confirmAdd.label} — {confirmAdd.dates.length} shifts, {addSummary.range}</strong></li>
+                  )}
+                  {addSummary.first.notes && <li>Notes: {addSummary.first.notes}</li>}
+                </ul>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <button type="button" onClick={confirmAddShift} disabled={adding} style={{ ...button, flex: 1 }}>
+                    {adding ? "Creating…" : confirmAdd.dates.length > 1 ? `Create ${confirmAdd.dates.length} shifts` : "Create shift"}
+                  </button>
+                  <button type="button" onClick={() => setConfirmAdd(null)} disabled={adding} style={{ ...secondaryButton, flex: 1 }}>Back</button>
+                </div>
+                <p style={{ fontSize: "0.85rem", color: "var(--muted)", margin: 0 }}>
+                  Nothing is created until you tap Create. Back returns to the form with everything still filled in.
+                </p>
+              </div>
+            ) : (
+              <button type="submit" style={button}>Add shift</button>
+            )}
           </form>
         </section>
       )}
