@@ -60,6 +60,9 @@ export default function BidReviewPage() {
       {!error && !data && <p>Loading proposal…</p>}
       {data && !result && (
         <>
+          {data.bid.company_name && (
+            <p style={{ fontWeight: 800, fontSize: "1.1rem", margin: "0 0 6px" }}>{data.bid.company_name}</p>
+          )}
           <h2 style={{ fontSize: "1.6rem" }}>{data.bid.title}</h2>
           <p style={{ color: "var(--muted)" }}>
             From {data.bid.company_name} • Prepared for {data.bid.client_name}
@@ -73,11 +76,38 @@ export default function BidReviewPage() {
           )}
           <section className="panel" style={{ padding: 22, margin: "18px 0" }}>
             {data.items.map((i, idx) => (
-              <div key={idx} style={{ display: "flex", justifyContent: "space-between", padding: "8px 0", borderBottom: "1px solid var(--line)" }}>
-                <span>{i.description}{Number(i.quantity) > 1 ? ` (x${i.quantity})` : ""}</span>
+              <div key={idx} style={{ display: "flex", justifyContent: "space-between", gap: 12, padding: "8px 0", borderBottom: "1px solid var(--line)" }}>
+                <span>
+                  {i.description}
+                  <span style={{ display: "block", color: "var(--muted)", fontSize: "0.9rem" }}>
+                    {Number(i.quantity)} × ${Number(i.unit_price).toFixed(2)}
+                  </span>
+                </span>
                 <strong>${(Number(i.quantity) * Number(i.unit_price)).toFixed(2)}</strong>
               </div>
             ))}
+            {data.bid.pricing_mode === "hourly" && data.bid.hours && data.bid.hourly_rate ? (
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 12, padding: "8px 0", borderBottom: "1px solid var(--line)" }}>
+                <span>
+                  Hourly
+                  <span style={{ display: "block", color: "var(--muted)", fontSize: "0.9rem" }}>
+                    {data.bid.hours} hrs × ${Number(data.bid.hourly_rate).toFixed(2)}/hr
+                  </span>
+                </span>
+                <strong>${(Number(data.bid.hours) * Number(data.bid.hourly_rate)).toFixed(2)}</strong>
+              </div>
+            ) : null}
+            {data.bid.pricing_mode === "sqft" && data.bid.square_footage && data.bid.rate_per_sqft ? (
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 12, padding: "8px 0", borderBottom: "1px solid var(--line)" }}>
+                <span>
+                  Square footage
+                  <span style={{ display: "block", color: "var(--muted)", fontSize: "0.9rem" }}>
+                    {Number(data.bid.square_footage).toLocaleString()} sq ft × ${Number(data.bid.rate_per_sqft).toFixed(2)}/sq ft
+                  </span>
+                </span>
+                <strong>${(Number(data.bid.square_footage) * Number(data.bid.rate_per_sqft)).toFixed(2)}</strong>
+              </div>
+            ) : null}
             <div style={{ padding: "12px 0 0", fontSize: "1.15rem" }}>
               <div style={{ display: "flex", justifyContent: "space-between" }}>
                 <strong>Total</strong>
@@ -87,6 +117,12 @@ export default function BidReviewPage() {
                 <div style={{ display: "flex", justifyContent: "space-between", color: "var(--muted)", fontSize: "0.95rem", marginTop: 4 }}>
                   <span>Estimated monthly</span>
                   <span>{data.monthlyNote}</span>
+                </div>
+              )}
+              {data.frequencyLabel && (
+                <div style={{ display: "flex", justifyContent: "space-between", color: "var(--muted)", fontSize: "0.95rem", marginTop: 4 }}>
+                  <span>Service frequency</span>
+                  <span>{data.frequencyLabel}</span>
                 </div>
               )}
             </div>

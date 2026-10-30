@@ -47,26 +47,32 @@ export async function GET(req) {
     // Total depends on the pricing mode, not just line items.
     // Pricing modes: line_items, hourly, sqft (no base_rate — not in the live schema).
     let total = 0;
-    let totalLabel = "";
     const pm = bid.pricing_mode;
     if (pm === "hourly" && bid.hours && bid.hourly_rate) {
       total = Number(bid.hours) * Number(bid.hourly_rate);
-      totalLabel = "per visit";
     } else if (pm === "sqft" && bid.square_footage && bid.rate_per_sqft) {
       total = Number(bid.square_footage) * Number(bid.rate_per_sqft);
-      totalLabel = "per visit";
     } else {
       total = (items || []).reduce((s, i) => s + Number(i.quantity) * Number(i.unit_price), 0);
     }
+    // The price basis comes from the bid's own frequency, for every pricing
+    // mode — the same presentation the internal bid pages use: a one-time
+    // bid's total is the whole price; any other bid's total is per visit.
+    // (Previously only hourly/sqft bids got a basis label — a line-item bid
+    // showed a bare total the prospect could read as the whole contract
+    // price, and its monthly estimate never appeared.)
+    const freq = (bid.frequency || "").toLowerCase();
+    const totalLabel = freq === "one-time" ? "(one-time)" : "per visit";
+    // Frequency wording is the bid form's own option labels.
+    const frequencyLabel = { "one-time": "One-time clean", weekly: "Weekly (1×/week)", "2x-week": "Twice a week", "3x-week": "3× a week", "5x-week": "Weekdays (5×/week)", biweekly: "Every 2 weeks", monthly: "Monthly" }[freq] || "";
     // Monthly estimate only for recurring frequencies — never for one-time jobs.
     // Multipliers = visits per month for each frequency.
     let monthlyNote = "";
-    const freq = (bid.frequency || "").toLowerCase();
-    if (total > 0 && totalLabel === "per visit") {
+    if (total > 0 && freq !== "one-time") {
       const mult = { weekly: 4.33, "2x-week": 8.67, "3x-week": 13, "5x-week": 21.67, biweekly: 2.17, monthly: 1 }[freq] || 0;
       if (mult) monthlyNote = `~$${(total * mult).toFixed(2)}/mo`;
     }
-    return NextResponse.json({ bid: { ...bid, company_name: company?.name }, items: items || [], total, totalLabel, monthlyNote }, { headers: { "Cache-Control": "no-store" } });
+    return NextResponse.json({ bid: { ...bid, company_name: company?.name }, items: items || [], total, totalLabel, frequencyLabel, monthlyNote }, { headers: { "Cache-Control": "no-store" } });
   } catch (e) {
     console.error("bid public lookup error", e);
     return NextResponse.json({ error: "Could not load the proposal." }, { status: 500 });
