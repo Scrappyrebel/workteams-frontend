@@ -29,18 +29,18 @@ all(manager,["saveCustomerResponse(message)","responseInFlight.current",
  "window.confirm","Save customer update",
  'tr("Customer Service inbox & responses","Bandeja de Servicio al Cliente y respuestas")']);
 all(client,["id=\"portal-customer-requests\"","customer_requests_error",
- "My Request Status / Estado de mis solicitudes","refreshCustomerRequests(true)",
+ "t('My Request Status','Estado de mis solicitudes')","refreshCustomerRequests(true)",
  "request statuses","r.status===\"resolved\"",
- "r.response&&","Refresh request status / Actualizar estado",
+ "r.response&&","t(\"Refresh request status\",\"Actualizar estado\")",
  "Original personal messages"]);
 const customerRefresh=client.slice(client.indexOf("  async function refreshCustomerRequests("),client.indexOf("  async function sendContact("));
 all(customerRefresh,[
  "currentPortalToken.current!==token",
  "if(!res.ok||payload?.ok!==true)",
- 'setData({ok:false,error:payload?.error',
+ 'setData({ok:false,error:localError(payload?.error',
  "setContract(null);setSigningAmend(null);setContactSent(false)",
  "customer_requests:[]",
- 'setData({ok:false,error:"Could not reverify this location link.'
+ 'setData({ok:false,error:tr("Could not reverify this location link.'
 ]);
 assert.ok(!customerRefresh.includes("customer_requests_error:error instanceof Error"),"unknown token validation failure must not leave old records visible");
 assert.ok(!client.includes("r.body"),"Shared token must not render original message");
