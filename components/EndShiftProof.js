@@ -2,6 +2,7 @@
 
 import { forwardRef, useImperativeHandle, useRef, useState, useEffect } from "react";
 import * as tus from "tus-js-client";
+import {uploadWorkTeamsB2Video} from "../lib/workteams-b2-client";
 import { supabase } from "../lib/supabase";
 import { NO_COMMUNICATION_BOOK_NOTE } from "../lib/no-book-proof";
 import { chooseRecorderMimeType, inspectRecordedMp4 } from "../lib/recording-integrity.mjs";
@@ -447,13 +448,31 @@ const EndShiftProof = forwardRef(function EndShiftProof(
         if (b.size > MAX_VIDEO_BYTES) throw new Error("This recording exceeds the device upload safety limit. Ask your manager for help.");
 
         const ext = extForMime(mimeRef.current || b.type);
+        // Private Backblaze is primary only after the independently gated
+        // WorkTeams rollout. Any B2 failure automatically returns to the
+        // existing resumable Supabase upload without employee intervention.
+        let b2Path = null;
+        try {
+          b2Path = await uploadWorkTeamsB2Video({
+            file: b, session, companyId, entryId,
+            onProgress: fraction => setUploadProgress(Math.min(0.98,fraction)),
+          });
+        } catch (primaryError) {
+          console.warn("Primary WorkTeams media storage unavailable; using backup.", primaryError);
+          setUploadProgress(0);
+        }
         const multipart = b.size > VIDEO_PART_BYTES;
-        if (!videoPathRef.current) {
+        if (b2Path) {
+          videoPathRef.current = b2Path;
+        } else if (!videoPathRef.current || !videoPathRef.current.startsWith(companyId + "/" + entryId + "/")) {
           videoPathRef.current = `${companyId}/${entryId}/walkthrough-${Date.now()}.${ext}${multipart ? ".parts.json" : ""}`;
         }
         const path = videoPathRef.current;
 
-        if (multipart) {
+        if (b2Path) {
+          // The B2 server already verified all part sizes and saved a signed
+          // index in Supabase. Do not re-upload the recording to Supabase.
+        } else if (multipart) {
           const base = path.slice(0, -".parts.json".length);
           const count = Math.ceil(b.size / VIDEO_PART_BYTES);
           const parts = [];
