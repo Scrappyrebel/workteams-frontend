@@ -140,6 +140,16 @@ export default function ContractSignPage() {
       const j = await res.json();
       if (!res.ok) throw new Error(j.error || "Signing failed");
       setDone(true);
+      // Re-read the stored record through the same token-scoped endpoint so
+      // the confirmation and the signature record below show the signer name
+      // and signing time exactly as saved — the copy this page has held
+      // since before signing has neither. Best effort: the signing already
+      // succeeded, so a failed refresh changes nothing on screen.
+      try {
+        const again = await fetch(`/api/contracts/public?token=${encodeURIComponent(token)}`);
+        const fresh = await again.json();
+        if (fresh.contract) setContract(fresh.contract);
+      } catch {}
     } catch (err) {
       alert(err.message);
     }
@@ -148,6 +158,7 @@ export default function ContractSignPage() {
 
   return (
     <main className="site-shell" style={{ maxWidth: 720, paddingTop: 32, paddingBottom: 64 }}>
+      <style>{`@media print{.wt-sign-no-print{display:none!important}main.site-shell{max-width:none!important;padding-top:0!important;padding-bottom:0!important}.panel{box-shadow:none!important}}`}</style>
       <p className="eyebrow">SERVICE CONTRACT</p>
       {error && <p style={{ color: "#b3261e", fontWeight: 700 }}>{error}</p>}
       {!error && !contract && <p>Loading contract…</p>}
@@ -158,12 +169,22 @@ export default function ContractSignPage() {
           </h2>
           <p style={{ color: "var(--muted)" }}>
             Prepared for {contract.client_name}
-            {contract.start_date ? ` • Effective ${contract.start_date}` : ""}
+            {contract.start_date ? ` • Effective ${contract.start_date}${contract.end_date ? ` through ${contract.end_date}` : ""}` : ""}
           </p>
+          <div className="wt-sign-no-print" style={{ display: "flex", justifyContent: "flex-end", margin: "4px 0 14px" }}>
+            <button
+              type="button"
+              onClick={() => window.print()}
+              style={{ padding: "10px 20px", borderRadius: 999, border: "1px solid var(--line)", background: "#fff", fontWeight: 700, cursor: "pointer" }}
+            >
+              🖨 Print / Save as PDF
+            </button>
+          </div>
           <section className="panel" style={{ padding: 24, margin: "18px 0" }}>
-            <pre style={{ whiteSpace: "pre-wrap", fontSize: "0.9rem", margin: 0 }}>{contract.terms_text}</pre>
+            <div style={{ whiteSpace: "pre-wrap", fontSize: "0.95rem", lineHeight: 1.7 }}>{contract.terms_text}</div>
           </section>
           {contract.status === "signed" || done ? (
+            <>
             <section className="panel" style={{ padding: 24, borderColor: "#9fd8b4" }}>
               <p style={{ color: "#1e8e4d", fontWeight: 800, fontSize: "1.1rem", margin: 0 }}>
                 ✅ Signed{contract.signed_name ? ` by ${contract.signed_name}` : ""}
@@ -171,8 +192,31 @@ export default function ContractSignPage() {
               </p>
               <p style={{ color: "var(--muted)" }}>A copy has been saved. Thank you!</p>
             </section>
+            <section className="panel" style={{ padding: 24, margin: "18px 0" }}>
+              <h3 style={{ marginTop: 0 }}>Signature record</h3>
+              <p style={{ margin: "4px 0" }}>
+                <strong>Agreement:</strong> {contract.companies?.name} — Cleaning Service Agreement
+              </p>
+              <p style={{ margin: "4px 0" }}>
+                <strong>Client:</strong> {contract.client_name}
+              </p>
+              {(contract.signed_name || name) && (
+                <p style={{ margin: "4px 0" }}>
+                  <strong>Signed by:</strong> {contract.signed_name || name}
+                </p>
+              )}
+              {contract.signed_at && (
+                <p style={{ margin: "4px 0" }}>
+                  <strong>Signed on:</strong> {new Date(contract.signed_at).toLocaleString()}
+                </p>
+              )}
+              <p style={{ color: "var(--muted)", margin: "10px 0 0" }}>
+                Use the Print / Save as PDF button above to keep a copy of this signed agreement for your records.
+              </p>
+            </section>
+            </>
           ) : (
-            <section className="panel" style={{ padding: 24 }}>
+            <section className="panel wt-sign-no-print" style={{ padding: 24 }}>
               <h3 style={{ marginTop: 0 }}>Sign this agreement</h3>
               <p style={{ color: "var(--muted)", fontSize: "0.9rem" }}>
                 Sign with your finger (or mouse) in the box, or type your name instead. Your printed
