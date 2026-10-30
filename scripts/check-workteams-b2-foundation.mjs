@@ -76,4 +76,8 @@ assert.ok(recovery.includes('(await head(config,part))!==part.versionId'),
   "Supabase fallback must not be deleted without exact B2 version verification");
 assert.ok(cron.crons.some(x=>x.path==="/api/cron/workteams-b2-recovery"),
   "Supabase fallback recovery cron must be scheduled");
+assert.ok(recovery.includes('if(video.keep_video)throw Error("Management-held recording'),"Held records must not be migrated");
+assert.ok(recovery.includes('if(video.keep_video)return false;'),"Held records must not be cleaned");
+assert.ok(recovery.includes('.eq("video_url",video.video_url).eq("keep_video",false).maybeSingle()'),"Cleanup must recheck hold before deletion");
+assert.ok(recovery.includes('.eq("keep_video",false).like("video_url","%/b2-recovered-%.parts.json")'),"Cleanup must select only unheld videos");
 console.log("WorkTeams private B2 foundation security checks passed; uploads remain disabled.");
