@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { supabase } from "../../../../lib/supabase";
 import { useCompany } from "../../../../lib/company-context";
+import OtherCompaniesNotice from "../../../../components/OtherCompaniesNotice";
 import { chicagoToday, formatTime12h } from "../../../../lib/dates";
 
 // My Schedule: employee self-service for (1) their own upcoming shifts,
@@ -409,10 +410,13 @@ export default function MySchedulePage() {
       <section className="panel" style={{ padding: 22, marginTop: 18 }}>
         <h3 style={{ marginTop: 0 }}>📅 My upcoming shifts</h3>
         {myShifts.length === 0 ? (
-          <p style={{ color: "var(--muted)", margin: 0 }}>
-            You have no upcoming shifts scheduled. When your manager schedules
-            you, your shifts will show up here.
-          </p>
+          <>
+            <p style={{ color: "var(--muted)", margin: 0 }}>
+              You have no upcoming shifts scheduled. When your manager schedules
+              you, your shifts will show up here.
+            </p>
+            <OtherCompaniesNotice company={company} member={member} />
+          </>
         ) : (
           <div style={{ display: "grid", gap: 8 }}>
             {myShifts.map((s) => {

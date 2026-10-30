@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { supabase } from "../../lib/supabase";
 import { getUser, linkMemberOnSignIn } from "../../lib/session";
 import { getLastPath } from "../../lib/last-path";
+import { chicagoToday } from "../../lib/dates";
 
 export default function CompaniesPage() {
   const router = useRouter();
@@ -15,6 +16,9 @@ export default function CompaniesPage() {
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
   const [justJoined, setJustJoined] = useState(0);
+  // Company ids (subset of memberships) where this person has a shift
+  // today — see the badge lookup in the load effect below.
+  const [shiftToday, setShiftToday] = useState(() => new Set());
 
   useEffect(() => {
     (async () => {
@@ -36,10 +40,41 @@ export default function CompaniesPage() {
       if (claimed > 0) setJustJoined(claimed);
       const { data } = await sb
         .from("company_members")
-        .select("role, companies(id, name, tier)")
+        .select("id, role, companies(id, name, tier)")
         .not("user_id", "is", null)
         .eq("user_id", u.id);
       setMemberships(data || []);
+      // Wrong-company guardrail (2026-10-29): an employee signed in and
+      // landed in the wrong company, where every screen honestly showed
+      // an empty schedule and nothing said his shift lived in the other
+      // company. Mark each company where this person has a shift TODAY
+      // so the picker itself points at where their work is. One extra
+      // read, fully tolerant: any problem and there are simply no
+      // badges, exactly as before — the picker must never fail over it.
+      try {
+        const rows = data || [];
+        const memberIds = rows.map((m) => m.id).filter(Boolean);
+        if (memberIds.length > 0) {
+          const { data: todays, error } = await sb
+            .from("shifts")
+            .select("member_id")
+            .in("member_id", memberIds)
+            .eq("shift_date", chicagoToday());
+          if (!error && todays) {
+            const hit = new Set(todays.map((s) => s.member_id));
+            setShiftToday(
+              new Set(
+                rows
+                  .filter((m) => hit.has(m.id))
+                  .map((m) => m.companies?.id)
+                  .filter(Boolean)
+              )
+            );
+          }
+        }
+      } catch {
+        // No badges — the picker renders exactly as it did before.
+      }
       setLoading(false);
     })();
   }, [router]);
@@ -107,6 +142,22 @@ export default function CompaniesPage() {
             >
               <span className="card-kicker">{m.role} • {m.companies.tier}</span>
               <h2 style={{ fontSize: "1.2rem", margin: "6px 0" }}>{m.companies.name}</h2>
+              {shiftToday.has(m.companies.id) && (
+                <span
+                  style={{
+                    display: "inline-block",
+                    background: "#e6f4ea",
+                    color: "#1a7f37",
+                    borderRadius: 999,
+                    padding: "2px 10px",
+                    fontSize: "0.78rem",
+                    fontWeight: 800,
+                    margin: "0 0 6px",
+                  }}
+                >
+                  🕐 Shift today
+                </span>
+              )}
               <span className="card-link">Open →</span>
             </Link>
           ))}
