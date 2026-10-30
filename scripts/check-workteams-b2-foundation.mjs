@@ -1,0 +1,17 @@
+import assert from "node:assert/strict";
+import {readPrivateB2MediaConfig,createPrivateMediaObjectKey,presignPrivateB2Object} from "../lib/workteams-private-b2.mjs";
+const company="a005319f-47c8-43bf-a5e5-89cf4b39467d";
+const entry="9d790983-cc7a-4854-8a3b-b8fec66ad9c5";
+assert.equal(readPrivateB2MediaConfig({}),null,"B2 stays off until separately configured");
+const base={WORKTEAMS_B2_PRIVATE_MEDIA_ENABLED:"true",WORKTEAMS_B2_MEDIA_REGION:"us-east-005",WORKTEAMS_B2_MEDIA_BUCKET:"lillybs-workteams-media-2026",WORKTEAMS_B2_MEDIA_KEY_ID:"fake",WORKTEAMS_B2_MEDIA_APPLICATION_KEY:"test_secret"};
+assert.throws(()=>readPrivateB2MediaConfig({...base,WORKTEAMS_B2_MEDIA_BUCKET:"lillybs-workforce-media-2026"}),/Recovery buckets/,"Never use Workforce private B2 bucket");
+assert.throws(()=>readPrivateB2MediaConfig({...base,WORKTEAMS_B2_MEDIA_BUCKET:"hq-video-recovery-2026"}),/Recovery buckets/);
+const config=readPrivateB2MediaConfig(base);
+const key=createPrivateMediaObjectKey({productId:"workteams",companyId:company,entryId:entry,kind:"shift_video"});
+assert.match(key,/^workteams\//);
+assert.throws(()=>createPrivateMediaObjectKey({productId:"workforce",companyId:company,entryId:entry,kind:"shift_video"}),/Invalid tenant/);
+const signed=presignPrivateB2Object({config,method:"PUT",objectKey:key,contentType:"video/mp4",at:new Date("2026-10-30T12:00:00Z")});
+assert.ok(signed.signedUrl.startsWith("https://s3.us-east-005.backblazeb2.com/"));
+assert.ok(!signed.signedUrl.includes(base.WORKTEAMS_B2_MEDIA_APPLICATION_KEY));
+assert.ok(!signed.headers.Authorization);
+console.log("WorkTeams private B2 foundation security checks passed; uploads remain disabled.");
