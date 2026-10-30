@@ -224,10 +224,11 @@ export async function POST(req){
 
 export async function GET(req){
  if(process.env.VERCEL_ENV!=="production"||
-    process.env.WORKTEAMS_B2_RETENTION_ENABLED!=="true"||
     !process.env.CRON_SECRET||
     req.headers.get("authorization")!=="Bearer "+process.env.CRON_SECRET)
    return json({error:"Not authorized."},403);
+ if(process.env.WORKTEAMS_B2_RETENTION_ENABLED!=="true")
+   return json({skipped:true,reason:"Private B2 retention not enabled."});
  try{
    const config=readPrivateB2MediaConfig();
    if(!config)return json({error:"Private media storage unavailable."},503);
