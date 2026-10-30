@@ -149,8 +149,15 @@ async function migrate(db,config,video){
    if(error||!old)throw Error("Recovered video index could not be stored.");
    const previous=signedIndex(JSON.parse(await old.text()),config);
    verifyScope(previous,video);
-   if(previous.bytes!==total||previous.sourcePaths.join("|")!==plain.sourcePaths.join("|"))
+   if(previous.bytes!==total||previous.sourcePaths.join("|")!==plain.sourcePaths.join("|")||
+      previous.parts.length!==parts.length)
      throw Error("Previously stored recovery index did not match original.");
+   for(let i=0;i<parts.length;i++){
+     if(previous.parts[i].key!==parts[i].key||
+        previous.parts[i].bytes!==parts[i].bytes||
+        previous.parts[i].versionId!==parts[i].versionId)
+       throw Error("Stored B2 recovery version differs from verified copy.");
+   }
  }
  const {data:swapped,error:swapError}=await db.from("shift_videos")
    .update({video_url:b2IndexPath}).eq("id",video.id)
@@ -173,7 +180,8 @@ async function cleanup(db,config,video){
  }
  if(!present.length)return false;
  for(const part of index.parts)
-   if(!(await head(config,part)))throw Error("Recovered B2 part is unavailable.");
+   if((await head(config,part))!==part.versionId)
+     throw Error("Original B2 version cannot be verified; preserve Supabase backup.");
  const {data:stillCurrent}=await db.from("shift_videos").select("id")
    .eq("id",video.id).eq("company_id",video.company_id)
    .eq("video_url",video.video_url).maybeSingle();
