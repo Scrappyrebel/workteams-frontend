@@ -34,4 +34,17 @@ assert.ok(endShift.includes("await uploadWorkTeamsB2Video({"),"Recorded shift vi
 assert.ok(endShift.includes("catch (primaryError)"),"B2 failures must lead to Supabase");
 assert.ok(endShift.includes("} else if (multipart) {"),"Existing multipart fallback must remain intact");
 assert.ok(endShift.includes("await uploadTusFile("),"Existing resumable Supabase uploader must remain intact");
+const manager=readFileSync(new URL("../app/app/[companyId]/shift-videos/page.js",import.meta.url),"utf8");
+const cron=JSON.parse(readFileSync(new URL("../vercel.json",import.meta.url),"utf8"));
+assert.ok(route.includes("WORKTEAMS_B2_RETENTION_ENABLED"),"Private B2 seven-day cleanup must be guarded");
+assert.ok(route.includes('req.headers.get("authorization")!=="Bearer "+process.env.CRON_SECRET'),"Retention cannot run without cron secret");
+assert.ok(route.includes('video_expires_at'),"Cleanup must respect the saved expiry");
+assert.ok(route.includes('.eq("keep_video",false)'),"Held videos must be exempt from automatic cleanup");
+assert.ok(route.includes('method:"DELETE"'),"Cleanup must target exact private versions");
+assert.ok(route.includes('versionId:part.versionId'),"Never delete B2 objects without exact version IDs");
+assert.ok(route.includes('timingSafeEqual(a,b)'),"Cleanup must authenticate the private manifest");
+assert.ok(route.includes('action==="delete"'),"Manager delete must use authenticated server route");
+assert.ok(manager.includes('manifest.kind === "workteams-b2-parts"'),"Manager interface must recognize B2 video");
+assert.ok(manager.includes('action: "delete"'),"Manager deletion must call server-side version cleanup");
+assert.ok(cron.crons.some(x=>x.path==="/api/shift-media/b2"),"Safe B2 cleanup cron must be registered");
 console.log("WorkTeams private B2 foundation security checks passed; uploads remain disabled.");
