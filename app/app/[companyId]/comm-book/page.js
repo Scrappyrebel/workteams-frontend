@@ -172,17 +172,28 @@ export default function CommBookPage() {
         const path = `${company.id}/${member.id}/${Date.now()}.${ext}`;
         const { error: upErr } = await sb.storage.from("inspection-photos").upload(path, photo);
         if (upErr) throw new Error("Photo upload failed: " + upErr.message);
+        const { data: photoReceipt, error: verifyError } =
+          await sb.storage.from("inspection-photos").info(path);
+        if (verifyError || !photoReceipt ||
+            Number(photoReceipt.size) !== photo.size) {
+          throw new Error("Communication Book photo was transferred but could not be verified. Keep the original and retry.");
+        }
         photoUrl = path;
       }
-      const { error: dbErr } = await sb.from("comm_book").insert({
+      const { data: savedEntry, error: dbErr } = await sb.from("comm_book").insert({
         company_id: company.id,
         member_id: member.id,
         location_id: form.location_id || null,
         category: form.category,
         message: form.message.trim(),
         photo_url: photoUrl,
-      });
+      }).select("id,company_id,member_id,photo_url").single();
       if (dbErr) throw dbErr;
+      if (!savedEntry || savedEntry.company_id !== company.id ||
+          savedEntry.member_id !== member.id ||
+          savedEntry.photo_url !== photoUrl) {
+        throw new Error("The Communication Book record could not be verified. Keep your entry and photo until it is confirmed.");
+      }
       setForm({ category: "note", location_id: "", message: "" });
       setPhoto(null);
       load();
