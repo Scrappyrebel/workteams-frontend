@@ -80,4 +80,10 @@ assert.ok(recovery.includes('if(video.keep_video)throw Error("Management-held re
 assert.ok(recovery.includes('if(video.keep_video)return false;'),"Held records must not be cleaned");
 assert.ok(recovery.includes('.eq("video_url",video.video_url).eq("keep_video",false).maybeSingle()'),"Cleanup must recheck hold before deletion");
 assert.ok(recovery.includes('.eq("keep_video",false).like("video_url","%/b2-recovered-%.parts.json")'),"Cleanup must select only unheld videos");
+assert.ok(route.includes("if(quickVideo)return entryId===member.id?member:null"),"Quick video must be restricted to signed-in member");
+assert.ok(route.includes("details.quickVideo!==quickVideo"),"Quick-video grant must bind mode for part and finish");
+assert.ok(uploader.includes("quickVideo:quickVideo===true"),"Client must send explicit authenticated quick-video mode");
+assert.ok(manager.includes("await uploadWorkTeamsB2Video({"),"Quick video should attempt Backblaze first");
+assert.ok(manager.includes("catch (primaryError)"),"Quick video must handle Backblaze errors");
+assert.ok(manager.includes("path = await uploadShiftVideoSafely({"),"Quick video must automatically switch to resumable Supabase");
 console.log("WorkTeams private B2 foundation security checks passed; uploads remain disabled.");
