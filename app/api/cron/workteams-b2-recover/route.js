@@ -134,8 +134,15 @@ async function migrate(db,config,row){
    {contentType:"application/json",upsert:false});
  if(writeError){
    const {data:existing,error}=await db.storage.from(STORAGE).download(path);
-   if(error||!existing||(await existing.text())!==receipt)
+   if(error||!existing||existing.size>18000)
      throw Error("Could not finalize immutable private recovery index.");
+   const prior=checkIndex(JSON.parse(await existing.text()),config);
+   if(prior.kind!==unsigned.kind||prior.companyId!==unsigned.companyId||
+      prior.memberId!==unsigned.memberId||prior.entryId!==unsigned.entryId||
+      prior.bytes!==unsigned.bytes||prior.mimeType!==unsigned.mimeType||
+      JSON.stringify(prior.parts)!==JSON.stringify(unsigned.parts)||
+      JSON.stringify(prior.sourcePaths)!==JSON.stringify(unsigned.sourcePaths))
+     throw Error("Existing recovery receipt differs from verified recording.");
  }
  const {data:updated,error:updateError}=await db.from("shift_videos")
    .update({video_url:path}).eq("id",row.id).eq("company_id",row.company_id)
@@ -173,7 +180,7 @@ async function cleanup(db,config){
        if(typeof part.key!=="string"||
           !part.key.startsWith("workteams/"+row.company_id+"/"+row.time_entry_id+"/video/")||
           !Number.isSafeInteger(part.bytes)||part.bytes<1||part.bytes>PART_BYTES||
-          !(await b2Head(config,part)))throw Error("Cannot verify recovered B2 recording.");
+          (await b2Head(config,part))!==part.versionId)throw Error("Cannot verify exact recovered B2 version.");
      }
      const {data:current,error:currentError}=await db.from("shift_videos")
        .select("id,keep_video").eq("id",row.id).eq("video_url",row.video_url)
