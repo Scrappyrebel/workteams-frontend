@@ -311,6 +311,30 @@ export default function ShiftVideosPage() {
       }
       try {
         const manifest = JSON.parse(await raw.text());
+        if (manifest.kind === "workteams-b2-parts") {
+          const { data: { session } } = await sb.auth.getSession();
+          if (!session) {
+            setError("Sign in again to delete this private recording.");
+            return;
+          }
+          const response = await fetch("/api/shift-media/b2", {
+            method: "POST",
+            cache: "no-store",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: "Bearer " + session.access_token,
+            },
+            body: JSON.stringify({
+              action: "delete", companyId: company.id, videoId: video.id,
+            }),
+          });
+          if (!response.ok) {
+            setError("Could not safely delete every private Backblaze segment. Nothing was confirmed deleted.");
+            return;
+          }
+          load();
+          return;
+        }
         const base = video.video_url.slice(0, -".parts.json".length);
         if (manifest.kind !== "workteams-walkthrough-parts" ||
             !Array.isArray(manifest.parts) ||
