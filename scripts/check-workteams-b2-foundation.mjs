@@ -53,4 +53,27 @@ assert.ok(exportSource.includes("/api/shift-media/b2-access?companyId="),"B2 exp
 assert.ok(exportSource.includes("bytes !== receipt.totalBytes"),"Owner export must confirm exact original bytes");
 assert.ok(exportSource.includes('mimeType === "video/webm" ? "webm"'),"Export must preserve WebM extension");
 assert.ok(manager.includes('evidenceFilename("video", video.video_url, label, blob.type)'),"Video share filename must preserve true MIME");
+const recovery=readFileSync(new URL("../app/api/cron/workteams-b2-recovery/route.js",import.meta.url),"utf8");
+for(const guard of [
+  'process.env.WORKTEAMS_B2_RECOVERY_ENABLED!=="true"',
+  'request.headers.get("authorization")!=="Bearer "+process.env.CRON_SECRET',
+  'verifyScope(index,video)',
+  'timingSafeEqual(a,b)',
+  'blob.size',
+  'video_url:b2IndexPath',
+  '.eq("video_url",video.video_url)',
+  'SOURCE_PART_BYTES',
+  'B2_PART_BYTES',
+  'method:"HEAD"',
+  'method:"PUT"',
+  '.remove(present)',
+  'index.migratedAt<60*60000',
+])
+ assert.ok(recovery.includes(guard),"Private recovery safeguard missing: "+guard);
+assert.ok(recovery.includes('previous.parts[i].versionId!==parts[i].versionId'),
+  "B2 recovery must not replace a committed receipt with another version");
+assert.ok(recovery.includes('(await head(config,part))!==part.versionId'),
+  "Supabase fallback must not be deleted without exact B2 version verification");
+assert.ok(cron.crons.some(x=>x.path==="/api/cron/workteams-b2-recovery"),
+  "Supabase fallback recovery cron must be scheduled");
 console.log("WorkTeams private B2 foundation security checks passed; uploads remain disabled.");
