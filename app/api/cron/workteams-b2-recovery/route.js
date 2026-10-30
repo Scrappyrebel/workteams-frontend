@@ -87,6 +87,7 @@ function verifyScope(index,video){
      throw Error("Unsafe temporary Supabase source path.");
 }
 async function migrate(db,config,video){
+ if(video.keep_video)throw Error("Management-held recording is excluded from automatic storage migration.");
  const source=await getSource(db,video);
  const sizes=[];
  let total=0;
@@ -167,6 +168,7 @@ async function migrate(db,config,video){
  return true;
 }
 async function cleanup(db,config,video){
+ if(video.keep_video)return false;
  const {data:blob,error}=await db.storage.from(BUCKET).download(video.video_url);
  if(error||!blob||blob.size>18000)return false;
  const index=signedIndex(JSON.parse(await blob.text()),config);
@@ -184,7 +186,7 @@ async function cleanup(db,config,video){
      throw Error("Original B2 version cannot be verified; preserve Supabase backup.");
  const {data:stillCurrent}=await db.from("shift_videos").select("id")
    .eq("id",video.id).eq("company_id",video.company_id)
-   .eq("video_url",video.video_url).maybeSingle();
+   .eq("video_url",video.video_url).eq("keep_video",false).maybeSingle();
  if(!stillCurrent)throw Error("Saved video changed before backup cleanup.");
  const {error:removed}=await db.storage.from(BUCKET).remove(present);
  if(removed)throw Error("Temporary Supabase cleanup failed.");
@@ -208,12 +210,12 @@ export async function GET(request){
    let copied=0,failed=0;
    for(const video of videos||[]){
      const expiry=Date.parse(video.video_expires_at||"");
-     if(!video.keep_video&&(!Number.isFinite(expiry)||expiry-now<24*3600000))continue;
+     if(video.keep_video||!Number.isFinite(expiry)||expiry-now<24*3600000)continue;
      try{await migrate(db,config,video);copied++;}catch{failed++;}
    }
    const {data:recovered,error:cleanupQueryError}=await db.from("shift_videos")
      .select("id,company_id,member_id,video_url")
-     .like("video_url","%/b2-recovered-%.parts.json")
+     .eq("keep_video",false).like("video_url","%/b2-recovered-%.parts.json")
      .order("created_at",{ascending:false}).limit(50);
    let cleaned=0,cleanupFailures=cleanupQueryError?1:0;
    for(const video of recovered||[]){
