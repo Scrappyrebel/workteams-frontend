@@ -7,6 +7,10 @@ import { useCompany } from "../../../../lib/company-context";
 import { canUseWithRole } from "../../../../lib/tiers";
 import { roleRank } from "../../../../lib/roles";
 
+// Messages load one page at a time: the latest PAGE_SIZE first, then older
+// pages on demand (see load / loadOlder below).
+const PAGE_SIZE = 200;
+
 export default function MessagesPage() {
   const { company, member, loading } = useCompany();
   const [messages, setMessages] = useState([]);
@@ -14,30 +18,89 @@ export default function MessagesPage() {
   const [sending, setSending] = useState(false);
   const [receipts, setReceipts] = useState(null);
   const [roster, setRoster] = useState([]);
+  const [hasOlder, setHasOlder] = useState(false);
+  const [loadingOlder, setLoadingOlder] = useState(false);
   const bottomRef = useRef(null);
+  const listRef = useRef(null);
   const lastMarkedRef = useRef(null);
+  const pagedToStartRef = useRef(false);
 
   const allowed = canUseWithRole(company?.effectiveTier || company?.tier, "messaging", member?.role);
 
+  // Sender display names for one fetched page of raw message rows.
+  async function withSenderNames(rawRows) {
+    const ids = [...new Set(rawRows.map((r) => r.sender_id).filter(Boolean))];
+    let names = {};
+    if (ids.length > 0) {
+      const { data: members } = await supabase().from("team_directory").select("id, display_name").in("id", ids);
+      for (const m of members || []) names[m.id] = m.display_name;
+    }
+    return rawRows.map((r) => ({ ...r, sender_name: names[r.sender_id] || "Unknown" }));
+  }
+
   async function load(scroll) {
     const sb = supabase();
+    // Latest page first: order newest-down and flip for display. (This
+    // query used to order ascending with the same limit, which returned
+    // the OLDEST 200 messages — past 200 messages the current conversation
+    // never loaded at all, not even the sender's own just-sent message.)
     const { data } = await sb
       .from("messages")
       .select("id, content, created_at, sender_id")
       .eq("company_id", company.id)
-      .order("created_at", { ascending: true })
-      .limit(200);
-    const rows = data || [];
-    const ids = [...new Set(rows.map((r) => r.sender_id).filter(Boolean))];
-    let names = {};
-    if (ids.length > 0) {
-      const { data: members } = await sb.from("team_directory").select("id, display_name").in("id", ids);
-      for (const m of members || []) names[m.id] = m.display_name;
-    }
-    setMessages(rows.map((r) => ({ ...r, sender_name: names[r.sender_id] || "Unknown" })));
+      .order("created_at", { ascending: false })
+      .limit(PAGE_SIZE);
+    const rows = [...(data || [])].reverse();
+    if (!pagedToStartRef.current) setHasOlder(rows.length >= PAGE_SIZE);
+    const named = await withSenderNames(rows);
+    setMessages((prev) => {
+      if (named.length === 0) return prev;
+      if (prev.length === 0) return named;
+      // A refresh (the 15s poll, the Refresh button) replaces the newest
+      // page but must not yank away older history the reader paged back
+      // into: keep everything older than the refreshed page's oldest
+      // message, deduped by id.
+      const cutoff = Date.parse(named[0].created_at);
+      const namedIds = new Set(named.map((m) => m.id));
+      const kept = prev.filter((m) => Date.parse(m.created_at) < cutoff && !namedIds.has(m.id));
+      return [...kept, ...named];
+    });
     if (scroll) setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: "smooth" }), 100);
     markSeenThrough(rows);
     loadReceipts();
+  }
+
+  // Page back into older history: the next PAGE_SIZE messages older than
+  // the oldest one on screen, prepended. The cursor is created_at — the
+  // same key the read-receipt watermarks already compare against.
+  async function loadOlder() {
+    if (loadingOlder || messages.length === 0) return;
+    const el = listRef.current;
+    const prevHeight = el ? el.scrollHeight : 0;
+    const prevTop = el ? el.scrollTop : 0;
+    setLoadingOlder(true);
+    const { data } = await supabase()
+      .from("messages")
+      .select("id, content, created_at, sender_id")
+      .eq("company_id", company.id)
+      .lt("created_at", messages[0].created_at)
+      .order("created_at", { ascending: false })
+      .limit(PAGE_SIZE);
+    const older = [...(data || [])].reverse();
+    if (older.length < PAGE_SIZE) {
+      setHasOlder(false);
+      pagedToStartRef.current = true;
+    }
+    if (older.length > 0) {
+      const named = await withSenderNames(older);
+      setMessages((prev) => [...named.filter((o) => !prev.some((p) => p.id === o.id)), ...prev]);
+      // Prepending grows the list upward; shift the scroll position down
+      // by the added height so the reader keeps their place.
+      setTimeout(() => {
+        if (el) el.scrollTop = prevTop + (el.scrollHeight - prevHeight);
+      }, 0);
+    }
+    setLoadingOlder(false);
   }
 
   // Read receipts (migration 073): opening the chat records how far this
@@ -194,6 +257,7 @@ export default function MessagesPage() {
       </div>
 
       <div
+        ref={listRef}
         style={{
           display: "flex",
           flexDirection: "column",
@@ -204,6 +268,11 @@ export default function MessagesPage() {
           padding: "4px 2px",
         }}
       >
+        {hasOlder && (
+          <button onClick={loadOlder} disabled={loadingOlder} style={{ ...ghostButton, alignSelf: "center" }}>
+            {loadingOlder ? "Loading…" : "Load older messages"}
+          </button>
+        )}
         {messages.length === 0 && (
           <p style={{ color: "var(--muted)" }}>No messages yet — say hello to the crew. 👋</p>
         )}
