@@ -93,6 +93,19 @@ export default function ShiftVideoQuick({ companyId, memberId, locationId, locat
         });
         if (error) throw error;
       }
+      // A successful transfer alone is not proof: confirm the private object
+      // and the exact linked database row before showing "Video saved".
+      const [{ data: stored, error: storageError }, { data: linked, error: linkedError }] =
+        await Promise.all([
+          sb.storage.from("shift-videos").info(path),
+          sb.from("shift_videos").select("id,video_url,file_size_bytes")
+            .eq("company_id", companyId).eq("member_id", memberId)
+            .eq("video_url", path).limit(1).maybeSingle(),
+        ]);
+      if (storageError || !stored || linkedError || !linked ||
+          linked.video_url !== path || Number(linked.file_size_bytes) !== file.size) {
+        throw new Error("The saved recording could not be verified. Keep the original and retry.");
+      }
       setDone(true);
       onDone?.();
       setUploading(null);
