@@ -74,6 +74,7 @@ async function removePrivateVideo(db,config,video,{expiredOnly}){
  if(a.length!==b.length||!timingSafeEqual(a,b))throw Error("Untrusted video manifest.");
  if(index.kind!=="workteams-b2-parts"||index.version!==1||
     index.companyId!==video.company_id||index.memberId!==video.member_id||
+    !/^[0-9a-f-]{36}$/i.test(index.entryId)||
     !Array.isArray(index.parts)||index.parts.length<1||index.parts.length>25||
     !Number.isSafeInteger(index.bytes)||index.bytes<1||
     index.bytes>MAX_VIDEO_BYTES)throw Error("Video manifest scope failed.");
