@@ -47,4 +47,10 @@ assert.ok(route.includes('action==="delete"'),"Manager delete must use authentic
 assert.ok(manager.includes('manifest.kind === "workteams-b2-parts"'),"Manager interface must recognize B2 video");
 assert.ok(manager.includes('action: "delete"'),"Manager deletion must call server-side version cleanup");
 assert.ok(cron.crons.some(x=>x.path==="/api/shift-media/b2"),"Safe B2 cleanup cron must be registered");
+const exportSource=readFileSync(new URL("../lib/evidence-export.js",import.meta.url),"utf8");
+assert.ok(exportSource.includes('manifest?.kind === "workteams-b2-parts"'),"Owner export must support B2 private manifests");
+assert.ok(exportSource.includes("/api/shift-media/b2-access?companyId="),"B2 export must request authorized private playback");
+assert.ok(exportSource.includes("bytes !== receipt.totalBytes"),"Owner export must confirm exact original bytes");
+assert.ok(exportSource.includes('mimeType === "video/webm" ? "webm"'),"Export must preserve WebM extension");
+assert.ok(manager.includes('evidenceFilename("video", video.video_url, label, blob.type)'),"Video share filename must preserve true MIME");
 console.log("WorkTeams private B2 foundation security checks passed; uploads remain disabled.");
