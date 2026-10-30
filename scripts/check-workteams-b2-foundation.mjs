@@ -25,4 +25,13 @@ for(const marker of ['company_members', 'shift_videos', 'video_expires_at', 'tim
 const player=readFileSync(new URL("../components/PrivateWalkthroughPlayer.js",import.meta.url),"utf8");
 assert.ok(player.includes('info?.kind === "workteams-b2-parts"'),"B2 private video manifest must be handled by player");
 assert.ok(player.includes("/api/shift-media/b2-access?companyId="),"B2 player must use server-authorized access");
+const uploader=readFileSync(new URL("../lib/workteams-b2-client.js",import.meta.url),"utf8");
+const endShift=readFileSync(new URL("../components/EndShiftProof.js",import.meta.url),"utf8");
+assert.ok(uploader.includes('NEXT_PUBLIC_WORKTEAMS_B2_ENABLED!=="true"'),"B2 must remain opt-in");
+assert.ok(uploader.includes('action:"verify"'),"All B2 parts must be verified");
+assert.ok(uploader.includes('AbortSignal.timeout(45000)'),"Stalled B2 uploads must terminate");
+assert.ok(endShift.includes("await uploadWorkTeamsB2Video({"),"Recorded shift video should try B2 primary");
+assert.ok(endShift.includes("catch (primaryError)"),"B2 failures must lead to Supabase");
+assert.ok(endShift.includes("} else if (multipart) {"),"Existing multipart fallback must remain intact");
+assert.ok(endShift.includes("await uploadTusFile("),"Existing resumable Supabase uploader must remain intact");
 console.log("WorkTeams private B2 foundation security checks passed; uploads remain disabled.");
