@@ -10,6 +10,16 @@ import { supabase } from "../../../../lib/supabase";
 // invoice, its line items, and its payment-ledger state; it never writes.
 // Access is the same as the manager invoice page: row-level security only
 // returns invoices to owners/admins of the invoice's company.
+//
+// Customer-copy honesty (Wave 2 Family 3): this sheet is handed to the
+// customer, so it renders only facts from the stored records — seller
+// name, the billed client's own name/contact/service address, the
+// invoice's dates, items, totals, payments, and the manager's notes
+// (the one place payment instructions can live today). WorkTeams stores
+// NO seller address, phone, email, or payment-instructions field for a
+// company (companies carries a name only), so none is printed — absent
+// fields are omitted, never placeholdered. Internal ledger-integrity
+// wording belongs on the manager screens, not on this customer sheet.
 
 const STATUS_LABELS = {
   draft: "Draft",
@@ -43,7 +53,7 @@ export default function InvoicePrintPage() {
       }
       const { data, error } = await sb
         .from("invoices")
-        .select("*, locations(name)")
+        .select("*, locations(name, address)")
         .eq("id", invoiceId)
         .maybeSingle();
       if (error) {
@@ -135,11 +145,12 @@ export default function InvoicePrintPage() {
           <p style={{ margin: "2px 0", fontWeight: 700 }}>{invoice.client_name || "—"}</p>
           {invoice.client_contact && <p style={{ margin: "2px 0" }}>{invoice.client_contact}</p>}
           {invoice.locations?.name && <p style={{ margin: "2px 0" }}>{invoice.locations.name}</p>}
+          {invoice.locations?.address && <p style={{ margin: "2px 0" }}>{invoice.locations.address}</p>}
         </div>
         <div style={{ flex: "1 1 160px" }}>
           <p style={docLabel}>Dates</p>
           <p style={{ margin: "2px 0" }}>Issued: {invoice.issue_date || "—"}</p>
-          {invoice.due_date && <p style={{ margin: "2px 0" }}>Due: {invoice.due_date}</p>}
+          {invoice.due_date && <p style={{ margin: "2px 0" }}>Due: <strong>{invoice.due_date}</strong></p>}
         </div>
       </section>
 
@@ -191,6 +202,12 @@ export default function InvoicePrintPage() {
         Balance due: <strong>{money(balance)}</strong>
       </p>
 
+      {balance > 0 && invoice.status !== "void" && invoice.due_date && (
+        <p style={{ fontSize: "1.05rem", fontWeight: 700, margin: "4px 0 0" }}>
+          Payment due {invoice.due_date}
+        </p>
+      )}
+
       {invoice.status === "void" && (
         <p style={{ color: "#9b2d15", fontWeight: 700 }}>
           This invoice was voided{invoice.void_reason ? ` — ${invoice.void_reason}` : ""}.
@@ -205,7 +222,7 @@ export default function InvoicePrintPage() {
       )}
 
       <footer style={{ marginTop: 28, color: "#6b7280", fontSize: "0.85rem" }}>
-        <p style={{ margin: 0 }}>Thank you! Amounts are as recorded in WorkTeams; payments are never edited — a correction is voided and re-recorded.</p>
+        <p style={{ margin: 0 }}>Thank you!</p>
       </footer>
     </div>
   );
