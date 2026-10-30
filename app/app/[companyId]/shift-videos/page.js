@@ -198,6 +198,37 @@ export default function ShiftVideosPage() {
         });
         if (error) throw error;
       }
+      // A completed transfer or database insert is not confirmation that
+      // the recording is linked and can be located. Verify both independently
+      // before removing the original recording from the upload screen.
+      const [
+        { data: stored, error: storageError },
+        { data: linked, error: linkedError },
+      ] = await Promise.all([
+        sb.storage.from("shift-videos").info(path),
+        sb.from("shift_videos")
+          .select("id,company_id,member_id,video_url,file_size_bytes")
+          .eq("company_id", company.id)
+          .eq("member_id", member.id)
+          .eq("video_url", path)
+          .limit(1).maybeSingle(),
+      ]);
+      if (storageError || !stored) {
+        throw new Error("The video is not verified in storage. The original recording is still available.");
+      }
+      if (linkedError || !linked ||
+          linked.company_id !== company.id ||
+          linked.member_id !== member.id ||
+          linked.video_url !== path ||
+          Number(linked.file_size_bytes) !== file.size) {
+        throw new Error("The video is not verified against your account. Keep the original and retry.");
+      }
+      // Full videos are stored directly; multipart/B2 manifest objects are
+      // intentionally much smaller, so their metadata must not be compared
+      // with the total recording's byte size.
+      if (!path.endsWith(".parts.json") && Number(stored.size) !== file.size) {
+        throw new Error("The saved video size did not match. Keep the original and retry.");
+      }
       setForm({ location_id: "", notes: "" });
       void load();
       setUploading(null);
