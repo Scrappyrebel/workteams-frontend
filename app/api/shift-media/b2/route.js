@@ -111,16 +111,32 @@ export async function POST(req){
    // A successful PUT does not prove saved evidence. Verify every private B2
    // segment without writing an unplayable reference to shift_videos.
    let confirmed=0;
+   const verified=[];
    for(let i=0;i<details.keys.length;i++){
      const head=presignPrivateB2Object({config,method:"HEAD",objectKey:details.keys[i],expiresSeconds:90});
      const response=await fetch(head.signedUrl,{method:"HEAD",cache:"no-store",
        redirect:"error",signal:AbortSignal.timeout(10000)});
      const expected=Math.min(PART_BYTES,details.totalBytes-i*PART_BYTES);
-     if(!response.ok||Number(response.headers.get("content-length"))!==expected)
+     const versionId=response.headers.get("x-amz-version-id");
+     if(!response.ok||Number(response.headers.get("content-length"))!==expected||!versionId)
        return json({error:"Private recording segment could not be verified.",part:i+1},409);
+     verified.push({key:details.keys[i],bytes:expected,versionId});
      confirmed+=expected;
    }
-   return json({status:"verified-not-attached",bytes:confirmed,parts:details.keys.length});
+   const unsigned={kind:"workteams-b2-parts",version:1,mimeType:details.mimeType,
+     bytes:confirmed,companyId,memberId:member.id,entryId,parts:verified,
+     expiresAt:Date.now()+7*86400000};
+   const index={...unsigned,signature:signature(Buffer.from(JSON.stringify(unsigned)).toString("base64url"),config)};
+   const path=companyId+"/"+member.id+"/b2-"+signature(body.grant,config).slice(0,30)+".parts.json";
+   const payload=JSON.stringify(index);
+   const {error:indexError}=await db.storage.from("shift-videos").upload(
+     path,new Blob([payload],{type:"application/json"}),{contentType:"application/json",upsert:false});
+   if(indexError){
+     const {data:existing,error:readError}=await db.storage.from("shift-videos").download(path);
+     if(readError||!existing||(await existing.text())!==payload)
+       return json({error:"Private recording verified, but index could not be saved."},503);
+   }
+   return json({status:"verified-not-attached",storagePath:path,bytes:confirmed,parts:verified.length});
  }catch(error){
    return json({error:"Private WorkTeams media upload is unavailable."},503);
  }
