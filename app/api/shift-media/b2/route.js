@@ -47,10 +47,13 @@ function decodeGrant(value,config){
    throw Error("Expired or invalid private upload grant.");
  return data;
 }
-async function authorized(db,user,companyId,entryId){
+async function authorized(db,user,companyId,entryId,quickVideo=false){
  const {data:member,error:memberError}=await db.from("company_members")
    .select("id").eq("company_id",companyId).eq("user_id",user.id).maybeSingle();
  if(memberError||!member)return null;
+ // The separate quick-video upload screen has no time entry. A signed-in
+ // member may upload only under their OWN member ID in this explicit mode.
+ if(quickVideo)return entryId===member.id?member:null;
  const {data:entry,error:entryError}=await db.from("time_entries")
    .select("id,member_id,company_id").eq("id",entryId)
    .eq("company_id",companyId).eq("member_id",member.id).maybeSingle();
@@ -154,8 +157,11 @@ export async function POST(req){
    }
    if(typeof entryId!=="string"||!entryId)
      return json({error:"Missing time entry."},400);
-   const member=await authorized(db,user,companyId,entryId);
-   if(!member)return json({error:"Time entry does not belong to this employee."},403);
+   const quickVideo=body.quickVideo===true;
+   if(body.quickVideo!==undefined&&typeof body.quickVideo!=="boolean")
+     return json({error:"Invalid quick video mode."},400);
+   const member=await authorized(db,user,companyId,entryId,quickVideo);
+   if(!member)return json({error:"Time entry or quick-video member does not belong to this employee."},403);
    if(action==="begin"){
      const totalBytes=Number(body.totalBytes);
      const mimeType=String(body.mimeType||"").toLowerCase();
@@ -168,14 +174,15 @@ export async function POST(req){
        productId:"workteams",companyId,entryId,kind:"shift_video",
      }));
      const details={companyId,entryId,memberId:member.id,userId:user.id,
-       mimeType,totalBytes,keys,expiresAt:Date.now()+30*60_000};
+       quickVideo,mimeType,totalBytes,keys,expiresAt:Date.now()+30*60_000};
      return json({grant:encodeGrant(details,config),parts:partCount,partBytes:PART_BYTES});
    }
    if(action!=="part"&&action!=="verify")
      return json({error:"Unknown private upload action."},400);
    const details=decodeGrant(body.grant,config);
    if(details.userId!==user.id||details.memberId!==member.id||
-      details.companyId!==companyId||details.entryId!==entryId)
+      details.companyId!==companyId||details.entryId!==entryId||
+      details.quickVideo!==quickVideo)
      return json({error:"Private upload grant does not match this shift."},403);
    if(details.keys.some(key=>!key.startsWith("workteams/"+companyId+"/"+entryId+"/video/")))
      return json({error:"Private media path mismatch."},403);
