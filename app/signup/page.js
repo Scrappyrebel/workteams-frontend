@@ -12,11 +12,13 @@ export default function SignupPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
   const [loading, setLoading] = useState(false);
 
   async function signUpPassword(e) {
     e.preventDefault();
     setError("");
+    setNotice("");
     setLoading(true);
     try {
       const { error } = await supabase().auth.signUp({
@@ -28,7 +30,7 @@ export default function SignupPage() {
       if (session) {
         router.replace("/app");
       } else {
-        setError(
+        setNotice(
           "Account created. Check your email to confirm it, then sign in."
         );
       }
@@ -69,6 +71,7 @@ export default function SignupPage() {
             placeholder="At least 6 characters"
             style={inputStyle}
           />
+          {notice && <p style={successStyle}>{notice}</p>}
           {error && <p style={errorStyle}>{error}</p>}
           <button type="submit" disabled={loading} style={buttonStyle}>
             {loading ? "Creating…" : "Create account"}
@@ -114,6 +117,16 @@ const buttonStyle = {
 };
 
 const errorStyle = { color: "#b3261e", fontWeight: 700 };
+
+// Success wears the app's success palette (globals.css --success-ink on
+// --success-soft — the .status-pill recipe), never the error treatment.
+const successStyle = {
+  color: "var(--success-ink)",
+  background: "var(--success-soft)",
+  fontWeight: 700,
+  borderRadius: 12,
+  padding: "10px 14px",
+};
 
 const linkStyle = {
   color: "var(--brand)",
