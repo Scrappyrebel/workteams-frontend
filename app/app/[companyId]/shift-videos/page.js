@@ -253,7 +253,7 @@ export default function ShiftVideosPage() {
       const sb = supabase();
       const blob = await readEvidenceBlob(sb, "shift-videos", video.video_url);
       const label = (video.company_members?.display_name || "WorkTeams") + "-walkthrough";
-      const filename = evidenceFilename("video", video.video_url, label);
+      const filename = evidenceFilename("video", video.video_url, label, blob.type);
       if (share) {
         setPreparedShare({ blob, filename, id: video.id });
         setExportNote("Video ready. Tap Open phone sharing options below this video, then choose Gmail, email, Drive, or another app.");
