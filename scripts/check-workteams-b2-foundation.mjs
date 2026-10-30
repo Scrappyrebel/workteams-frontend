@@ -70,6 +70,10 @@ for(const guard of [
   'index.migratedAt<60*60000',
 ])
  assert.ok(recovery.includes(guard),"Private recovery safeguard missing: "+guard);
+assert.ok(recovery.includes('previous.parts[i].versionId!==parts[i].versionId'),
+  "B2 recovery must not replace a committed receipt with another version");
+assert.ok(recovery.includes('(await head(config,part))!==part.versionId'),
+  "Supabase fallback must not be deleted without exact B2 version verification");
 assert.ok(cron.crons.some(x=>x.path==="/api/cron/workteams-b2-recovery"),
   "Supabase fallback recovery cron must be scheduled");
 console.log("WorkTeams private B2 foundation security checks passed; uploads remain disabled.");
