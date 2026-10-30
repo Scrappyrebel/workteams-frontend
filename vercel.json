@@ -11,6 +11,10 @@
     {
       "path": "/api/shift-media/b2",
       "schedule": "30 6 * * *"
+    },
+    {
+      "path": "/api/cron/workteams-b2-recovery",
+      "schedule": "45 */3 * * *"
     }
   ]
 }
