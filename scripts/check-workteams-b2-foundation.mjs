@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import {readFileSync} from "node:fs";
 import {readPrivateB2MediaConfig,createPrivateMediaObjectKey,presignPrivateB2Object} from "../lib/workteams-private-b2.mjs";
 const company="a005319f-47c8-43bf-a5e5-89cf4b39467d";
 const entry="9d790983-cc7a-4854-8a3b-b8fec66ad9c5";
@@ -14,4 +15,8 @@ const signed=presignPrivateB2Object({config,method:"PUT",objectKey:key,contentTy
 assert.ok(signed.signedUrl.startsWith("https://s3.us-east-005.backblazeb2.com/"));
 assert.ok(!signed.signedUrl.includes(base.WORKTEAMS_B2_MEDIA_APPLICATION_KEY));
 assert.ok(!signed.headers.Authorization);
+const route=readFileSync(new URL("../app/api/shift-media/b2/route.js",import.meta.url),"utf8");
+for(const guard of ["WORKTEAMS_B2_UPLOAD_ENABLED", "company_members", "time_entries", "entry.member_id", "createPrivateMediaObjectKey", "presignPrivateB2Object", "timingSafeEqual", 'action==="verify"', 'status:"verified-not-attached"', 'method:"HEAD"'])
+ assert.ok(route.includes(guard),"Missing authenticated B2 rollout safeguard: "+guard);
+assert.ok(!route.includes('from("shift_videos").insert'),"Never attach B2 evidence before private playback is finished");
 console.log("WorkTeams private B2 foundation security checks passed; uploads remain disabled.");
