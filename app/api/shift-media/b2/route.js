@@ -116,15 +116,14 @@ async function removePrivateVideo(db,config,video,{expiredOnly}){
  const {data:removed,error:rowError}=await rowDelete.select("id").maybeSingle();
  if(rowError||!removed)throw Error("Could not finalize video retention.");
  const {error:cleanupError}=await db.storage.from("shift-videos").remove([path]);
- if(cleanupError)throw Error("Private video deleted; index cleanup needs review.");
- return true;
+ // The row and all B2 video bytes are already deleted. A stray small
+ // manifest is not a recoverable video and must never be reported as such.
+ return {deleted:true,indexCleanupPending:!!cleanupError};
 }
 // Disabled until WorkTeams has its own B2 bucket/key and private playback
 // integration. Never attach a B2 reference as approved proof in this route.
 export async function POST(req){
  try{
-   if(process.env.WORKTEAMS_B2_UPLOAD_ENABLED!=="true")
-     return json({error:"Private B2 upload rollout is disabled."},503);
    const limit=checkRateLimit("workteams-b2:"+clientIp(req),{limit:100,windowMs:60_000});
    if(!limit.ok)return json({error:"Too many upload requests."},429);
    const config=readPrivateB2MediaConfig();
@@ -133,6 +132,8 @@ export async function POST(req){
    if(!user)return json({error:"Sign in required."},401);
    const body=await req.json();
    const {action,companyId,entryId}=body||{};
+   if(action!=="delete"&&process.env.WORKTEAMS_B2_UPLOAD_ENABLED!=="true")
+     return json({error:"Private B2 upload rollout is disabled."},503);
    if(typeof companyId!=="string"||!companyId)
      return json({error:"Missing company."},400);
    const db=serviceClient();
