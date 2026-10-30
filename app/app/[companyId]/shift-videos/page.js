@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { uploadShiftVideoSafely, MAX_VIDEO_BYTES } from "../../../../lib/safe-shift-video-upload";
+import { uploadWorkTeamsB2Video } from "../../../../lib/workteams-b2-client";
 import { supabase } from "../../../../lib/supabase";
 import { useCompany } from "../../../../lib/company-context";
 import PrivateWalkthroughPlayer from "../../../../components/PrivateWalkthroughPlayer";
@@ -160,13 +161,25 @@ export default function ShiftVideosPage() {
     setUploading({ file, progress: 0, upload: null, paused: false, failed: false, duration });
     setError("");
     try {
-      const path = await uploadShiftVideoSafely({
-        sb, file, session,
-        companyId: company.id,
-        memberId: member.id,
-        onProgress: progress => setUploading(old => old ? { ...old, progress } : old),
-        onUpload: upload => setUploading(old => old ? { ...old, upload } : old),
-      });
+      let path = null;
+      try {
+        path = await uploadWorkTeamsB2Video({
+          file,session,companyId:company.id,entryId:member.id,quickVideo:true,
+          onProgress: progress => setUploading(old => old ? { ...old, progress } : old),
+        });
+      } catch (primaryError) {
+        console.warn("Primary quick-video storage failed; switching to Supabase.",primaryError);
+        setUploading(old => old ? { ...old, progress: 0 } : old);
+      }
+      if (!path) {
+        path = await uploadShiftVideoSafely({
+          sb, file, session,
+          companyId: company.id,
+          memberId: member.id,
+          onProgress: progress => setUploading(old => old ? { ...old, progress } : old),
+          onUpload: upload => setUploading(old => old ? { ...old, upload } : old),
+        });
+      }
       // On a retry after an upload succeeded but the DB request failed,
       // first check the exact private path to avoid duplicate proof rows.
       const { data: prior, error: priorError } = await sb.from("shift_videos")
