@@ -7,6 +7,10 @@
     {
       "path": "/api/cron/attendance",
       "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/shift-media/b2",
+      "schedule": "30 6 * * *"
     }
   ]
 }

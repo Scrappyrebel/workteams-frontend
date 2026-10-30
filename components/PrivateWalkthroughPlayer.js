@@ -80,6 +80,54 @@ export default function PrivateWalkthroughPlayer({ url, storagePath, durationSec
       const { data, error: readError } = await sb.storage.from("shift-videos").download(storagePath);
       if (readError || !data) throw new Error("Cannot load the walkthrough description. Try signing in again.");
       const info = JSON.parse(await data.text());
+      if (info?.kind === "workteams-b2-parts") {
+        // B2 object locations are never made public or trusted from a browser
+        // manifest. The authenticated server validates the signed receipt.
+        const { data: { session } } = await sb.auth.getSession();
+        if (!session) throw new Error("Sign in again to view this private recording.");
+        const companyId = storagePath.split("/")[0];
+        const response = await fetch(
+          "/api/shift-media/b2-access?companyId=" + encodeURIComponent(companyId) +
+          "&storagePath=" + encodeURIComponent(storagePath), {
+            headers: { Authorization: "Bearer " + session.access_token },
+            cache: "no-store",
+          }
+        );
+        if (!response.ok) throw new Error("Private Backblaze evidence is unavailable.");
+        const verified = await response.json();
+        if (!Array.isArray(verified.parts) || verified.parts.length < 1 ||
+            verified.parts.length > 25 ||
+            !Number.isSafeInteger(verified.totalBytes) ||
+            !["video/mp4", "video/webm", "video/quicktime"].includes(verified.mimeType)) {
+          throw new Error("Invalid private video download receipt.");
+        }
+        const chunks = [];
+        let loadedBytes = 0;
+        for (let i = 0; i < verified.parts.length; i++) {
+          const part = verified.parts[i];
+          if (!part?.url?.startsWith("https://s3.") ||
+              !Number.isSafeInteger(part.bytes) || part.bytes < 1 || part.bytes > 20 * 1024 * 1024)
+            throw new Error("Invalid private video segment.");
+          setProgress("Loading private video part " + (i + 1) + " of " + verified.parts.length + "…");
+          const result = await fetch(part.url, { cache: "no-store", redirect: "error" });
+          if (!result.ok) throw new Error("Private video segment unavailable.");
+          const chunk = await result.blob();
+          if (chunk.size !== part.bytes) throw new Error("Private video segment was incomplete.");
+          chunks.push(chunk);
+          loadedBytes += chunk.size;
+        }
+        if (loadedBytes !== verified.totalBytes) throw new Error("Private video recording size did not match.");
+        const blob = new Blob(chunks, { type: verified.mimeType });
+        const fixed = await repairWebmPlayback(blob, durationSeconds);
+        const tempUrl = URL.createObjectURL(fixed?.blob || blob);
+        setTimelineRepaired(!!fixed);
+        if (fixed) setPlayerDuration(fixed.durationSeconds);
+        if (objectUrlRef.current) URL.revokeObjectURL(objectUrlRef.current);
+        objectUrlRef.current = tempUrl;
+        setPlayUrl(tempUrl);
+        setProgress("");
+        return;
+      }
       if (info?.kind !== "workteams-walkthrough-parts" || info.version !== 1 ||
           !Array.isArray(info.parts) || info.parts.length < 2 || info.parts.length > 20 ||
           !Number.isSafeInteger(info.bytes) || info.bytes <= 0 || info.bytes > 500 * 1024 * 1024 ||
