@@ -19,4 +19,10 @@ const route=readFileSync(new URL("../app/api/shift-media/b2/route.js",import.met
 for(const guard of ["WORKTEAMS_B2_UPLOAD_ENABLED", "company_members", "time_entries", '.eq("member_id",member.id)', "createPrivateMediaObjectKey", "presignPrivateB2Object", "timingSafeEqual", 'action!=="verify"', 'status:"verified-not-attached"', 'method:"HEAD"'])
  assert.ok(route.includes(guard),"Missing authenticated B2 rollout safeguard: "+guard);
 assert.ok(!route.includes('from("shift_videos").insert'),"Never attach B2 evidence before private playback is finished");
+const access=readFileSync(new URL("../app/api/shift-media/b2-access/route.js",import.meta.url),"utf8");
+for(const marker of ['company_members', 'shift_videos', 'video_expires_at', 'timingSafeEqual', 'presignPrivateB2Object', 'method:"GET"'])
+ assert.ok(access.includes(marker),"Private video playback protection missing: "+marker);
+const player=readFileSync(new URL("../components/PrivateWalkthroughPlayer.js",import.meta.url),"utf8");
+assert.ok(player.includes('info?.kind === "workteams-b2-parts"'),"B2 private video manifest must be handled by player");
+assert.ok(player.includes("/api/shift-media/b2-access?companyId="),"B2 player must use server-authorized access");
 console.log("WorkTeams private B2 foundation security checks passed; uploads remain disabled.");
