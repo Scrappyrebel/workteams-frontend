@@ -86,4 +86,9 @@ assert.ok(uploader.includes("quickVideo:quickVideo===true"),"Client must send ex
 assert.ok(manager.includes("await uploadWorkTeamsB2Video({"),"Quick video should attempt Backblaze first");
 assert.ok(manager.includes("catch (primaryError)"),"Quick video must handle Backblaze errors");
 assert.ok(manager.includes("path = await uploadShiftVideoSafely({"),"Quick video must automatically switch to resumable Supabase");
+assert.ok(manager.includes('sb.storage.from("shift-videos").info(path)'),"Quick video success must verify storage object");
+assert.ok(manager.includes('linked.member_id !== member.id'),"Quick video proof receipt must belong to employee");
+assert.ok(manager.includes('Number(linked.file_size_bytes) !== file.size'),"Quick video proof must retain recording byte size");
+assert.ok(manager.includes('!path.endsWith(".parts.json") && Number(stored.size) !== file.size'),"Do not compare tiny B2/Supabase manifest sizes with full video bytes");
+assert.ok(manager.indexOf('linked.member_id !== member.id') < manager.indexOf('setUploading(null);',manager.indexOf('async function startUpload(')),"Upload must remain recoverable until proof receipt verified");
 console.log("WorkTeams private B2 foundation security checks passed; uploads remain disabled.");
