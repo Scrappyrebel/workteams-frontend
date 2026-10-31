@@ -52,7 +52,7 @@ export default function TrainingCenterPage() {
       <h2 style={{ fontSize: "1.8rem" }}>Training Academy</h2>
       <p style={{ color: "var(--muted)" }}>
         Every course follows the full 11-step path: reading, visuals, worked examples,
-        guided practice, simulator, exams, practical, evidence, and manager approval.
+        practice exercises, scenario exercises, exams, practical, evidence, and manager approval.
       </p>
 
       {isManager && (
