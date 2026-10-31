@@ -229,6 +229,38 @@ test("Lib never treats requested hours as worked hours", () => {
   assert.ok(libSource.includes("hours_confirmed"), "lib must key payability on client-confirmed hours");
 });
 
+test("Truncation is disclosed prominently, exactly, and without a false remedy (P3-06)", () => {
+  const page = read("app/app/[companyId]/temp-pay/page.js");
+  // Exact counts drive the warning (AppShell head-count pattern), with a
+  // loaded-length fallback — counts cover jobs, assignments, payments.
+  assert.ok(page.includes('count: "exact", head: true'), "page must count the uncapped sets exactly");
+  assert.ok(page.includes("jobsTotal") && page.includes("assignmentsTotal") && page.includes("paymentsTotal"),
+    "jobs, assignments, and payments loads are all checked for truncation");
+  // Prominent alert panel naming the consequence for the money totals.
+  assert.ok(page.includes('role="alert"'), "truncation warning must be an alert panel, not a muted footnote");
+  assert.ok(page.includes("Partial report — the totals below may understate pay owed."),
+    "warning must say plainly that totals may understate pay owed");
+  assert.ok(page.includes("not in the CSV export"), "warning must name the CSV export as partial too");
+  assert.ok(page.includes("Total owed (partial — see the warning above): "),
+    "the Total owed line itself must be labelled partial when truncated");
+  // The panel renders whenever a capped report exists — never gated on
+  // there being payable rows (the old footnote hid exactly then).
+  assert.ok(page.includes("{report && capInfo && ("), "warning must gate only on report + truncation");
+  assert.ok(
+    page.indexOf("Partial report") < page.indexOf("report.perTemp.length === 0"),
+    "warning must render above the report body, including the empty state"
+  );
+  // The old footnote's remedy was false: the loads are not date-filtered,
+  // so narrowing dates cannot bring back jobs past the cap. It must stay
+  // gone, replaced by the honest statement.
+  assert.ok(!page.includes("narrow the dates to see the rest"), "false narrowing remedy must not return");
+  assert.ok(!page.includes("assignments in range), so some"), "old muted footnote must not return");
+  assert.ok(page.includes("Choosing different dates does not load the jobs that were left out"),
+    "warning must state honestly that changing dates does not load the missing jobs");
+  // Disclosure only: the caps and the totals math stay exactly as they were.
+  assert.ok(page.includes(".limit(500)") && page.includes(".limit(1000)"), "load caps are disclosed, not raised or removed in this pass");
+});
+
 test("Temp pay-owed guard runs in prebuild", () => {
   const pkg = JSON.parse(read("package.json"));
   assert.ok(pkg.scripts.prebuild.includes("check-temp-pay-owed.mjs"));

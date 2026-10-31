@@ -61,7 +61,7 @@ export default function TempPayOwedPage() {
     return { start: isoDate(start), end: isoDate(end) };
   });
   const [paymentsUnavailable, setPaymentsUnavailable] = useState(false);
-  const [capped, setCapped] = useState(false);
+  const [capInfo, setCapInfo] = useState(null);
   const [payFor, setPayFor] = useState(null);
   const [payForm, setPayForm] = useState({
     amount: "",
@@ -74,6 +74,7 @@ export default function TempPayOwedPage() {
   const [saving, setSaving] = useState(false);
 
   const isManager = !!member && isManagerRole(member.role);
+  const capped = capInfo !== null;
 
   async function load() {
     const sb = supabase();
@@ -105,6 +106,33 @@ export default function TempPayOwedPage() {
         .limit(1000);
       assignments = asg || [];
     }
+    // Truncation check: the two loads above are capped (500 most
+    // recently created jobs; 1,000 assignments on those jobs), and the
+    // date range is applied only AFTER loading, in buildTempPayOwed —
+    // so jobs past the cap are missing from the report for every date
+    // range, and choosing narrower dates cannot bring them in. Exact
+    // head counts (the AppShell pattern) say whether anything was
+    // actually left out; when a count is unavailable, the fallback is
+    // the loaded length reaching the cap. The assignment count covers
+    // the loaded jobs only — assignments on jobs that were themselves
+    // cut off cannot be counted here. Counts never change the report
+    // math; they only drive the partial-report warning below.
+    let jobsTotal = null;
+    {
+      const { count } = await sb
+        .from("temp_job_requests")
+        .select("id", { count: "exact", head: true })
+        .eq("company_id", company.id);
+      if (typeof count === "number") jobsTotal = count;
+    }
+    let assignmentsTotal = null;
+    if (reqs.length > 0) {
+      const { count } = await sb
+        .from("temp_assignments")
+        .select("id", { count: "exact", head: true })
+        .in("job_request_id", reqs.map((r) => r.id));
+      if (typeof count === "number") assignmentsTotal = count;
+    }
     const base = buildTempPayOwed({
       assignments,
       requests: reqs,
@@ -117,6 +145,7 @@ export default function TempPayOwedPage() {
     // report still renders exactly as before.
     let payments = [];
     let missing = false;
+    let paymentsTotal = null;
     if (assignments.length > 0) {
       const { data: pays, error: payErr } = await sb
         .from("temp_payments")
@@ -128,9 +157,43 @@ export default function TempPayOwedPage() {
         if (tableMissing(payErr)) missing = true;
       } else {
         payments = pays || [];
+        // The payments load carries no explicit limit, so it can hit
+        // the database's own 1,000-row cap (the attendance cron's
+        // documented default). Count the same set exactly so a cut-off
+        // payments load is disclosed too: paid amounts would understate
+        // and amounts still owed would overstate.
+        const { count } = await sb
+          .from("temp_payments")
+          .select("id", { count: "exact", head: true })
+          .eq("company_id", company.id)
+          .in("assignment_id", assignments.map((a) => a.id));
+        if (typeof count === "number") paymentsTotal = count;
       }
     }
-    setCapped(reqs.length >= 500 || assignments.length >= 1000);
+    const jobsTruncated =
+      jobsTotal !== null ? reqs.length < jobsTotal : reqs.length >= 500;
+    const assignmentsTruncated =
+      assignmentsTotal !== null
+        ? assignments.length < assignmentsTotal
+        : assignments.length >= 1000;
+    const paymentsTruncated =
+      !missing &&
+      (paymentsTotal !== null
+        ? payments.length < paymentsTotal
+        : payments.length >= 1000);
+    setCapInfo(
+      jobsTruncated || assignmentsTruncated || paymentsTruncated
+        ? {
+            jobsLoaded: reqs.length,
+            jobsTotal,
+            assignmentsLoaded: assignments.length,
+            assignmentsTotal,
+            paymentsLoaded: payments.length,
+            paymentsTotal,
+            paymentsTruncated,
+          }
+        : null
+    );
     setPaymentsUnavailable(missing);
     setReport(applyTempPayments(base, payments));
   }
@@ -288,6 +351,47 @@ export default function TempPayOwedPage() {
           <p style={{ margin: 0 }}>
             Recording payments turns on with the latest WorkTeams update. Until then, this
             report shows what is owed exactly as before.
+          </p>
+        </section>
+      )}
+
+      {report && capInfo && (
+        <section
+          className="panel"
+          role="alert"
+          style={{ padding: 16, margin: "0 0 16px", border: "2px solid #b3261e", background: "#fff5f4" }}
+        >
+          <p style={{ margin: "0 0 6px", fontWeight: 800, fontSize: "1.05rem" }}>
+            Partial report — the totals below may understate pay owed.
+          </p>
+          <p style={{ margin: 0 }}>
+            This page loads only the 500 most recently created temp jobs
+            {capInfo.jobsTotal !== null
+              ? ` (${capInfo.jobsLoaded} of ${capInfo.jobsTotal} jobs on file were loaded)`
+              : ""}{" "}
+            and the first 1,000 assignments on those jobs
+            {capInfo.assignmentsTotal !== null
+              ? ` (${capInfo.assignmentsLoaded} of ${capInfo.assignmentsTotal} assignments on the loaded jobs were loaded)`
+              : ""}
+            . Jobs and assignments past those limits are not in this report at all — not in
+            the per-temp amounts, not in Total owed, not in &ldquo;Not yet payable&rdquo;,
+            and not in the CSV export — so a temp whose job was left out will not appear
+            here, and pay owed to them will be missing from every total.
+          </p>
+          {capInfo.paymentsTruncated && (
+            <p style={{ margin: "6px 0 0" }}>
+              Recorded payments were cut off too
+              {capInfo.paymentsTotal !== null
+                ? ` (${capInfo.paymentsLoaded} of ${capInfo.paymentsTotal} payments were loaded)`
+                : ""}
+              , so amounts paid may be understated and amounts still owed may be overstated.
+            </p>
+          )}
+          <p style={{ margin: "6px 0 0" }}>
+            Choosing different dates does not load the jobs that were left out — the limits
+            apply before the dates are checked. Until the loading limits are raised, treat
+            every total on this page as partial and do not pay from it without checking for
+            jobs that are missing.
           </p>
         </section>
       )}
@@ -469,18 +573,13 @@ export default function TempPayOwedPage() {
       {report && report.perTemp.length > 0 && (
         <>
           <p style={{ fontWeight: 800, marginTop: 14 }}>
-            Total owed: {fmtMoney(report.grandBalanceCents ?? report.grandTotalCents)}
+            {capped ? "Total owed (partial — see the warning above): " : "Total owed: "}
+            {fmtMoney(report.grandBalanceCents ?? report.grandTotalCents)}
           </p>
           {report.grandPaidCents > 0 && (
             <p style={{ color: "var(--muted)", marginTop: 4 }}>
               {fmtMoney(report.grandPaidCents)} already paid of {fmtMoney(report.grandTotalCents)} total
               owed in this range.
-            </p>
-          )}
-          {capped && (
-            <p style={{ color: "var(--muted)", marginTop: 4 }}>
-              This report hit its loading limit (500 jobs / 1,000 assignments in range), so some
-              jobs may not be shown — narrow the dates to see the rest.
             </p>
           )}
         </>
