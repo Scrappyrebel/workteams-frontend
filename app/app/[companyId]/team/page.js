@@ -19,6 +19,13 @@ export default function TeamPage() {
   const [confirmEmailId, setConfirmEmailId] = useState(null);
   // Two-tap remove: native confirm() doesn't fire on some mobile browsers.
   const [confirmRemoveId, setConfirmRemoveId] = useState(null);
+  // Roster orientation (depth D-WT-19): whether the member_pay read in
+  // load() succeeded — the summary below must never print a pay count
+  // from a failed read.
+  const [payLoaded, setPayLoaded] = useState(false);
+  // Roster search: filters the member CARDS only. The availability
+  // section further down always shows the full roster, as before.
+  const [rosterQuery, setRosterQuery] = useState("");
 
   const isManager = member && (member.role === "owner" || member.role === "admin");
   const isOwner = member && member.role === "owner";
@@ -132,12 +139,13 @@ export default function TeamPage() {
     let rows = data || [];
     if (isManager) {
       // Pay rates live in member_pay, readable only by owners/admins.
-      const { data: pay } = await supabase()
+      const { data: pay, error: payError } = await supabase()
         .from("member_pay")
         .select("member_id, cleaner_hourly_rate, manager_hourly_rate, cleaner_title, manager_title")
         .eq("company_id", company.id);
       const payByMember = {};
       for (const p of pay || []) payByMember[p.member_id] = p;
+      setPayLoaded(!payError);
       rows = rows.map((m) => ({ ...m, pay: payByMember[m.id] || {} }));
     }
     setMembers(rows);
@@ -298,12 +306,38 @@ export default function TeamPage() {
     else load();
   }
 
+  // Roster summary figures — computed only from rows load() already
+  // fetched; nothing new is queried and nothing is written.
+  const activeCount = members.filter((m) => m.user_id).length;
+  const bothRatesCount = members.filter(
+    (m) => m.pay && m.pay.cleaner_hourly_rate != null && m.pay.manager_hourly_rate != null
+  ).length;
+  const query = rosterQuery.trim().toLowerCase();
+  const visibleMembers = query
+    ? members.filter(
+        (m) =>
+          (m.display_name || "").toLowerCase().includes(query) ||
+          (m.email || "").toLowerCase().includes(query)
+      )
+    : members;
+
   if (loading || !company) return <p>Loading…</p>;
 
   return (
     <div>
       <p className="eyebrow">TEAM</p>
       <h2 style={{ fontSize: "1.8rem" }}>Team members</h2>
+      {members.length > 0 && (
+        <p style={{ color: "var(--muted)", fontSize: "0.9rem", margin: "6px 0 0" }}>
+          {members.length} team member{members.length === 1 ? "" : "s"}
+          {isManager && (
+            <>
+              {" "}· {activeCount} active · {members.length - activeCount} invite pending
+              {payLoaded && <> · {bothRatesCount} of {members.length} have both pay rates set</>}
+            </>
+          )}
+        </p>
+      )}
 
       <section className="panel" style={{ padding: 22, margin: "18px 0" }}>
         <h3 style={{ marginTop: 0 }}>👤 My profile</h3>
@@ -388,8 +422,18 @@ export default function TeamPage() {
         </section>
       )}
 
+      {members.length > 1 && (
+        <input
+          value={rosterQuery}
+          onChange={(e) => setRosterQuery(e.target.value)}
+          placeholder="Search the team by name or email…"
+          aria-label="Search team members"
+          style={{ ...input, maxWidth: 420, margin: "14px 0 12px" }}
+        />
+      )}
+
       <div style={{ display: "grid", gap: 8 }}>
-        {members.map((m) => (
+        {visibleMembers.map((m) => (
           <div key={m.id} className="portal-card" style={{ minHeight: 0, padding: "14px 18px" }}>
             <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
               <div style={{ flex: 1 }}>
@@ -435,6 +479,12 @@ export default function TeamPage() {
                   </>
                 )}
                 <div style={{ fontSize: "0.85rem", color: "var(--brand-deep)", fontWeight: 700 }}>{roleLabel(m.role)}</div>
+                {m.created_at && (
+                  <div style={{ fontSize: "0.78rem", color: "var(--muted)" }}>
+                    On the team since{" "}
+                    {new Date(m.created_at).toLocaleDateString("en-US", { month: "long", year: "numeric" })}
+                  </div>
+                )}
                 {isManager && (m.phone || m.emergency_contact_name || m.emergency_contact_phone) && (
                   <div style={{ fontSize: "0.82rem", color: "var(--muted)", marginTop: 2 }}>
                     {m.phone && <span>📞 {m.phone}</span>}
@@ -474,6 +524,9 @@ export default function TeamPage() {
                     ))}
                     <p style={{ gridColumn: "1 / -1", fontSize: "0.78rem", color: "var(--muted)", margin: "2px 0 0" }}>
                       Set both rates and they'll pick Cleaner or Manager at clock-in.
+                    </p>
+                    <p style={{ gridColumn: "1 / -1", fontSize: "0.78rem", color: "var(--muted)", margin: 0 }}>
+                      Rates and titles save on their own as soon as you tap out of a field — there is no Save button for pay.
                     </p>
                   </div>
                 )}
@@ -524,6 +577,11 @@ export default function TeamPage() {
             </div>
           </div>
         ))}
+        {query && visibleMembers.length === 0 && (
+          <p style={{ color: "var(--muted)", margin: 0 }}>
+            No team members match “{rosterQuery.trim()}”.
+          </p>
+        )}
       </div>
 
       {isManager && availability !== null && (
