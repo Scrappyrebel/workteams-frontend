@@ -136,3 +136,95 @@ test("protected areas are untouched by this build", () => {
     }
   }
 });
+
+// ---- Depth D-WT-37: period view, drill-through, export (083) ----
+// The all-time view is untouched: it still reads only through 077.
+// 083 adds two read-only functions with the SAME definitions,
+// cohort-filtered by period (bids by created date in the company
+// timezone, invoices by issue_date), plus the record-level detail
+// behind one location's figures. The page must degrade honestly:
+// pre-083, period asks fall back to all-time and SAY so, and the
+// detail expansion shows a pending note — never invented numbers.
+
+const SQL083_PATH = "supabase/083_location_money_period_detail.sql";
+
+test("migration 083 is additive read-only functions, owner/admin enforced inside", () => {
+  assert.ok(existsSync(SQL083_PATH), "migration 083 exists");
+  const sql = read(SQL083_PATH);
+  for (const needle of [
+    "BEGIN;",
+    "COMMIT;",
+    "create or replace function public.workteams_location_money_rollup_period(",
+    "create or replace function public.workteams_location_money_detail(",
+    "security definer",
+    "m.role in ('owner', 'admin')",
+    "raise exception 'Owner or admin access required'",
+    "grant execute on function public.workteams_location_money_rollup_period(uuid, date, date)",
+    "grant execute on function public.workteams_location_money_detail(uuid, uuid, boolean, date, date)",
+    "i.issue_date >= p_from",
+    "i.issue_date <= p_to",
+    "b.status = 'accepted'",
+    "i.status in ('issued', 'paid')",
+    "sum(i.amount_paid)",
+    "sum(i.total - i.amount_paid)",
+    "at time zone coalesce(v_tz, 'America/Chicago')",
+  ]) {
+    assert.ok(sql.includes(needle), `083 contains: ${needle}`);
+  }
+  assert.ok(!/create table/i.test(sql), "083 creates no table");
+  assert.ok(!/insert into/i.test(sql), "083 inserts nothing");
+  assert.ok(!/update public\./i.test(sql), "083 updates no table");
+  assert.ok(!/delete from/i.test(sql), "083 deletes nothing");
+  // 077 itself is untouched: the all-time function keeps its shape.
+  const sql077 = read(SQL_PATH);
+  assert.ok(
+    sql077.includes("create or replace function public.workteams_location_money_rollup(p_company_id uuid)"),
+    "077 all-time rollup unchanged"
+  );
+});
+
+test("the page adds period, drill-through and export without touching all-time figures", () => {
+  const page = read(PAGE);
+  // All-time still comes from the original 077 call.
+  assert.ok(page.includes('rpc("workteams_location_money_rollup", {'), "all-time load still calls 077");
+  // Period + detail come only through the 083 functions.
+  assert.ok(page.includes('rpc("workteams_location_money_rollup_period"'), "period view calls the 083 period rollup");
+  assert.ok(page.includes('rpc("workteams_location_money_detail"'), "drill-through calls the 083 detail function");
+  // Period presets + custom range exist in the page's own words.
+  for (const needle of [
+    "All time",
+    "This month",
+    "Last month",
+    "This year",
+    "Custom range…",
+    "Show that range",
+    "The start date must be on or before the end date.",
+  ]) {
+    assert.ok(page.includes(needle), `page period UI contains: ${needle}`);
+  }
+  // The period basis is stated on screen, including the payment
+  // cohort rule, so a period Paid figure is never misread as
+  // "payments received in the period".
+  assert.ok(
+    page.includes("whenever the payment\n              arrived"),
+    "period basis states Paid is everything paid on the period's invoices so far"
+  );
+  assert.ok(
+    page.includes("counts\n              in All time, not here"),
+    "period basis states older-invoice payments count in All time"
+  );
+  // Pre-083 honesty: a failed period call falls back and says so;
+  // a failed detail call shows the pending note.
+  assert.ok(page.includes("Period views aren't switched on yet."), "period fallback is labeled");
+  assert.ok(page.includes("The record list isn't switched on yet."), "detail fallback is labeled");
+  // Drill-through links to the pages that own the records.
+  assert.ok(page.includes("/invoices/${x.id}"), "invoice detail links to the invoice page");
+  assert.ok(page.includes("/bids/${x.id}"), "bid detail links to the bid page");
+  // Export is a client-side CSV of the figures on screen, with the
+  // period and basis written into the file (payroll CSV pattern).
+  assert.ok(page.includes("Download CSV for your bookkeeper"), "summary CSV button present");
+  assert.ok(page.includes("Download these records (CSV)"), "detail CSV button present");
+  assert.ok(page.includes('type: "text/csv"'), "export is a CSV download");
+  assert.ok(page.includes('"Basis", basis'), "CSV carries its basis line");
+  assert.ok(page.includes('"Period", periodLine'), "CSV carries its period line");
+});
