@@ -112,12 +112,12 @@ export default function LocationMoneyPage() {
       {unavailable ? (
         <section className="panel" style={{ padding: 20, margin: "16px 0" }}>
           <p style={{ margin: 0 }}>
-            <strong>This view isn't switched on for this database yet.</strong>
+            <strong>This view isn't switched on yet.</strong>
           </p>
           <p style={{ color: "var(--muted)", marginBottom: 0 }}>
-            A one-time database update (migration 077) creates the rollup it reads from.
-            Until the owner runs it, this page stays empty — nothing else in the app is
-            affected, and Invoices and Profitability keep working as they do today.
+            This view turns on with the latest WorkTeams update. Until then, this page
+            stays empty — nothing else in the app is affected, and Invoices and
+            Profitability keep working as they do today.
           </p>
         </section>
       ) : computing ? (

@@ -100,8 +100,8 @@ export default function InvoicePrintPage() {
   if (state === "unavailable") {
     return (
       <div style={pageMsg}>
-        <p><strong>Invoicing isn't switched on for this database yet.</strong></p>
-        <p>A one-time database update (migration 061) creates the invoice tables.</p>
+        <p><strong>Invoicing isn't switched on yet.</strong></p>
+        <p>Invoicing turns on with the latest WorkTeams update.</p>
       </div>
     );
   }
