@@ -15,6 +15,8 @@ export default function CompanyDashboard() {
   const { company, member, loading } = useCompany();
   const [alerts, setAlerts] = useState([]);
   const [alertsLoading, setAlertsLoading] = useState(true);
+  const [counts, setCounts] = useState(null);
+  const [countsLoading, setCountsLoading] = useState(true);
 
   const isManager = member && (member.role === "owner" || member.role === "admin");
   const tier = company?.tier || "starter";
@@ -57,6 +59,91 @@ export default function CompanyDashboard() {
     })();
   }, [loading, company]);
 
+  // Today's operational counts (display only — no pay is ever computed
+  // here). Every figure comes straight from stored records:
+  //  - Shifts today: shifts scheduled for today (company timezone).
+  //  - Clocked in now (managers): people with an open time entry
+  //    (clock_out is null — the same definition the clock-in gate uses).
+  //  - Hours completed today: clocked-out entries that started today,
+  //    summed exactly the way the Hour report sums them. A shift still
+  //    on the clock has no end time yet, so it is counted under
+  //    Clocked in now, never estimated into hours.
+  //  - Pending requests: schedule_requests still waiting for a decision.
+  //  - Open work orders: work orders not yet completed or cancelled.
+  // Managers see company-wide figures; everyone else sees their own
+  // (the same scoping Today's Alerts already uses). The requests and
+  // work-order reads are tolerant: if a read fails, that card shows
+  // "—" rather than a made-up zero.
+  useEffect(() => {
+    if (loading || !company || !member) return;
+    (async () => {
+      const sb = supabase();
+      const today = chicagoToday(company?.timezone);
+      const mgr = member.role === "owner" || member.role === "admin";
+
+      let shiftQ = sb
+        .from("shifts")
+        .select("id")
+        .eq("company_id", company.id)
+        .eq("shift_date", today);
+      if (!mgr) shiftQ = shiftQ.eq("member_id", member.id);
+      const { data: shiftRows } = await shiftQ;
+
+      let entryQ = sb
+        .from("time_entries")
+        .select("member_id, clock_in, clock_out")
+        .eq("company_id", company.id)
+        .gte("clock_in", today + "T00:00:00");
+      if (!mgr) entryQ = entryQ.eq("member_id", member.id);
+      const { data: entryRows } = await entryQ;
+      let completedHours = 0;
+      for (const e of entryRows || []) {
+        if (e.clock_out) {
+          completedHours += (new Date(e.clock_out) - new Date(e.clock_in)) / 3600000;
+        }
+      }
+
+      let clockedInNow = 0;
+      if (mgr) {
+        const { data: openRows } = await sb
+          .from("time_entries")
+          .select("member_id")
+          .eq("company_id", company.id)
+          .is("clock_out", null);
+        clockedInNow = new Set((openRows || []).map((e) => e.member_id)).size;
+      }
+
+      let pendingRequests = null;
+      let reqQ = sb
+        .from("schedule_requests")
+        .select("id")
+        .eq("company_id", company.id)
+        .eq("status", "pending");
+      if (!mgr) reqQ = reqQ.eq("member_id", member.id);
+      const reqResult = await reqQ;
+      if (!reqResult.error) pendingRequests = (reqResult.data || []).length;
+
+      let openWorkOrders = null;
+      let woQ = sb
+        .from("work_orders")
+        .select("id")
+        .eq("company_id", company.id)
+        .in("status", ["open", "in_progress"]);
+      if (!mgr) woQ = woQ.eq("assigned_to", member.id);
+      const woResult = await woQ;
+      if (!woResult.error) openWorkOrders = (woResult.data || []).length;
+
+      setCounts({
+        shiftsToday: (shiftRows || []).length,
+        clockedInNow,
+        completedHours,
+        pendingRequests,
+        openWorkOrders,
+      });
+      setCountsLoading(false);
+    })();
+  }, [loading, company, member]);
+
   if (loading || !company) return <p>Loading…</p>;
 
   return (
@@ -72,6 +159,48 @@ export default function CompanyDashboard() {
         </div>
         <EmergencyButton compact />
       </div>
+
+      <section className="panel" style={{ padding: 20, marginBottom: 18 }}>
+        <p className="eyebrow">{isManager ? "TODAY AT A GLANCE" : "YOUR DAY AT A GLANCE"}</p>
+        {countsLoading || !counts ? (
+          <p>Loading today&apos;s numbers…</p>
+        ) : (
+          <>
+            <div className="portal-grid" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 12 }}>
+              <Link className="portal-card" href={`/app/${company.id}/schedule`}
+                    style={{ minHeight: 86, padding: 16 }}>
+                <strong style={{ fontSize: "1.6rem" }}>{counts.shiftsToday}</strong>
+                <p style={{ margin: "6px 0 0" }}>{isManager ? "Shifts today" : "My shifts today"} →</p>
+              </Link>
+              {isManager && (
+                <Link className="portal-card" href={`/app/${company.id}/time`}
+                      style={{ minHeight: 86, padding: 16 }}>
+                  <strong style={{ fontSize: "1.6rem" }}>{counts.clockedInNow}</strong>
+                  <p style={{ margin: "6px 0 0" }}>Clocked in now →</p>
+                </Link>
+              )}
+              <Link className="portal-card" href={`/app/${company.id}/payroll`}
+                    style={{ minHeight: 86, padding: 16 }}>
+                <strong style={{ fontSize: "1.6rem" }}>{counts.completedHours.toFixed(2)}</strong>
+                <p style={{ margin: "6px 0 0" }}>{isManager ? "Hours completed today" : "My hours completed today"} →</p>
+              </Link>
+              <Link className="portal-card" href={`/app/${company.id}/schedule`}
+                    style={{ minHeight: 86, padding: 16 }}>
+                <strong style={{ fontSize: "1.6rem" }}>{counts.pendingRequests === null ? "—" : counts.pendingRequests}</strong>
+                <p style={{ margin: "6px 0 0" }}>{isManager ? "Pending requests" : "My pending requests"} →</p>
+              </Link>
+              <Link className="portal-card" href={`/app/${company.id}/work-orders`}
+                    style={{ minHeight: 86, padding: 16 }}>
+                <strong style={{ fontSize: "1.6rem" }}>{counts.openWorkOrders === null ? "—" : counts.openWorkOrders}</strong>
+                <p style={{ margin: "6px 0 0" }}>{isManager ? "Open work orders" : "My open work orders"} →</p>
+              </Link>
+            </div>
+            <p style={{ color: "var(--muted)", fontSize: "0.86rem", marginBottom: 0 }}>
+              Hours completed counts clocked-out shifts that started today — the same entries the Hour report sums. Shifts still on the clock are not counted in hours until they clock out.
+            </p>
+          </>
+        )}
+      </section>
 
       <section className="panel" style={{ padding: 20, marginBottom: 18 }}>
         <h3 style={{ margin: "0 0 12px" }}>Quick Access · Shift Essentials</h3>
