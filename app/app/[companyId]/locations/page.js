@@ -40,6 +40,9 @@ export default function LocationsPage() {
   }, [company?.timezone]);
   const [verifyData, setVerifyData] = useState(null);
   const [verifyBusy, setVerifyBusy] = useState(false);
+  const [search, setSearch] = useState("");
+  const [activityOpen, setActivityOpen] = useState(null);
+  const [activityByLoc, setActivityByLoc] = useState({});
 
   async function runVerification() {
     setVerifyBusy(true);
@@ -155,6 +158,89 @@ export default function LocationsPage() {
     setBusy(false);
   }
 
+  // --- Site activity (depth D-WT-18) -----------------------------------
+  // Everything below reads rows the app already stores, keyed by
+  // location_id and scoped to this company, under the caller's own
+  // session. Every read is fail-soft: if one fails, that section simply
+  // does not render and the card stays exactly as it has always been.
+  // Money and bid reads run only for managers (owner/admin) — the same
+  // roles those tables' own access rules already restrict them to.
+  // This block adds no writes of any kind.
+  async function loadActivity(locId) {
+    if (activityByLoc[locId]) return;
+    const sb = supabase();
+    const out = {};
+    const today = chicagoToday(company?.timezone);
+    // Upcoming shifts at this site, soonest first.
+    const shiftCols = "id, member_id, shift_date, start_time, end_time";
+    let shiftsRes = await sb.from("shifts").select(shiftCols + ", department, position_name")
+      .eq("company_id", company.id).eq("location_id", locId)
+      .gte("shift_date", today).order("shift_date").order("start_time").limit(25);
+    if (shiftsRes.error) {
+      shiftsRes = await sb.from("shifts").select(shiftCols)
+        .eq("company_id", company.id).eq("location_id", locId)
+        .gte("shift_date", today).order("shift_date").order("start_time").limit(25);
+    }
+    if (!shiftsRes.error && shiftsRes.data) {
+      const memberIds = [...new Set(shiftsRes.data.map((s) => s.member_id).filter(Boolean))];
+      const nameById = {};
+      if (memberIds.length) {
+        const { data: dir } = await sb.from("team_directory").select("id, display_name").in("id", memberIds);
+        for (const d of dir || []) nameById[d.id] = d.display_name;
+      }
+      out.shifts = shiftsRes.data.map((s) => ({ ...s, who: s.member_id ? (nameById[s.member_id] || "Team member") : "Unassigned — open shift" }));
+    }
+    // Work orders still open at this site.
+    const { data: wos, error: woErr } = await sb.from("work_orders")
+      .select("id, title, status, priority, due_date")
+      .eq("company_id", company.id).eq("location_id", locId)
+      .in("status", ["open", "in_progress"]).order("due_date", { ascending: true, nullsFirst: false }).limit(25);
+    if (!woErr && wos) out.workOrders = wos;
+    // Inspections at this site: how many, and the most recent.
+    const { data: insps, error: inspErr } = await sb.from("inspections")
+      .select("id, inspection_date, score")
+      .eq("company_id", company.id).eq("location_id", locId)
+      .order("inspection_date", { ascending: false }).order("created_at", { ascending: false }).limit(25);
+    if (!inspErr && insps) out.inspections = insps;
+    if (canManage) {
+      // Bids tied to this site, counted by their stored status.
+      const { data: bids, error: bidErr } = await sb.from("bids")
+        .select("status").eq("company_id", company.id).eq("location_id", locId).limit(500);
+      if (!bidErr && bids) {
+        const counts = { accepted: 0, sent: 0, draft: 0, declined: 0 };
+        for (const b of bids) if (counts[b.status] !== undefined) counts[b.status] += 1;
+        out.bidCounts = counts;
+      }
+      // Invoices billed to this site (locations double as invoicing
+      // clients). Issued/paid only — drafts are not billed yet and
+      // voided invoices are excluded, the same basis as invoicing
+      // itself. Totals come from the stored total / amount_paid.
+      const { data: invs, error: invErr } = await sb.from("invoices")
+        .select("id, invoice_number, status, total, amount_paid, issue_date")
+        .eq("company_id", company.id).eq("location_id", locId)
+        .in("status", ["issued", "paid"]).order("issue_date", { ascending: false }).limit(500);
+      if (!invErr && invs) {
+        out.invoices = {
+          count: invs.length,
+          invoiced: invs.reduce((a, i) => a + (Number(i.total) || 0), 0),
+          owed: invs.reduce((a, i) => a + Math.max(0, (Number(i.total) || 0) - (Number(i.amount_paid) || 0)), 0),
+          latest: invs[0] || null,
+        };
+      }
+    }
+    setActivityByLoc((prev) => ({ ...prev, [locId]: out }));
+  }
+
+  function toggleActivity(locId) {
+    if (activityOpen === locId) {
+      setActivityOpen(null);
+      return;
+    }
+    setActivityOpen(locId);
+    loadActivity(locId);
+  }
+  // --- End site activity ------------------------------------------------
+
   function startEdit(l) {
     setEditing(l.id);
     setForm({
@@ -199,6 +285,11 @@ export default function LocationsPage() {
     if (error) alert("Could not delete: " + error.message);
     else load();
   }
+
+  const searchText = search.trim().toLowerCase();
+  const visibleLocations = searchText
+    ? locations.filter((l) => [l.name, l.address, l.client_name].some((v) => (v || "").toLowerCase().includes(searchText)))
+    : locations;
 
   if (loading || !company) return <p>Loading…</p>;
   if (!canView) return <p>Your role can't view locations. Ask your manager.</p>;
@@ -311,9 +402,19 @@ export default function LocationsPage() {
         </section>
       )}
 
+      {loaded && locations.length > 0 && (
+        <input
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search locations by name, address, or client…"
+          style={{ ...input, marginBottom: 12 }}
+        />
+      )}
+
       <div style={{ display: "grid", gap: 10 }}>
         {loaded && locations.length === 0 && <p style={{ color: "var(--muted)" }}>{canManage ? "No locations yet — add your first job site above." : "No locations yet."}</p>}
-        {locations.map((l) => {
+        {loaded && locations.length > 0 && visibleLocations.length === 0 && <p style={{ color: "var(--muted)" }}>No locations match your search.</p>}
+        {visibleLocations.map((l) => {
           const hasFence = l.lat != null && l.lng != null;
           const raName = rateAreas.find((r) => r.id === l.rate_area_id)?.name;
           return (
@@ -324,6 +425,84 @@ export default function LocationsPage() {
             {raName && <p style={{ margin: "4px 0 0", fontSize: "0.9rem" }}>💲 Rate area: {raName}</p>}
             {l.client_name && <p style={{ margin: "4px 0 0" }}>Client: {l.client_name}{l.client_phone ? ` • ${l.client_phone}` : ""}</p>}
             {l.notes && <p style={{ fontSize: "0.9rem", color: "var(--muted)" }}>{l.notes}</p>}
+            <div style={{ marginTop: 8 }}>
+              <button onClick={() => toggleActivity(l.id)} style={ghostButton}>
+                {activityOpen === l.id ? "Hide site activity" : "Site activity"}
+              </button>
+            </div>
+            {activityOpen === l.id && (
+              <div style={{ marginTop: 10, borderTop: "1px solid var(--line)", paddingTop: 10, display: "grid", gap: 12 }}>
+                {!activityByLoc[l.id] && <p style={{ margin: 0, color: "var(--muted)", fontSize: "0.9rem" }}>Loading site activity…</p>}
+                {activityByLoc[l.id]?.shifts && (
+                  <div>
+                    <p style={{ margin: "0 0 4px", fontWeight: 700, fontSize: "0.92rem" }}>
+                      Upcoming shifts: {activityByLoc[l.id].shifts.length === 25 ? "25+" : activityByLoc[l.id].shifts.length}
+                    </p>
+                    {activityByLoc[l.id].shifts.length === 0 && <p style={{ margin: 0, fontSize: "0.9rem", color: "var(--muted)" }}>No upcoming shifts scheduled at this site.</p>}
+                    {activityByLoc[l.id].shifts.slice(0, 3).map((s) => (
+                      <p key={s.id} style={{ margin: "2px 0", fontSize: "0.9rem" }}>
+                        {new Date(`${s.shift_date}T12:00:00`).toLocaleDateString()} • {String(s.start_time || "").slice(0, 5)}–{String(s.end_time || "").slice(0, 5)} • {s.who}
+                        {(s.position_name || s.department) ? ` • Working as: ${s.position_name || s.department}` : ""}
+                      </p>
+                    ))}
+                    <a href={`/app/${company.id}/schedule`} style={{ fontSize: "0.9rem", color: "var(--brand-deep)", fontWeight: 700 }}>Open the schedule →</a>
+                  </div>
+                )}
+                {activityByLoc[l.id]?.workOrders && (
+                  <div>
+                    <p style={{ margin: "0 0 4px", fontWeight: 700, fontSize: "0.92rem" }}>
+                      Work orders still open: {activityByLoc[l.id].workOrders.length === 25 ? "25+" : activityByLoc[l.id].workOrders.length}
+                    </p>
+                    {activityByLoc[l.id].workOrders.slice(0, 3).map((o) => (
+                      <p key={o.id} style={{ margin: "2px 0", fontSize: "0.9rem" }}>
+                        <a href={`/app/${company.id}/work-orders/${o.id}`} style={{ color: "var(--brand-deep)", fontWeight: 700 }}>{o.title}</a>
+                        {" "}• {o.status === "in_progress" ? "In progress" : "Open"} • {o.priority} priority
+                        {o.due_date ? ` • Due ${new Date(`${o.due_date}T12:00:00`).toLocaleDateString()}` : ""}
+                      </p>
+                    ))}
+                  </div>
+                )}
+                {activityByLoc[l.id]?.inspections && (
+                  <div>
+                    <p style={{ margin: "0 0 4px", fontWeight: 700, fontSize: "0.92rem" }}>
+                      Inspections: {activityByLoc[l.id].inspections.length === 25 ? "25+" : activityByLoc[l.id].inspections.length}
+                    </p>
+                    {activityByLoc[l.id].inspections.length === 0 && <p style={{ margin: 0, fontSize: "0.9rem", color: "var(--muted)" }}>No inspections recorded at this site yet.</p>}
+                    {activityByLoc[l.id].inspections[0] && (
+                      <p style={{ margin: "2px 0", fontSize: "0.9rem" }}>
+                        Most recent:{" "}
+                        <a href={`/app/${company.id}/inspections/${activityByLoc[l.id].inspections[0].id}`} style={{ color: "var(--brand-deep)", fontWeight: 700 }}>
+                          {new Date(`${activityByLoc[l.id].inspections[0].inspection_date}T12:00:00`).toLocaleDateString()}
+                        </a>
+                        {activityByLoc[l.id].inspections[0].score != null ? ` • Score ${activityByLoc[l.id].inspections[0].score} / 5` : ""}
+                      </p>
+                    )}
+                  </div>
+                )}
+                {activityByLoc[l.id]?.bidCounts && (
+                  <div>
+                    <p style={{ margin: "0 0 4px", fontWeight: 700, fontSize: "0.92rem" }}>Bids for this site</p>
+                    <p style={{ margin: "2px 0", fontSize: "0.9rem" }}>
+                      Accepted: {activityByLoc[l.id].bidCounts.accepted} • Sent: {activityByLoc[l.id].bidCounts.sent} • Draft: {activityByLoc[l.id].bidCounts.draft} • Declined: {activityByLoc[l.id].bidCounts.declined}
+                    </p>
+                  </div>
+                )}
+                {activityByLoc[l.id]?.invoices && (
+                  <div>
+                    <p style={{ margin: "0 0 4px", fontWeight: 700, fontSize: "0.92rem" }}>Invoices for this site</p>
+                    {activityByLoc[l.id].invoices.count === 0 && <p style={{ margin: 0, fontSize: "0.9rem", color: "var(--muted)" }}>No invoices issued to this site yet.</p>}
+                    {activityByLoc[l.id].invoices.count > 0 && (
+                      <p style={{ margin: "2px 0", fontSize: "0.9rem" }}>
+                        {activityByLoc[l.id].invoices.count} issued • Invoiced ${activityByLoc[l.id].invoices.invoiced.toFixed(2)} • Still owed ${activityByLoc[l.id].invoices.owed.toFixed(2)}
+                        {activityByLoc[l.id].invoices.latest && (
+                          <> • Latest: <a href={`/app/${company.id}/invoices/${activityByLoc[l.id].invoices.latest.id}`} style={{ color: "var(--brand-deep)", fontWeight: 700 }}>#{activityByLoc[l.id].invoices.latest.invoice_number}</a></>
+                        )}
+                      </p>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
             {canManage && (
             <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
               <button onClick={() => startEdit(l)} style={ghostButton}>Edit</button>
