@@ -16,10 +16,20 @@ import { useCompany } from "../../../../lib/company-context";
 //   approval first, so there is deliberately NO connect button.
 // * Every other card stays exactly as honest as before: not connected,
 //   and the button just opens the provider's own site.
+// * The ADP / Paychex / QuickBooks Payroll cards are EXTERNAL LINKS,
+//   not connections (verified: no API route, no token or credential
+//   storage, and no sync job exists for any of them -- the only
+//   provider the integration tables accept is "quickbooks", meaning
+//   QuickBooks Online accounting, migration 070). Their copy must
+//   never use send/sync language for WorkTeams, must not suggest a
+//   credential sign-in exists here, and must say plainly that no
+//   data moves either way. QuickBooks Payroll is a separate Intuit
+//   product from the QuickBooks Online accounting connection below;
+//   connecting accounting does not connect payroll.
 const PAYROLL_PROVIDERS = [
-  { name: "ADP", url: "https://www.adp.com", blurb: "Send hours to your ADP payroll account." },
-  { name: "Paychex", url: "https://www.paychex.com", blurb: "Sync hours with Paychex payroll." },
-  { name: "QuickBooks Payroll", url: "https://quickbooks.intuit.com/payroll/", blurb: "Use QuickBooks for payroll alongside your hours." },
+  { name: "ADP", url: "https://www.adp.com", blurb: "Payroll service you run in your own ADP account, outside WorkTeams." },
+  { name: "Paychex", url: "https://www.paychex.com", blurb: "Payroll service you run in your own Paychex account, outside WorkTeams." },
+  { name: "QuickBooks Payroll", url: "https://quickbooks.intuit.com/payroll/", blurb: "Intuit's payroll service, run in your own QuickBooks account, outside WorkTeams. It is separate from the QuickBooks Online accounting connection below -- connecting accounting does not connect payroll." },
 ];
 
 export default function ConnectionsPage() {
@@ -132,9 +142,10 @@ export default function ConnectionsPage() {
       <p className="eyebrow">CONNECTIONS</p>
       <h2 style={{ fontSize: "1.8rem" }}>Payroll & accounting links</h2>
       <p style={{ color: "var(--muted)" }}>
-        WorkTeams doesn't run payroll. Payroll providers below aren't connected yet --
-        their buttons open each provider's site so you can set up your own account there
-        and hand off hour reports by hand. QuickBooks Online accounting now connects for
+        WorkTeams doesn't run payroll. The payroll providers below are not connected to
+        WorkTeams -- their cards are external links, and their buttons open each
+        provider's own site so you can set up your own account there and hand off hour
+        reports by hand. QuickBooks Online accounting now connects for
         real: an owner or manager can link this company's own QuickBooks below.
       </p>
 
@@ -144,7 +155,13 @@ export default function ConnectionsPage() {
         </section>
       )}
 
-      <h3 style={{ marginTop: 26 }}>Payroll providers</h3>
+      <h3 style={{ marginTop: 26 }}>Payroll providers — external links, not connections</h3>
+      <p style={{ color: "var(--muted)" }}>
+        None of the providers in this section is connected to WorkTeams, and nothing syncs
+        to or from any of them. To hand off hours today, export the CSV from your Payroll
+        report and upload it on the provider's own site yourself.{" "}
+        <Link href={`/app/${company.id}/payroll`}>Open the Payroll report →</Link>
+      </p>
       <div className="portal-grid" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))" }}>
         <div className="portal-card" style={{ minHeight: 0, padding: 22 }}>
           <span className="card-kicker">Gusto</span>
@@ -159,10 +176,12 @@ export default function ConnectionsPage() {
         {PAYROLL_PROVIDERS.map((p) => (
           <div className="portal-card" key={p.name} style={{ minHeight: 0, padding: 22 }}>
             <span className="card-kicker">{p.name}</span>
-            <p style={{ ...statusBadge }}>⚪ Not connected</p>
+            <p style={{ ...statusBadge }}>⚪ Not connected — external link</p>
             <p style={{ marginTop: 8 }}>{p.blurb}</p>
             <p style={{ fontSize: "0.85rem", color: "var(--muted)" }}>
-              Connecting needs your {p.name} API credentials — not set up yet.
+              There is no connection between WorkTeams and {p.name}: no sign-in is saved
+              here, no credentials are entered here, and no hours or other data sync
+              either way. The button below just opens {p.name}'s own website.
             </p>
             <a
               href={p.url}
@@ -180,7 +199,7 @@ export default function ConnectionsPage() {
                 textDecoration: "none",
               }}
             >
-              Visit {p.name} to set up ↗
+              Go to {p.name}'s site ↗
             </a>
           </div>
         ))}

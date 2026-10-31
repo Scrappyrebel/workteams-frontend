@@ -198,3 +198,39 @@ test("Connections page honesty: QuickBooks is real, Gusto is coming soon, others
   assert.ok(page.includes("/api/integrations/quickbooks/connect"), "the QuickBooks card must wire the real connect route");
   assert.ok(page.includes("integration_connections"), "the QuickBooks card must read real connection status");
 });
+
+test("Connections page: link-only payroll cards wear external-link framing, never connection claims", () => {
+  const page = read("app/app/[companyId]/connections/page.js");
+  // No API route, token storage, or sync job exists for ADP, Paychex, or
+  // QuickBooks Payroll (migration 070 accepts provider 'quickbooks' --
+  // QuickBooks Online accounting -- only), so their cards must be
+  // labeled as what they are: external links.
+  assert.ok(
+    page.includes("Payroll providers — external links, not connections"),
+    "the payroll section heading must label the cards as external links, not connections"
+  );
+  assert.ok(
+    page.includes("Not connected — external link"),
+    "each link-only payroll card must carry the external-link status label"
+  );
+  assert.ok(
+    page.includes("no hours or other data sync"),
+    "each link-only payroll card must state plainly that no data syncs either way"
+  );
+  assert.ok(
+    page.includes("no credentials are entered here"),
+    "each link-only payroll card must state that no credential sign-in exists here"
+  );
+  // The false framing this replaces must never come back: WorkTeams
+  // does not send or sync hours to these providers, and no API
+  // credential flow exists for them.
+  assert.ok(!page.includes("Send hours to your ADP"), "ADP card must not claim WorkTeams sends hours");
+  assert.ok(!page.includes("Sync hours with Paychex"), "Paychex card must not claim WorkTeams syncs hours");
+  assert.ok(!page.includes("API credentials"), "payroll cards must not imply an API-credential connection exists");
+  // QuickBooks Payroll is a different product from the real QuickBooks
+  // Online accounting connection; the card must say so.
+  assert.ok(
+    page.includes("connecting accounting does not connect payroll"),
+    "the QuickBooks Payroll card must be disambiguated from the QuickBooks Online accounting connection"
+  );
+});
