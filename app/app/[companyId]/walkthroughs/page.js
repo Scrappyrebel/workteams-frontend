@@ -224,7 +224,7 @@ export default function WalkthroughsPage() {
 
           {qReady === false ? (
             <p style={{ fontSize: "0.85rem", color: "var(--muted)", margin: 0 }}>
-              The phone-question set turns on after database update 067 is run.
+              The phone-question set turns on with the latest WorkTeams update.
             </p>
           ) : (
             <div style={{ border: "1px solid var(--line)", borderRadius: 14, padding: 14 }}>

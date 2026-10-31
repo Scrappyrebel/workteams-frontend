@@ -132,7 +132,7 @@ test("UI: nav is manager-only and both pages gate on owner/admin and degrade pre
     assert.ok(existsSync(p), `${p} must exist`);
     const src = read(p);
     assert.ok(src.includes('"owner"') && src.includes('"admin"'), `${p} must gate on owner/admin roles`);
-    assert.ok(src.includes("061"), `${p} must handle the pre-migration state (migration 061 note)`);
+    assert.ok(src.includes("turns on with the latest WorkTeams update"), `${p} must handle the not-yet-switched-on state in plain user words (no migration number)`);
     assert.ok(!src.includes("time_entries") && !src.includes("shift_videos") && !src.includes("comm_book"),
       `${p} must not touch the protected time clock / video / book surfaces`);
   }

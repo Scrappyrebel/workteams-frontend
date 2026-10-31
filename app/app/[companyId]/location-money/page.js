@@ -44,7 +44,6 @@ export default function LocationMoneyPage() {
       estimated: Number(r.estimated) || 0,
       issuedInvoices: Number(r.issued_invoices) || 0,
       invoiced: Number(r.invoiced) || 0,
-      credits: Number(r.credits) || 0,
       paid: Number(r.paid) || 0,
       balance: Number(r.balance_due) || 0,
     })));
@@ -79,11 +78,10 @@ export default function LocationMoneyPage() {
     (s, r) => ({
       estimated: s.estimated + r.estimated,
       invoiced: s.invoiced + r.invoiced,
-      credits: s.credits + r.credits,
       paid: s.paid + r.paid,
       balance: s.balance + r.balance,
     }),
-    { estimated: 0, invoiced: 0, credits: 0, paid: 0, balance: 0 }
+    { estimated: 0, invoiced: 0, paid: 0, balance: 0 }
   );
 
   return (
@@ -95,9 +93,9 @@ export default function LocationMoneyPage() {
         same way Profitability values them. <strong>Invoiced</strong> = issued invoices
         only (drafts are not billed yet; voided invoices are not counted).{" "}
         <strong>Paid</strong> = payments recorded against those invoices.{" "}
-        <strong>Balance due</strong> = invoiced − credits − paid. WorkTeams does not issue
+        <strong>Balance due</strong> = invoiced − paid. WorkTeams does not issue
         credit notes — an issued invoice is corrected by voiding it and issuing a new
-        one — so Credits is $0.00 until a credit feature exists. This page is read-only;
+        one. This page is read-only;
         it changes nothing. See also{" "}
         <Link href={`/app/${company.id}/invoices`} style={{ color: "var(--brand-deep)", fontWeight: 700 }}>
           Invoices
@@ -112,12 +110,12 @@ export default function LocationMoneyPage() {
       {unavailable ? (
         <section className="panel" style={{ padding: 20, margin: "16px 0" }}>
           <p style={{ margin: 0 }}>
-            <strong>This view isn't switched on for this database yet.</strong>
+            <strong>This view isn't switched on yet.</strong>
           </p>
           <p style={{ color: "var(--muted)", marginBottom: 0 }}>
-            A one-time database update (migration 077) creates the rollup it reads from.
-            Until the owner runs it, this page stays empty — nothing else in the app is
-            affected, and Invoices and Profitability keep working as they do today.
+            This view turns on with the latest WorkTeams update. Until then, this page
+            stays empty — nothing else in the app is affected, and Invoices and
+            Profitability keep working as they do today.
           </p>
         </section>
       ) : computing ? (
@@ -144,8 +142,8 @@ export default function LocationMoneyPage() {
                   </span>
                 </div>
                 <div style={{ fontSize: "0.88rem", color: "var(--muted)", marginTop: 6 }}>
-                  Estimated {money(r.estimated)} • Invoiced {money(r.invoiced)} • Credits{" "}
-                  {money(r.credits)} • Paid {money(r.paid)} • Balance {money(r.balance)}
+                  Estimated {money(r.estimated)} • Invoiced {money(r.invoiced)} • Paid{" "}
+                  {money(r.paid)} • Balance {money(r.balance)}
                 </div>
                 <div style={{ fontSize: "0.85rem", color: "var(--muted)", marginTop: 4 }}>
                   {counted(r.acceptedBids, "accepted bid", "accepted bids")} •{" "}
