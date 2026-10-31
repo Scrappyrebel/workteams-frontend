@@ -6,6 +6,7 @@ import IosInstallHint from "../../components/IosInstallHint";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "../../lib/supabase";
+import { friendlyAuthErrorMessage } from "../../lib/auth-errors";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -26,7 +27,7 @@ export default function LoginPage() {
       if (error) throw error;
       router.replace("/app");
     } catch (err) {
-      setError(err.message || "Could not sign in.");
+      setError(friendlyAuthErrorMessage(err));
     } finally {
       setLoading(false);
     }

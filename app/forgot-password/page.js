@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { supabase } from "../../lib/supabase";
+import { friendlyAuthErrorMessage } from "../../lib/auth-errors";
 
 export default function ForgotPasswordPage() {
   const [email, setEmail] = useState("");
@@ -32,7 +33,7 @@ export default function ForgotPasswordPage() {
       if (error) throw error;
       setSent(true);
     } catch (err) {
-      setError(err.message || "Could not send the reset email.");
+      setError(friendlyAuthErrorMessage(err, t));
     } finally {
       setLoading(false);
     }
