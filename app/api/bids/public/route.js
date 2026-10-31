@@ -72,7 +72,24 @@ export async function GET(req) {
       const mult = { weekly: 4.33, "2x-week": 8.67, "3x-week": 13, "5x-week": 21.67, biweekly: 2.17, monthly: 1 }[freq] || 0;
       if (mult) monthlyNote = `~$${(total * mult).toFixed(2)}/mo`;
     }
-    return NextResponse.json({ bid: { ...bid, company_name: company?.name }, items: items || [], total, totalLabel, frequencyLabel, monthlyNote }, { headers: { "Cache-Control": "no-store" } });
+    // Public payload is an explicit allowlist — exactly the fields the
+    // client review page renders. Never spread the bid row: its internal
+    // id and company_id (and any column added to the select later) must
+    // not ride along to unauthenticated visitors.
+    const publicBid = {
+      title: bid.title,
+      client_name: bid.client_name,
+      description: bid.description,
+      status: bid.status,
+      valid_until: bid.valid_until,
+      pricing_mode: bid.pricing_mode,
+      hours: bid.hours,
+      hourly_rate: bid.hourly_rate,
+      square_footage: bid.square_footage,
+      rate_per_sqft: bid.rate_per_sqft,
+      company_name: company?.name,
+    };
+    return NextResponse.json({ bid: publicBid, items: items || [], total, totalLabel, frequencyLabel, monthlyNote }, { headers: { "Cache-Control": "no-store" } });
   } catch (e) {
     console.error("bid public lookup error", e);
     return NextResponse.json({ error: "Could not load the proposal." }, { status: 500 });
