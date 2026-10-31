@@ -82,7 +82,7 @@ test("estimated is priced exactly as the Profitability page prices accepted bids
 test("the page reads only through the function and degrades honestly", () => {
   const page = read(PAGE);
   assert.ok(page.includes('rpc("workteams_location_money_rollup"'), "page calls the rollup function");
-  assert.ok(page.includes("migration 077"), "setup-pending copy names the migration");
+  assert.ok(page.includes("turns on with the latest WorkTeams update"), "setup-pending copy names the feature state in plain user words (no migration number)");
   assert.ok(page.includes('"No location"'), "no-location bucket is labeled");
   assert.ok(page.includes("unallocated"), "no-location row is flagged for its note");
   // Read-only page: no writes of any kind.
