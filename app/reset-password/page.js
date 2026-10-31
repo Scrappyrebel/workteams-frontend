@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "../../lib/supabase";
+import { friendlyAuthErrorMessage } from "../../lib/auth-errors";
 
 export default function ResetPasswordPage() {
   const router = useRouter();
@@ -92,7 +93,7 @@ export default function ResetPasswordPage() {
       router.replace(isCustomer ?
         `/customer-login?lang=${language}&reset=1` : "/login");
     } catch (err) {
-      setError(err.message || "Could not update the password.");
+      setError(friendlyAuthErrorMessage(err, t));
     } finally {
       setLoading(false);
     }

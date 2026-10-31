@@ -5,6 +5,7 @@ import CommercialConstructionNotice from "../../components/CommercialConstructio
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "../../lib/supabase";
+import { friendlyAuthErrorMessage } from "../../lib/auth-errors";
 import { getSession } from "../../lib/session";
 
 export default function SignupPage() {
@@ -35,7 +36,7 @@ export default function SignupPage() {
         );
       }
     } catch (err) {
-      setError(err.message || "Could not create the account.");
+      setError(friendlyAuthErrorMessage(err));
     } finally {
       setLoading(false);
     }
