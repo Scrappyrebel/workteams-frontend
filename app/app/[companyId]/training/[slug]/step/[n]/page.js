@@ -44,11 +44,12 @@ export default function StepPage() {
   if (!step) return <p>Step not found.</p>;
 
   const back = `/app/${companyId}/training/${slug}`;
+  const stepDef = STEP_DEFS.find((d) => d.n === stepNum) || {};
 
   return (
     <div>
       <Link href={back} className="card-link">← {data.course.title}</Link>
-      <p className="eyebrow" style={{ marginTop: 12 }}>STEP {stepNum} OF {STEP_DEFS.length}</p>
+      <p className="eyebrow" style={{ marginTop: 12 }}>STEP {stepNum} OF {STEP_DEFS.length}{stepDef.label ? ` · ${stepDef.label.toUpperCase()}` : ""}</p>
       <h2 style={{ fontSize: "1.6rem" }}>{step.title}</h2>
       {stepNum <= 5 && (
         <LessonStep course={data.course} step={step} enrollment={enrollment} back={back} />
@@ -336,8 +337,18 @@ function EvidenceStep({ course, step, enrollment, back }) {
   const [notes, setNotes] = useState("");
   const [file, setFile] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
 
   async function submit() {
+    // This step exists to collect proof of the practical work. Notes are
+    // supplementary ("anything the photo doesn't show") and were never a
+    // text-only evidence mode, so a submission with no photo is not
+    // evidence. Migration 082 makes the database reject it too.
+    if (!file) {
+      setError("Add a photo of your finished work before submitting — your manager reviews this evidence in the next step.");
+      return;
+    }
+    setError("");
     setBusy(true);
     try {
       let url = null;
@@ -379,9 +390,19 @@ function EvidenceStep({ course, step, enrollment, back }) {
       </p>
       <div className="portal-card" style={{ display: "grid", gap: 12 }}>
         <label style={{ display: "grid", gap: 6 }}>
-          <span style={{ fontWeight: 700 }}>Photo evidence</span>
-          <input type="file" accept="image/*" onChange={(e) => setFile(e.target.files[0])} />
+          <span style={{ fontWeight: 700 }}>Photo evidence (required)</span>
+          <input
+            type="file"
+            accept="image/*"
+            onChange={(e) => {
+              setFile(e.target.files[0]);
+              if (e.target.files[0]) setError("");
+            }}
+          />
         </label>
+        {error && (
+          <p role="alert" style={{ color: "#b91c1c", fontWeight: 700, margin: 0 }}>{error}</p>
+        )}
         <label style={{ display: "grid", gap: 6 }}>
           <span style={{ fontWeight: 700 }}>Notes (optional)</span>
           <textarea
