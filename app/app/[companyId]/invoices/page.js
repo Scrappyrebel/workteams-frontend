@@ -156,11 +156,11 @@ export default function InvoicesPage() {
       {unavailable ? (
         <section className="panel" style={{ padding: 20, margin: "16px 0" }}>
           <p style={{ margin: 0 }}>
-            <strong>Invoicing isn't switched on for this database yet.</strong>
+            <strong>Invoicing isn't switched on yet.</strong>
           </p>
           <p style={{ color: "var(--muted)", marginBottom: 0 }}>
-            A one-time database update (migration 061) creates the invoice tables. Until the
-            owner runs it, this page stays empty — nothing else in the app is affected.
+            Invoicing turns on with the latest WorkTeams update. Until then, this page
+            stays empty — nothing else in the app is affected.
           </p>
         </section>
       ) : (

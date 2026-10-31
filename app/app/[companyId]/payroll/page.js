@@ -16,6 +16,7 @@ function isoDate(d) {
 export default function PayrollPage() {
   const { company, member, loading } = useCompany();
   const [rows, setRows] = useState([]);
+  const [locationNames, setLocationNames] = useState({});
   const [range, setRange] = useState(() => {
     const end = new Date();
     const start = new Date();
@@ -45,10 +46,20 @@ export default function PayrollPage() {
     // proof_override_used arrives with migration 052 — read it tolerantly:
     // if the API cannot serve the column yet, retry without it rather
     // than blanking the payroll report.
+    // Location names for the per-shift detail below. Tolerant: if the
+    // locations read fails, the detail simply shows no location rather
+    // than blanking the report.
+    const { data: locs } = await sb
+      .from("locations")
+      .select("id, name")
+      .eq("company_id", company.id);
+    const locById = {};
+    for (const l of locs || []) locById[l.id] = l.name;
+    setLocationNames(locById);
     const runEntries = (withFlag) => {
       let q = sb
         .from("time_entries")
-        .select("member_id, clock_in, clock_out, clock_in_role, pay_rate_applied" + (withFlag ? ", proof_override_used" : ""))
+        .select("id, member_id, location_id, clock_in, clock_out, clock_in_role, pay_rate_applied" + (withFlag ? ", proof_override_used" : ""))
         .eq("company_id", company.id)
         .gte("clock_in", range.start + "T00:00:00")
         .lte("clock_in", range.end + "T23:59:59")
@@ -71,7 +82,7 @@ export default function PayrollPage() {
     }
 
     const totals = {};
-    for (const m of members || []) totals[m.id] = { member: m, hours: 0, shifts: 0, cleanerHours: 0, managerHours: 0, estPay: 0, overrideShifts: 0 };
+    for (const m of members || []) totals[m.id] = { member: m, hours: 0, shifts: 0, cleanerHours: 0, managerHours: 0, estPay: 0, overrideShifts: 0, details: [] };
     for (const e of entries || []) {
       const t = totals[e.member_id];
       if (!t) continue;
@@ -79,13 +90,31 @@ export default function PayrollPage() {
       t.hours += hrs;
       t.shifts += 1;
       if (e.proof_override_used) t.overrideShifts += 1;
+      // Per-shift detail behind the total (the same entries the totals
+      // above are summed from — nothing new is calculated here beyond
+      // the per-shift slice of the existing manager estimate).
+      const detail = {
+        id: e.id,
+        clockIn: e.clock_in,
+        clockOut: e.clock_out,
+        hours: hrs,
+        hat: e.clock_in_role === "manager" ? "manager" : "cleaner",
+        locationId: e.location_id || null,
+        override: !!e.proof_override_used,
+        estPay: 0,
+      };
       if (isManager) {
-        const hat = e.clock_in_role === "manager" ? "manager" : "cleaner";
+        const hat = detail.hat;
         // Shared chain (lib/pay-rate) — Profitability resolves identically.
         const rate = resolveEntryPayRate(e, payByMember[e.member_id]);
         if (hat === "manager") t.managerHours += hrs; else t.cleanerHours += hrs;
         t.estPay += hrs * rate;
+        detail.estPay = hrs * rate;
       }
+      t.details.push(detail);
+    }
+    for (const t of Object.values(totals)) {
+      t.details.sort((a, b) => new Date(a.clockIn) - new Date(b.clockIn));
     }
     let list = Object.values(totals);
     if (!isManager) {
@@ -123,6 +152,37 @@ export default function PayrollPage() {
     URL.revokeObjectURL(url);
   }
 
+  // Additive second export: one row per closed shift, so a total can be
+  // checked shift by shift. The summary CSV above is unchanged.
+  function exportDetailCsv() {
+    const lines = isManager
+      ? ["name,email,date,clock_in,clock_out,hours,worked_as,location,est_pay,proof_override"]
+      : ["name,email,date,clock_in,clock_out,hours,worked_as,location"];
+    for (const r of rows) {
+      for (const d of r.details || []) {
+        const base = [
+          `"${r.member.display_name}"`,
+          r.member.email,
+          isoDate(new Date(d.clockIn)),
+          `"${new Date(d.clockIn).toLocaleString()}"`,
+          `"${new Date(d.clockOut).toLocaleString()}"`,
+          d.hours.toFixed(2),
+          d.hat,
+          `"${locationNames[d.locationId] || ""}"`,
+        ];
+        const tail = isManager ? [d.estPay.toFixed(2), d.override ? "yes" : "no"] : [];
+        lines.push(base.concat(tail).join(","));
+      }
+    }
+    const blob = new Blob([lines.join("\n")], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `hours_detail_${range.start}_${range.end}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
   const totalHours = rows.reduce((s, r) => s + r.hours, 0);
 
   if (loading || !company) return <p>Loading…</p>;
@@ -130,9 +190,15 @@ export default function PayrollPage() {
   return (
     <div>
       <p className="eyebrow">{isManager ? "PAYROLL REPORTS" : "MY HOURS"}</p>
-      <h2 style={{ fontSize: "1.8rem" }}>{isManager ? "Payroll-ready hour report" : "My hours"}</h2>
+      <h2 style={{ fontSize: "1.8rem" }}>{isManager ? "Hour report" : "My hours"}</h2>
       <p style={{ color: "var(--muted)" }}>
         Closed shifts only — still-open clock-ins don't count until someone clocks out.
+      </p>
+      <p style={{ color: "var(--muted)" }}>
+        Every closed shift behind a total is listed under that person below, and the
+        shift-detail CSV lists one row per shift. This report has no overtime split,
+        no break deduction — breaks are not recorded on a shift — and no approval
+        step. Your payroll provider works out overtime and final pay from these hours.
       </p>
 
       <section className="panel" style={{ padding: 20, margin: "16px 0" }}>
@@ -146,6 +212,7 @@ export default function PayrollPage() {
             <input type="date" value={range.end} onChange={(e) => setRange({ ...range, end: e.target.value })} style={input} />
           </label>
           <button onClick={exportCsv} style={button}>Export CSV</button>
+          <button onClick={exportDetailCsv} style={button}>Export shift detail CSV</button>
         </div>
       </section>
 
@@ -173,6 +240,29 @@ export default function PayrollPage() {
               <div style={{ fontSize: "0.85rem", fontWeight: 700, color: "#9b2d15", marginTop: 6 }}>
                 ⚠ {r.overrideShifts} shift{r.overrideShifts === 1 ? "" : "s"} used a proof override (required proof not uploaded) — see Time entries for the reason{r.overrideShifts === 1 ? "" : "s"}
               </div>
+            )}
+            {r.details && r.details.length > 0 && (
+              <details style={{ marginTop: 8 }}>
+                <summary style={{ cursor: "pointer", fontSize: "0.88rem", fontWeight: 700, color: "var(--brand-deep)" }}>
+                  Shift detail ({r.details.length} shift{r.details.length === 1 ? "" : "s"})
+                </summary>
+                <div style={{ display: "grid", gap: 4, marginTop: 8 }}>
+                  {r.details.map((d) => (
+                    <div key={d.id} style={{ fontSize: "0.85rem", color: "var(--muted)", display: "flex", gap: 8, flexWrap: "wrap" }}>
+                      <span>
+                        {new Date(d.clockIn).toLocaleDateString()}{" "}
+                        {new Date(d.clockIn).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })} –{" "}
+                        {new Date(d.clockOut).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
+                      </span>
+                      <span style={{ fontWeight: 700 }}>{d.hours.toFixed(2)} h</span>
+                      {locationNames[d.locationId] && <span>{locationNames[d.locationId]}</span>}
+                      {isManager && <span>{d.hat}</span>}
+                      {isManager && d.estPay > 0 && <span>est. ${d.estPay.toFixed(2)}</span>}
+                      {d.override && <span style={{ fontWeight: 700, color: "#9b2d15" }}>proof override</span>}
+                    </div>
+                  ))}
+                </div>
+              </details>
             )}
           </div>
         ))}

@@ -379,11 +379,11 @@ export default function InvoiceDetailPage() {
         <Link href={`/app/${company.id}/invoices`} className="back-link">← Back to invoices</Link>
         <section className="panel" style={{ padding: 20, margin: "16px 0" }}>
           <p style={{ margin: 0 }}>
-            <strong>Invoicing isn't switched on for this database yet.</strong>
+            <strong>Invoicing isn't switched on yet.</strong>
           </p>
           <p style={{ color: "var(--muted)", marginBottom: 0 }}>
-            A one-time database update (migration 061) creates the invoice tables. Until the
-            owner runs it, invoices can't be opened — nothing else in the app is affected.
+            Invoicing turns on with the latest WorkTeams update. Until then, invoices
+            can't be opened — nothing else in the app is affected.
           </p>
         </section>
       </div>

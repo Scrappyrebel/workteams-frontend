@@ -82,7 +82,7 @@ test("estimated is priced exactly as the Profitability page prices accepted bids
 test("the page reads only through the function and degrades honestly", () => {
   const page = read(PAGE);
   assert.ok(page.includes('rpc("workteams_location_money_rollup"'), "page calls the rollup function");
-  assert.ok(page.includes("migration 077"), "setup-pending copy names the migration");
+  assert.ok(page.includes("turns on with the latest WorkTeams update"), "setup-pending copy names the feature state in plain user words (no migration number)");
   assert.ok(page.includes('"No location"'), "no-location bucket is labeled");
   assert.ok(page.includes("unallocated"), "no-location row is flagged for its note");
   // Read-only page: no writes of any kind.
@@ -94,6 +94,27 @@ test("the page reads only through the function and degrades honestly", () => {
   // bypassed by a crafted page-level query.
   assert.ok(!page.includes('.from("invoices")'), "page does not read invoices directly");
   assert.ok(!page.includes('.from("bids")'), "page does not read bids directly");
+});
+
+test("the page shows no Credits figure — WorkTeams tracks no credits (Phase 3, P3-03)", () => {
+  const page = read(PAGE);
+  // Classification (c): no credit-note capability exists anywhere in
+  // WorkTeams — no table, no invoice column, no UI, no QuickBooks
+  // CreditMemo; migration 077's rollup returns a literal 0::numeric.
+  // A permanently-$0.00 figure states a false fact ("credits were $0"),
+  // so the report must not render one: no per-row Credits amount, no
+  // totals accumulator for it, and the balance formula must not name
+  // a credits term. The honest explanatory note stays: the product
+  // does not issue credit notes and corrections are void + re-issue.
+  assert.ok(!page.includes("r.credits"), "page does not read a credits value from the rollup");
+  assert.ok(!page.includes("money(r.credits)"), "page renders no per-row Credits amount");
+  assert.ok(!page.includes("totals.credits"), "totals do not sum a credits figure");
+  assert.ok(!page.includes("invoiced − credits − paid"), "balance formula names no credits term");
+  assert.ok(page.includes("invoiced − paid"), "balance formula is invoiced − paid");
+  assert.ok(
+    page.includes("does not issue\n        credit notes"),
+    "honest no-credit-notes note is kept"
+  );
 });
 
 test("nav gains the page for managers and up, nothing else moves", () => {
