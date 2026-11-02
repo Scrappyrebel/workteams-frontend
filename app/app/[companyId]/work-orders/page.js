@@ -6,6 +6,16 @@ import { supabase } from "../../../../lib/supabase";
 import { useCompany } from "../../../../lib/company-context";
 import { useClockedIn, requireClockedIn } from "../../../../lib/use-clocked-in";
 import { canUseWithRole } from "../../../../lib/tiers";
+import { chicagoToday } from "../../../../lib/dates";
+import {
+  isWorkOrderOverdue,
+  isWorkOrderDueToday,
+  workOrderDaysOverdue,
+  countWorkOrdersByStatus,
+  countOverdueWorkOrders,
+  searchWorkOrders,
+  sortWorkOrders,
+} from "../../../../lib/work-order-list.mjs";
 
 const emptyForm = {
   title: "",
@@ -40,6 +50,8 @@ export default function WorkOrdersPage() {
   const [form, setForm] = useState(emptyForm);
   const [saving, setSaving] = useState(false);
   const [filter, setFilter] = useState("open");
+  const [query, setQuery] = useState("");
+  const [sort, setSort] = useState("newest");
 
   const isManager = member && (member.role === "owner" || member.role === "admin");
   const allowed = canUseWithRole(company?.effectiveTier || company?.tier, "workorders", member?.role);
@@ -126,7 +138,33 @@ export default function WorkOrdersPage() {
     );
   }
 
-  const shown = filter === "all" ? orders : orders.filter((o) => o.status === filter);
+  // Depth (D-WT-29): triage derived on the client from the rows the
+  // load above already returned — no query, insert, or save changes.
+  // "today" is the company's own day (the invoices pages' pattern), so
+  // an overdue flag turns over at the company's midnight, not UTC's.
+  const today = chicagoToday(company?.timezone);
+  const counts = countWorkOrdersByStatus(orders);
+  const overdueCount = countOverdueWorkOrders(orders, today);
+  const byFilter =
+    filter === "all"
+      ? orders
+      : filter === "overdue"
+        ? orders.filter((o) => isWorkOrderOverdue(o, today))
+        : orders.filter((o) => o.status === filter);
+  const shown = sortWorkOrders(
+    searchWorkOrders(byFilter, query, { status: STATUS_LABELS, priority: PRIORITY_LABELS }),
+    sort
+  );
+  const emptyText =
+    orders.length === 0
+      ? "No work orders here."
+      : query.trim()
+        ? `No work orders match "${query.trim()}".`
+        : filter === "overdue"
+          ? "No overdue work orders."
+          : filter === "all"
+            ? "No work orders here."
+            : `No ${STATUS_LABELS[filter].toLowerCase()} work orders.`;
 
   return (
     <div>
@@ -215,8 +253,40 @@ export default function WorkOrdersPage() {
         </section>
       )}
 
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginBottom: 10 }}>
+        <input
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Search title, description, location, or assignee"
+          aria-label="Search work orders"
+          style={{ ...input, flex: "1 1 240px", width: "auto" }}
+        />
+        <label style={{ fontSize: "0.9rem", color: "var(--muted)" }}>
+          Sort{" "}
+          <select
+            value={sort}
+            onChange={(e) => setSort(e.target.value)}
+            aria-label="Sort work orders"
+            style={{ ...input, width: "auto", marginLeft: 4 }}
+          >
+            <option value="newest">Newest first</option>
+            <option value="due_date">Due date (soonest first)</option>
+            <option value="priority">Priority (highest first)</option>
+          </select>
+        </label>
+      </div>
+
+      {orders.length > 0 && (
+        <p style={{ color: "var(--muted)", margin: "0 0 12px" }}>
+          Showing {shown.length} of {orders.length} work orders.
+          {overdueCount > 0 && (
+            <strong style={{ color: "#b3261e" }}> {overdueCount} overdue.</strong>
+          )}
+        </p>
+      )}
+
       <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 14 }}>
-        {["open", "in_progress", "completed", "cancelled", "all"].map((s) => (
+        {["open", "in_progress", "completed", "cancelled", "all", "overdue"].map((s) => (
           <button
             key={s}
             onClick={() => setFilter(s)}
@@ -226,13 +296,14 @@ export default function WorkOrdersPage() {
               color: filter === s ? "#fff" : "var(--ink)",
             }}
           >
-            {s === "all" ? "All" : STATUS_LABELS[s]}
+            {s === "all" ? "All" : s === "overdue" ? "Overdue" : STATUS_LABELS[s]} (
+            {s === "overdue" ? overdueCount : counts[s]})
           </button>
         ))}
       </div>
 
       <div style={{ display: "grid", gap: 10 }}>
-        {shown.length === 0 && <p style={{ color: "var(--muted)" }}>No work orders here.</p>}
+        {shown.length === 0 && <p style={{ color: "var(--muted)" }}>{emptyText}</p>}
         {shown.map((o) => (
           <Link
             key={o.id}
@@ -256,6 +327,17 @@ export default function WorkOrdersPage() {
               {o.assignee_name}
               {o.due_date ? ` • due ${o.due_date}` : ""}
             </p>
+            {isWorkOrderOverdue(o, today) && (
+              <p style={{ margin: "4px 0 0", color: "#b3261e", fontWeight: 700, fontSize: "0.9rem" }}>
+                Overdue — {workOrderDaysOverdue(o, today)}{" "}
+                {workOrderDaysOverdue(o, today) === 1 ? "day" : "days"} past due
+              </p>
+            )}
+            {isWorkOrderDueToday(o, today) && (
+              <p style={{ margin: "4px 0 0", color: "#8a5a00", fontWeight: 700, fontSize: "0.9rem" }}>
+                Due today
+              </p>
+            )}
             <span className="card-link">Open →</span>
           </Link>
         ))}
