@@ -5,6 +5,14 @@ import { useEffect, useState } from "react";
 import { supabase } from "../../../../lib/supabase";
 import { useCompany } from "../../../../lib/company-context";
 import { isSupervisorRole } from "../../../../lib/roles";
+import {
+  loadEmergencyAlertEvents,
+  recordEmergencyAlertEvent,
+  latestEventByAlert,
+  filterEmergencyAlerts,
+  alertAgeLabel,
+  waitingSummary,
+} from "../../../../lib/emergency-alert-events";
 
 // Customer portal alerts (migration 065) carry the request id in their
 // dedupe_key — customer_portal_request:<id> or
@@ -25,17 +33,70 @@ export default function EmergencyPage() {
   const { company, member, loading } = useCompany();
   const [alerts, setAlerts] = useState([]);
   const [busy, setBusy] = useState(null);
+  // Depth (D-WT-53): today's default view is unchanged — the newest 50
+  // alerts. "Show more alerts" raises the limit in steps of 50.
+  const [limit, setLimit] = useState(50);
+  // Triage filters over the alerts already loaded (stored fields only).
+  const [categoryFilter, setCategoryFilter] = useState("all");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [whenFilter, setWhenFilter] = useState("all");
+  // Assignment/resolution record (migration 086). Loaded fail-soft:
+  // before 086 runs, eventsOk stays false and none of the record
+  // layer renders — the page is exactly as it was.
+  const [eventsOk, setEventsOk] = useState(false);
+  const [events, setEvents] = useState([]);
+  const [names, setNames] = useState({});
+  const [responders, setResponders] = useState([]);
+  const [assignPick, setAssignPick] = useState({});
+  const [resolutionNote, setResolutionNote] = useState({});
+  const [recordBusy, setRecordBusy] = useState(null);
 
   const canAck = isSupervisorRole(member?.role);
 
   async function load() {
-    const { data } = await supabase()
+    const sb = supabase();
+    const { data } = await sb
       .from("emergency_alerts")
-      .select("id, audience, category, message, location_name, dedupe_key, created_at, acknowledged_at, company_members!emergency_alerts_sender_member_id_fkey(display_name)")
+      .select("id, audience, category, message, location_name, dedupe_key, created_at, acknowledged_at, acknowledged_by, company_members!emergency_alerts_sender_member_id_fkey(display_name)")
       .eq("company_id", company.id)
       .order("created_at", { ascending: false })
-      .limit(50);
-    setAlerts(data || []);
+      .limit(limit);
+    const rows = data || [];
+    setAlerts(rows);
+    // Record layer: events for the loaded alerts, plus the names they
+    // reference (acknowledged_by, assignees, actors) resolved through
+    // team_directory — the roster view every company member can read.
+    // Any failure leaves the record layer hidden and the log untouched.
+    const ev = await loadEmergencyAlertEvents(sb, rows.map((r) => r.id));
+    setEventsOk(ev.ok);
+    setEvents(ev.events);
+    if (ev.ok) {
+      const ids = new Set();
+      for (const r of rows) if (r.acknowledged_by) ids.add(r.acknowledged_by);
+      for (const e of ev.events) {
+        if (e.assignee_member_id) ids.add(e.assignee_member_id);
+        if (e.actor_id) ids.add(e.actor_id);
+      }
+      if (ids.size > 0) {
+        const { data: dir } = await sb
+          .from("team_directory")
+          .select("id, display_name")
+          .in("id", [...ids]);
+        const map = {};
+        for (const m of dir || []) map[m.id] = m.display_name;
+        setNames(map);
+      }
+      if (canAck) {
+        const { data: dir } = await sb
+          .from("team_directory")
+          .select("id, display_name, role")
+          .eq("company_id", company.id)
+          .order("display_name");
+        setResponders(
+          (dir || []).filter((m) => ["owner", "admin", "supervisor"].includes(m.role))
+        );
+      }
+    }
   }
 
   useEffect(() => {
@@ -45,7 +106,7 @@ export default function EmergencyPage() {
       return () => clearInterval(t);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loading, company]);
+  }, [loading, company, limit]);
 
   async function acknowledge(id) {
     setBusy(id);
@@ -68,9 +129,54 @@ export default function EmergencyPage() {
     setBusy(null);
   }
 
+  // Record an assignment or a resolution for an alert. These are new,
+  // additive records (migration 086) written straight to the events
+  // table by supervisors and up — the same roles that can acknowledge.
+  // They never touch the acknowledge path above, and a failed record
+  // changes nothing on the alert itself.
+  async function recordEvent(alertRow, eventType) {
+    setRecordBusy(alertRow.id);
+    try {
+      const okWrite = await recordEmergencyAlertEvent(supabase(), {
+        alertId: alertRow.id,
+        companyId: company.id,
+        actorId: member?.id || null,
+        eventType,
+        assigneeMemberId:
+          eventType === "assigned" ? assignPick[alertRow.id] || null : null,
+        detail: eventType === "resolved" ? resolutionNote[alertRow.id] || "" : "",
+      });
+      if (!okWrite) throw new Error("Could not save the record. Try again.");
+      if (eventType === "resolved") {
+        setResolutionNote((prev) => ({ ...prev, [alertRow.id]: "" }));
+      }
+      await load();
+    } catch (e) {
+      alert(e.message);
+    }
+    setRecordBusy(null);
+  }
+
   if (loading || !company) return <p>Loading…</p>;
 
   const unacked = alerts.filter((a) => !a.acknowledged_at);
+  const nowMs = Date.now();
+  const waiting = waitingSummary(alerts, nowMs);
+  const resolvedByAlert = latestEventByAlert(events, "resolved");
+  const assignedByAlert = latestEventByAlert(events, "assigned");
+  const resolvedIds = new Set(resolvedByAlert.keys());
+  const categoryOptions = [
+    ...new Set(alerts.map((a) => a.category || "emergency")),
+  ].sort();
+  const visibleAlerts = filterEmergencyAlerts(alerts, {
+    category: categoryFilter,
+    status: statusFilter,
+    when: whenFilter,
+    resolvedIds,
+    nowMs,
+  });
+  const filtersActive =
+    categoryFilter !== "all" || statusFilter !== "all" || whenFilter !== "all";
 
   return (
     <div>
@@ -82,12 +188,66 @@ export default function EmergencyPage() {
           {unacked.length} needing a response right now
         </p>
       )}
+      {waiting.overHour > 0 && (
+        <p style={{ fontWeight: 700, color: "#b3261e", marginTop: 4 }}>
+          {waiting.overHour} waiting over an hour · longest wait{" "}
+          {alertAgeLabel(new Date(nowMs - waiting.oldestMs).toISOString(), nowMs)}
+        </p>
+      )}
+      {alerts.length > 0 && (
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 12 }}>
+          <label style={{ fontSize: "0.85rem", fontWeight: 700 }}>
+            Category{" "}
+            <select
+              value={categoryFilter}
+              onChange={(e) => setCategoryFilter(e.target.value)}
+            >
+              <option value="all">All categories</option>
+              {categoryOptions.map((c) => (
+                <option key={c} value={c}>
+                  {c.replaceAll("_", " ")}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label style={{ fontSize: "0.85rem", fontWeight: 700 }}>
+            Status{" "}
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+            >
+              <option value="all">All alerts</option>
+              <option value="needs_response">Needs a response</option>
+              <option value="responded">Responded</option>
+              <option value="resolved">Resolved</option>
+            </select>
+          </label>
+          <label style={{ fontSize: "0.85rem", fontWeight: 700 }}>
+            When{" "}
+            <select
+              value={whenFilter}
+              onChange={(e) => setWhenFilter(e.target.value)}
+            >
+              <option value="all">All time</option>
+              <option value="today">Today</option>
+              <option value="7d">Last 7 days</option>
+              <option value="30d">Last 30 days</option>
+            </select>
+          </label>
+        </div>
+      )}
 
       <div style={{ display: "grid", gap: 10, marginTop: 12 }}>
         {alerts.length === 0 && (
           <p style={{ color: "var(--muted)" }}>No alerts. Hopefully it stays that way.</p>
         )}
-        {alerts.map((a) => (
+        {filtersActive && alerts.length > 0 && visibleAlerts.length === 0 && (
+          <p style={{ color: "var(--muted)" }}>No alerts match those filters.</p>
+        )}
+        {visibleAlerts.map((a) => {
+          const resolvedEvent = resolvedByAlert.get(a.id) || null;
+          const assignedEvent = assignedByAlert.get(a.id) || null;
+          return (
           <div
             key={a.id}
             className="portal-card"
@@ -120,7 +280,37 @@ export default function EmergencyPage() {
                 <div style={{ fontSize: "0.8rem", color: "var(--muted)", marginTop: 4 }}>
                   {new Date(a.created_at).toLocaleString()}
                   {a.acknowledged_at && " • ✅ Responded"}
+                  {!a.acknowledged_at && (
+                    <span style={{ color: "#b3261e", fontWeight: 700 }}>
+                      {" "}• Waiting {alertAgeLabel(a.created_at, nowMs)}
+                    </span>
+                  )}
                 </div>
+                {a.location_name && (
+                  <div style={{ fontSize: "0.85rem", color: "var(--muted)", marginTop: 4 }}>
+                    📍 {a.location_name}
+                  </div>
+                )}
+                {a.acknowledged_at && a.acknowledged_by && names[a.acknowledged_by] && (
+                  <div style={{ fontSize: "0.85rem", color: "var(--muted)", marginTop: 4 }}>
+                    Responded by {names[a.acknowledged_by]}
+                  </div>
+                )}
+                {assignedEvent && names[assignedEvent.assignee_member_id] && (
+                  <div style={{ fontSize: "0.85rem", marginTop: 4 }}>
+                    Assigned to{" "}
+                    <strong>{names[assignedEvent.assignee_member_id]}</strong>
+                  </div>
+                )}
+                {resolvedEvent && (
+                  <div style={{ fontSize: "0.85rem", marginTop: 4 }}>
+                    ✅ Resolved {new Date(resolvedEvent.created_at).toLocaleString()}
+                    {resolvedEvent.actor_id && names[resolvedEvent.actor_id]
+                      ? ` by ${names[resolvedEvent.actor_id]}`
+                      : ""}
+                    {resolvedEvent.detail ? ` — ${resolvedEvent.detail}` : ""}
+                  </div>
+                )}
               </div>
               {canAck && !a.acknowledged_at && (
                 <button
@@ -141,9 +331,101 @@ export default function EmergencyPage() {
                 </button>
               )}
             </div>
+            {eventsOk && canAck && !resolvedEvent && (
+              <div style={{ marginTop: 10, borderTop: "1px solid var(--line)", paddingTop: 10, display: "grid", gap: 8 }}>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
+                  <label style={{ fontSize: "0.85rem", fontWeight: 700 }}>
+                    Assign to{" "}
+                    <select
+                      value={assignPick[a.id] || ""}
+                      onChange={(e) =>
+                        setAssignPick((prev) => ({ ...prev, [a.id]: e.target.value }))
+                      }
+                    >
+                      <option value="">Choose a responder…</option>
+                      {responders.map((m) => (
+                        <option key={m.id} value={m.id}>
+                          {m.display_name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <button
+                    onClick={() => recordEvent(a, "assigned")}
+                    disabled={recordBusy === a.id || !assignPick[a.id]}
+                    style={{
+                      padding: "8px 14px",
+                      borderRadius: 999,
+                      border: "1px solid var(--line)",
+                      background: "#fff",
+                      fontWeight: 700,
+                      cursor: "pointer",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {recordBusy === a.id ? "…" : "Assign"}
+                  </button>
+                </div>
+                {a.acknowledged_at && (
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
+                    <input
+                      type="text"
+                      value={resolutionNote[a.id] || ""}
+                      onChange={(e) =>
+                        setResolutionNote((prev) => ({ ...prev, [a.id]: e.target.value }))
+                      }
+                      placeholder="Resolution note (optional — what was done)"
+                      maxLength={500}
+                      style={{
+                        flex: 1,
+                        minWidth: 220,
+                        padding: "8px 12px",
+                        borderRadius: 10,
+                        border: "1px solid var(--line)",
+                        fontFamily: "inherit",
+                      }}
+                    />
+                    <button
+                      onClick={() => recordEvent(a, "resolved")}
+                      disabled={recordBusy === a.id}
+                      style={{
+                        padding: "8px 14px",
+                        borderRadius: 999,
+                        border: "none",
+                        background: "#28704a",
+                        color: "#fff",
+                        fontWeight: 800,
+                        cursor: "pointer",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {recordBusy === a.id ? "…" : "Mark resolved"}
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
-        ))}
+          );
+        })}
       </div>
+      {alerts.length === limit && (
+        <div style={{ marginTop: 12 }}>
+          <button
+            onClick={() => setLimit((l) => l + 50)}
+            style={{
+              padding: "10px 18px",
+              borderRadius: 999,
+              border: "1px solid var(--line)",
+              background: "#fff",
+              fontWeight: 700,
+              cursor: "pointer",
+            }}
+          >
+            Show more alerts
+          </button>
+        </div>
+      )}
     </div>
   );
 }
