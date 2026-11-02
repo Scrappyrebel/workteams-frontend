@@ -23,9 +23,18 @@ const read = (p) => readFileSync(p, "utf8");
 //   delete only shifts AFTER that date and never before today.
 // * Pause, a stored pattern, and editing a series' pattern are NOT
 //   built: no column or table exists to hold them (decision items in
-//   the PR). Nothing here touches the time clock, time entries, shift
-//   videos or the Communication Book, and no labour-law wording is
-//   introduced — scheduled time is labelled as scheduled, never worked.
+//   the PR). Nothing here touches the time clock, shift videos or the
+//   Communication Book, and no labour-law wording is introduced —
+//   scheduled time is labelled as scheduled, never worked.
+// * Owner ruling 2026-11-02 (decision item D3, now FIXED): Delete
+//   series is blocked when any shift in the series has recorded work —
+//   it could previously delete a shift someone had already started
+//   work on that day, detaching its time record. The guard below pins
+//   the block, the plain on-page message, and the exact boundary of
+//   the one protected-area exception it needs: the page may READ time
+//   records (a select of shift ids, nothing else) solely to make this
+//   check. It still never writes to them, and the clock, videos and
+//   Communication Book remain entirely untouched.
 
 const PAGE = "app/app/[companyId]/schedule/repeats/page.js";
 const LIB = "lib/repeat-series.mjs";
@@ -49,9 +58,47 @@ test("existing repeats behaviour is unchanged", () => {
 
 test("page stays clear of protected areas", () => {
   const page = read(PAGE) + read(LIB);
-  for (const banned of ["time_entries", "clock_in", "clock_out", "shift_videos", "comm_book", "communication_book"]) {
+  // "time_entries" left this list under the 2026-11-02 ruling: the
+  // delete guard below READs time records (select only) to protect
+  // them. Everything else about the clock stays banned, and the next
+  // test pins the read-only boundary exactly.
+  for (const banned of ["clock_in", "clock_out", "shift_videos", "comm_book", "communication_book"]) {
     assert.ok(!page.includes(banned), `repeats depth must not reference ${banned}`);
   }
+});
+
+test("delete series is blocked when any shift in the series has recorded work", async () => {
+  const page = read(PAGE);
+  // The only contact with time records anywhere in page + lib is a
+  // read of shift ids for this check — every occurrence must be a
+  // select, never a write.
+  const all = page + read(LIB);
+  const occurrences = all.split('.from("time_entries")').length - 1;
+  assert.ok(occurrences >= 1, "delete guard reads time records");
+  for (const part of all.split('.from("time_entries")').slice(1)) {
+    assert.ok(part.trimStart().startsWith('.select("shift_id")'), "every read of time records is a select of shift_id — never a write");
+  }
+  // The check runs fresh inside deleteSeries, BEFORE the delete, and
+  // both a positive count and a failed check stop the deletion.
+  const fn = page.slice(page.indexOf("async function deleteSeries"), page.indexOf("async function endSeriesEarly"));
+  assert.ok(fn.includes("fetchWorkedCount(sb, seriesId)"), "deleteSeries runs the worked check");
+  assert.ok(fn.indexOf("fetchWorkedCount(sb, seriesId)") < fn.indexOf(".delete()"), "the worked check happens before any delete");
+  assert.ok(fn.includes("worked === null"), "a failed check fails closed — nothing is deleted");
+  assert.ok(fn.includes("worked > 0"), "a worked shift blocks the delete");
+  // The page is honest up front: a series with recorded work shows why
+  // it cannot be deleted instead of offering the button.
+  assert.ok(page.includes("isManager && g.workedCount === 0"), "delete button is offered only when no shift in the series has recorded work");
+  assert.ok(page.includes("This series can"), "blocked message renders on the page");
+  assert.ok(page.includes("work has been recorded on"), "blocked message says why, in plain words");
+  assert.ok(page.includes("would detach its time record"), "blocked message names the harm honestly");
+  // The counting itself, on fixtures: a worked shift in the series
+  // blocks; other series' work and no work do not.
+  const lib = await import("../lib/repeat-series.mjs");
+  assert.equal(lib.countWorkedShifts(["a", "b", "c"], ["b"]), 1);
+  assert.equal(lib.countWorkedShifts(["a", "b", "c"], new Set(["a", "c"])), 2);
+  assert.equal(lib.countWorkedShifts(["a", "b"], ["x", "y"]), 0);
+  assert.equal(lib.countWorkedShifts(["a", "b"], []), 0);
+  assert.equal(lib.countWorkedShifts([], ["a"]), 0);
 });
 
 test("derived detail comes from the stored rows via the shared helpers", () => {
