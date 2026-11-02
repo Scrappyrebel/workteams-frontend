@@ -8,6 +8,12 @@ import { useCompany } from "../../../../../lib/company-context";
 import { useClockedIn, requireClockedIn } from "../../../../../lib/use-clocked-in";
 import { canUseWithRole } from "../../../../../lib/tiers";
 import WorkOrderCustomerPublication from "../../../../../components/WorkOrderCustomerPublication";
+import {
+  loadWorkOrderEvents,
+  recordWorkOrderEvent,
+  latestCompletionRecord,
+  latestCancellationRecord,
+} from "../../../../../lib/work-order-events";
 
 const STATUS_LABELS = {
   open: "Open",
@@ -34,6 +40,17 @@ export default function WorkOrderDetailPage() {
   const [comments, setComments] = useState([]);
   const [newComment, setNewComment] = useState("");
   const [commentSaving, setCommentSaving] = useState(false);
+  // Depth (D-WT-30): assignee display name, recorded events, and the
+  // optional completion / cancellation text captured alongside a
+  // status change. All additive — nothing below changes an existing
+  // load, update, or notification.
+  const [assigneeName, setAssigneeName] = useState("");
+  const [events, setEvents] = useState([]);
+  const [eventsOk, setEventsOk] = useState(false);
+  const [actorNames, setActorNames] = useState({});
+  const [signoffName, setSignoffName] = useState("");
+  const [completionNote, setCompletionNote] = useState("");
+  const [cancelReason, setCancelReason] = useState("");
 
   const isManager = member && (member.role === "owner" || member.role === "admin");
   const allowed = canUseWithRole(company?.effectiveTier || company?.tier, "workorders", member?.role);
@@ -63,6 +80,31 @@ export default function WorkOrderDetailPage() {
       .eq("work_order_id", orderId)
       .order("created_at", { ascending: true });
     setComments(cmts || []);
+    // Depth (D-WT-30): resolve the assignee's name the same way the
+    // work orders list does, so every viewer who may see this order —
+    // including the assigned employee — sees who it is assigned to.
+    if (data.assigned_to) {
+      const { data: assignees } = await sb.from("team_directory").select("id, display_name").eq("id", data.assigned_to);
+      setAssigneeName(assignees && assignees[0] ? assignees[0].display_name || "" : "");
+    } else {
+      setAssigneeName("");
+    }
+    // Depth (D-WT-30): recorded events (status history + completion /
+    // cancellation records, migration 085). Fail-soft: before the
+    // migration runs this returns ok:false and the panels stay hidden,
+    // leaving the page exactly as it was.
+    const ev = await loadWorkOrderEvents(sb, orderId);
+    setEvents(ev.events);
+    setEventsOk(ev.ok);
+    if (ev.ok && ev.events.length > 0) {
+      const actorIds = [...new Set(ev.events.map((e) => e.actor_id).filter(Boolean))];
+      if (actorIds.length > 0) {
+        const { data: actors } = await sb.from("team_directory").select("id, display_name").in("id", actorIds);
+        const byId = {};
+        for (const a of actors || []) byId[a.id] = a.display_name;
+        setActorNames(byId);
+      }
+    }
     if (isManager) {
       const { data: ms } = await sb.from("team_directory").select("id, display_name").eq("company_id", company.id).order("display_name");
       setMembers(ms || []);
@@ -78,6 +120,31 @@ export default function WorkOrderDetailPage() {
     if (!requireClockedIn(clockedIn, "update a work order")) return;
     const { error } = await supabase().from("work_orders").update(patch).eq("id", orderId);
     if (error) { alert("Could not update: " + error.message); return; }
+    // Depth (D-WT-30): record the change in the append-only events
+    // table (migration 085) — strictly AFTER the update above has
+    // succeeded, best-effort, and never gating it. A status change
+    // always lands a 'status' row; completing also stores the optional
+    // sign-off name / completion note typed below, and cancelling the
+    // optional reason. Empty optional text records nothing extra.
+    if (patch.status && order && patch.status !== order.status) {
+      const sb2 = supabase();
+      const base = { orderId, companyId: company.id, actorId: member.id, fromStatus: order.status, toStatus: patch.status };
+      await recordWorkOrderEvent(sb2, { ...base, eventType: "status" });
+      if (patch.status === "completed") {
+        const parts = [];
+        if (signoffName.trim()) parts.push(`Signed off by ${signoffName.trim()}`);
+        if (completionNote.trim()) parts.push(completionNote.trim());
+        if (parts.length > 0) {
+          await recordWorkOrderEvent(sb2, { ...base, eventType: "completion", detail: parts.join(" — ") });
+          setSignoffName("");
+          setCompletionNote("");
+        }
+      }
+      if (patch.status === "cancelled" && cancelReason.trim()) {
+        await recordWorkOrderEvent(sb2, { ...base, eventType: "cancellation", detail: cancelReason.trim() });
+        setCancelReason("");
+      }
+    }
     // Fire notifications (best effort).
     try {
       if (patch.status === "completed") {
@@ -166,6 +233,8 @@ export default function WorkOrderDetailPage() {
       <p style={{ color: "var(--muted)" }}>
         {order.locations?.name ? `${order.locations.name} • ` : ""}
         {order.due_date ? `Due ${order.due_date}` : "No due date"}
+        {" • Assigned to "}
+        {order.assigned_to ? assigneeName || "Assigned team member" : "Unassigned"}
       </p>
       {/* Status banner — makes progress visible */}
       <div style={{
@@ -188,6 +257,80 @@ export default function WorkOrderDetailPage() {
           <p style={{ margin: 0, whiteSpace: "pre-wrap" }}>{order.description}</p>
         </section>
       )}
+
+      {/* Work order record — stored facts only (D-WT-30) */}
+      {(() => {
+        const completion = latestCompletionRecord(events);
+        const cancellation = latestCancellationRecord(events);
+        return (
+          <section className="panel" style={{ padding: 22, margin: "18px 0" }}>
+            <h3 style={{ marginTop: 0 }}>Work order record</h3>
+            <div style={{ display: "grid", gap: 6, fontSize: "0.95rem" }}>
+              <p style={{ margin: 0 }}>Status: <strong>{STATUS_LABELS[order.status]}</strong></p>
+              <p style={{ margin: 0 }}>Priority: <strong>{PRIORITY_LABELS[order.priority]}</strong></p>
+              <p style={{ margin: 0 }}>
+                Assigned to: <strong>{order.assigned_to ? assigneeName || "Assigned team member" : "Unassigned"}</strong>
+              </p>
+              {order.locations?.name && (
+                <p style={{ margin: 0 }}>Location: <strong>{order.locations.name}</strong></p>
+              )}
+              <p style={{ margin: 0 }}>Due: <strong>{order.due_date ? order.due_date : "No due date"}</strong></p>
+              {order.agreed_price != null && (
+                <p style={{ margin: 0 }}>Agreed price: <strong>${Number(order.agreed_price).toFixed(2)}</strong></p>
+              )}
+              {order.source === "portal" && (
+                <p style={{ margin: 0 }}>Source: <strong>Client request</strong></p>
+              )}
+              {order.created_at && (
+                <p style={{ margin: 0 }}>
+                  Created: <strong>{new Date(order.created_at).toLocaleDateString()} {new Date(order.created_at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</strong>
+                </p>
+              )}
+              {order.completed_at && (
+                <p style={{ margin: 0 }}>
+                  Completed: <strong>{new Date(order.completed_at).toLocaleDateString()} {new Date(order.completed_at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</strong>
+                </p>
+              )}
+            </div>
+            {order.status === "completed" && completion && (
+              <div style={{ marginTop: 14 }}>
+                <p style={{ margin: "0 0 4px", fontWeight: 700 }}>Completion record</p>
+                <p style={{ margin: 0, whiteSpace: "pre-wrap" }}>{completion.detail}</p>
+                <p style={{ margin: "4px 0 0", fontSize: "0.8rem", color: "var(--muted)" }}>
+                  Recorded {new Date(completion.created_at).toLocaleDateString()} {new Date(completion.created_at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
+                  {completion.actor_id && actorNames[completion.actor_id] ? ` by ${actorNames[completion.actor_id]}` : ""}
+                </p>
+              </div>
+            )}
+            {order.status === "cancelled" && cancellation && (
+              <div style={{ marginTop: 14 }}>
+                <p style={{ margin: "0 0 4px", fontWeight: 700 }}>Cancellation reason</p>
+                <p style={{ margin: 0, whiteSpace: "pre-wrap" }}>{cancellation.detail}</p>
+                <p style={{ margin: "4px 0 0", fontSize: "0.8rem", color: "var(--muted)" }}>
+                  Recorded {new Date(cancellation.created_at).toLocaleDateString()} {new Date(cancellation.created_at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
+                  {cancellation.actor_id && actorNames[cancellation.actor_id] ? ` by ${actorNames[cancellation.actor_id]}` : ""}
+                </p>
+              </div>
+            )}
+            {eventsOk && events.length > 0 && (
+              <div style={{ marginTop: 14 }}>
+                <p style={{ margin: "0 0 4px", fontWeight: 700 }}>Status history</p>
+                {events.filter((e) => e.event_type === "status").map((e) => (
+                  <p key={e.id} style={{ margin: "0 0 4px", fontSize: "0.9rem", color: "var(--muted)" }}>
+                    {STATUS_LABELS[e.from_status] || e.from_status || "—"} → {STATUS_LABELS[e.to_status] || e.to_status || "—"}
+                    {" • "}
+                    {new Date(e.created_at).toLocaleDateString()} {new Date(e.created_at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
+                    {e.actor_id && actorNames[e.actor_id] ? ` • ${actorNames[e.actor_id]}` : ""}
+                  </p>
+                ))}
+                {events.filter((e) => e.event_type === "status").length === 0 && (
+                  <p style={{ margin: 0, fontSize: "0.9rem", color: "var(--muted)" }}>No status changes recorded yet.</p>
+                )}
+              </div>
+            )}
+          </section>
+        );
+      })()}
 
       {isManager&&<WorkOrderCustomerPublication
         orderId={order.id} companyId={company.id} canManage={isManager}/>}
@@ -247,6 +390,53 @@ export default function WorkOrderDetailPage() {
               </button>
             ))}
           </div>
+
+          {/* Optional completion / cancellation record (D-WT-30).
+              Purely additive: these fields are stored alongside a
+              status change only when filled in. Leaving them blank
+              changes nothing — the status buttons above work exactly
+              as they always have. */}
+          {order.status !== "completed" && (
+            <div style={{ marginTop: 16, maxWidth: 420 }}>
+              <label style={{ fontSize: "0.9rem", color: "var(--muted)" }}>
+                Signed off by (optional — name of the person who accepted the finished work)
+                <input
+                  value={signoffName}
+                  onChange={(e) => setSignoffName(e.target.value)}
+                  placeholder="Customer sign-off name"
+                  style={{ ...input, marginTop: 6 }}
+                />
+              </label>
+              <label style={{ fontSize: "0.9rem", color: "var(--muted)", display: "block", marginTop: 10 }}>
+                Completion note (optional)
+                <input
+                  value={completionNote}
+                  onChange={(e) => setCompletionNote(e.target.value)}
+                  placeholder="What was done"
+                  style={{ ...input, marginTop: 6 }}
+                />
+              </label>
+              <p style={{ fontSize: "0.85rem", color: "var(--muted)", margin: "6px 0 0" }}>
+                If you fill these in, they are saved with the record when you mark this order Completed.
+              </p>
+            </div>
+          )}
+          {order.status !== "cancelled" && (
+            <div style={{ marginTop: 16, maxWidth: 420 }}>
+              <label style={{ fontSize: "0.9rem", color: "var(--muted)" }}>
+                Cancellation reason (optional)
+                <input
+                  value={cancelReason}
+                  onChange={(e) => setCancelReason(e.target.value)}
+                  placeholder="Why this order is being cancelled"
+                  style={{ ...input, marginTop: 6 }}
+                />
+              </label>
+              <p style={{ fontSize: "0.85rem", color: "var(--muted)", margin: "6px 0 0" }}>
+                If you fill this in, it is saved with the record when you mark this order Cancelled.
+              </p>
+            </div>
+          )}
 
           {isManager && (
             <div style={{ marginTop: 16, maxWidth: 420 }}>
