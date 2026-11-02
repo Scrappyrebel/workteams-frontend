@@ -48,7 +48,7 @@ export default function SuppliesPage() {
   const { company, member, loading } = useCompany();
   const { clockedIn } = useClockedIn();
   const [items, setItems] = useState([]);
-  // Item identity (migration 085): where the stock is kept, plus the
+  // Item identity (migration 087): where the stock is kept, plus the
   // probe that says whether the new columns exist yet. Fail-soft: an
   // empty locations list or a failed probe changes nothing else.
   const [locations, setLocations] = useState([]);
@@ -115,7 +115,7 @@ export default function SuppliesPage() {
     setItems(data || []);
   }
 
-  // Locations for the item's "stocked at" association (migration 085).
+  // Locations for the item's "stocked at" association (migration 087).
   // The locations table has existed since 001; any failure just leaves
   // the picker empty and names unresolved — the list is unchanged.
   async function loadLocations() {
@@ -131,7 +131,7 @@ export default function SuppliesPage() {
     }
   }
 
-  // Probe for the migration-085 identity columns. Fail-soft both ways:
+  // Probe for the migration-087 identity columns. Fail-soft both ways:
   // the form fields render either way and the save ladder is the
   // authority — this only drives the "turns on" note by the fields.
   async function probeIdentity() {
@@ -239,7 +239,7 @@ export default function SuppliesPage() {
       cost_per_unit: form.cost_per_unit === "" ? null : parseFloat(form.cost_per_unit),
       notes: form.notes.trim() || null,
     };
-    // Migration 085 identity fields, written tolerantly: the full
+    // Migration 087 identity fields, written tolerantly: the full
     // payload goes first. If those columns are not there yet, values a
     // manager entered are never silently dropped — the save stops and
     // says so. Only when nothing was entered does it step down to the

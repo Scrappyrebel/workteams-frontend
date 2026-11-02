@@ -1,4 +1,4 @@
--- WorkTeams supply item identity fields (085).
+-- WorkTeams supply item identity fields (087).
 --
 -- The supplies item record (003, extended by 078) carries name, category,
 -- quantity, unit, reorder level, cost, notes and condition — but nothing
@@ -53,10 +53,10 @@ alter table public.supplies
   add column if not exists location_id uuid references public.locations(id) on delete set null;
 
 comment on column public.supplies.vendor is
-  'Supply item vendor / supplier (migration 085): who the item is bought from, in the company''s own words. Optional; carries no cost information.';
+  'Supply item vendor / supplier (migration 087): who the item is bought from, in the company''s own words. Optional; carries no cost information.';
 comment on column public.supplies.sku is
-  'Supply item SKU / item code (migration 085): the code used to reorder and count the item. Optional; no uniqueness is imposed.';
+  'Supply item SKU / item code (migration 087): the code used to reorder and count the item. Optional; no uniqueness is imposed.';
 comment on column public.supplies.location_id is
-  'Where this item''s stock is kept (migration 085): the single locations record the stock lives at. This is an association only — quantity_on_hand remains the item''s one on-hand count (no per-location stock levels). Set null if the location is deleted.';
+  'Where this item''s stock is kept (migration 087): the single locations record the stock lives at. This is an association only — quantity_on_hand remains the item''s one on-hand count (no per-location stock levels). Set null if the location is deleted.';
 
 COMMIT;

@@ -3,16 +3,16 @@ import assert from "node:assert/strict";
 import { readFileSync, existsSync } from "node:fs";
 const read = (p) => readFileSync(p, "utf8");
 
-// Supply item identity fields (migration 085) invariants:
+// Supply item identity fields (migration 087) invariants:
 // * The supplies item record (003 + 078) had name/category/quantity/
 //   unit/reorder level/cost/notes/condition — no vendor, no SKU, no
-//   location. Migration 085 adds exactly those three as additive
+//   location. Migration 087 adds exactly those three as additive
 //   nullable columns on the SAME table: vendor and sku free text, and
 //   location_id -> locations(id) on delete set null (the 003 pattern).
 // * quantity_on_hand stays the item's ONE on-hand count: nothing here
 //   builds per-location stock levels, and no movement / check-out /
 //   condition / restock behaviour changes.
-// * Writes are tolerant in both directions: before 085 runs the page
+// * Writes are tolerant in both directions: before 087 runs the page
 //   behaves exactly as today, and identity values a manager entered
 //   are NEVER silently dropped — the save steps down to the original
 //   payload only when nothing was entered, and otherwise says plainly
@@ -24,12 +24,12 @@ const read = (p) => readFileSync(p, "utf8");
 // * Protected areas stay untouched: no time clock, shift video or
 //   Communication Book surface appears in any changed file.
 
-const SQL_PATH = "supabase/085_supply_item_identity_fields.sql";
+const SQL_PATH = "supabase/087_supply_item_identity_fields.sql";
 const PAGE = "app/app/[companyId]/supplies/page.js";
 const LIB = "lib/supply-item-identity.js";
 
-test("migration 085 adds vendor, sku and location_id to supplies, additively", () => {
-  assert.ok(existsSync(SQL_PATH), "migration 085 exists");
+test("migration 087 adds vendor, sku and location_id to supplies, additively", () => {
+  assert.ok(existsSync(SQL_PATH), "migration 087 exists");
   const sql = read(SQL_PATH);
   for (const needle of [
     "BEGIN;",
@@ -73,7 +73,7 @@ test("identity helpers behave on hand fixtures", async () => {
   assert.equal(lib.isMissingIdentityColumnError({ code: "23505", message: "duplicate key value" }), false);
   assert.equal(lib.isMissingIdentityColumnError({ message: "network request failed" }), false);
   assert.equal(lib.isMissingIdentityColumnError(null), false);
-  // Card line: parts appear only when stored; a pre-085 item yields none.
+  // Card line: parts appear only when stored; a pre-087 item yields none.
   assert.deepEqual(
     lib.identityLineParts({ sku: "GL-114", vendor: "Acme", location_id: "loc-1" }, "Main Street site"),
     ["SKU GL-114", "Vendor: Acme", "📍 Stocked at: Main Street site"]
@@ -124,7 +124,7 @@ test("supplies page wires the identity fields tolerantly, form and both card vie
     assert.ok(!page.includes(banned), `page stays out of: ${banned}`);
 });
 
-test("member view never loads or renders a cost, before or after 085", () => {
+test("member view never loads or renders a cost, before or after 087", () => {
   const page = read(PAGE);
   const memberLoad = page.slice(page.indexOf("async function loadMemberItems"), page.indexOf("// Probes + loads"));
   assert.ok(memberLoad.length > 0, "member load exists");
