@@ -423,6 +423,9 @@ export default function QuickBooksSyncPage() {
               Read straight from QuickBooks -- this is your official books, shown here for
               reference. Nothing here is copied into WorkTeams or edited from this page.
             </p>
+            <p style={{ color: "var(--muted)" }}>
+              Each list shows the 50 most recent records from QuickBooks.
+            </p>
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
               {[
                 { key: "invoice", label: "Invoices" },
