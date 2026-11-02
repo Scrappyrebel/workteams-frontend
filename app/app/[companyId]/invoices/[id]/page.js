@@ -403,6 +403,26 @@ export default function InvoiceDetailPage() {
 
   const activePayments = payments.filter((p) => !p.voided_at);
 
+  // Depth D-WT-35 (additive display only): facts already stored on the
+  // invoice record that this page never showed once the invoice left
+  // draft — the site it belongs to, its notes, and its record
+  // timestamps — plus the same overdue derivation the invoices list
+  // already performs. Nothing here writes or recomputes an amount.
+  const isOverdue =
+    invoice.status === "issued" &&
+    invoice.due_date &&
+    invoice.due_date < chicagoToday(company?.timezone);
+  const siteLocation =
+    !isDraft && invoice.location_id
+      ? locations.find((l) => l.id === invoice.location_id) || null
+      : null;
+  const showRecordPanel = Boolean(
+    siteLocation ||
+      invoice.created_at ||
+      (!isDraft && invoice.issued_at) ||
+      (!isDraft && invoice.notes)
+  );
+
   return (
     <div>
       <Link href={`/app/${company.id}/invoices`} className="back-link">← Back to invoices</Link>
@@ -415,6 +435,7 @@ export default function InvoiceDetailPage() {
         Issued {invoice.issue_date || "—"}
         {invoice.due_date && <> • Due {invoice.due_date}</>}
         {invoice.client_contact && <> • {invoice.client_contact}</>}
+        {isOverdue && <span style={{ color: "#9b2d15", fontWeight: 700 }}> • Overdue</span>}
       </p>
       {error && (
         <p style={{ color: "#9b2d15", fontWeight: 700 }}>{error}</p>
@@ -568,6 +589,35 @@ export default function InvoiceDetailPage() {
         </div>
       </section>
 
+      {showRecordPanel && (
+        <section className="panel" style={{ padding: 20, margin: "16px 0" }}>
+          <h3 style={{ marginTop: 0 }}>Invoice record</h3>
+          <div style={{ display: "grid", gap: 6 }}>
+            {siteLocation && (
+              <p style={{ margin: 0 }}>
+                Site: <strong>{siteLocation.name}</strong>
+              </p>
+            )}
+            {invoice.created_at && (
+              <p style={{ margin: 0, color: "var(--muted)" }}>
+                Created {String(invoice.created_at).slice(0, 10)}
+              </p>
+            )}
+            {!isDraft && invoice.issued_at && (
+              <p style={{ margin: 0, color: "var(--muted)" }}>
+                Issued at {new Date(invoice.issued_at).toLocaleString()}
+              </p>
+            )}
+            {!isDraft && invoice.notes && (
+              <div>
+                <p style={{ margin: "0 0 4px", fontWeight: 700 }}>Notes</p>
+                <p style={{ margin: 0, whiteSpace: "pre-wrap" }}>{invoice.notes}</p>
+              </div>
+            )}
+          </div>
+        </section>
+      )}
+
       {invoice.status === "issued" && (
         <section className="panel" style={{ padding: 20, margin: "16px 0" }}>
           <h3 style={{ marginTop: 0 }}>Record a payment</h3>
@@ -626,9 +676,14 @@ export default function InvoiceDetailPage() {
                   )}
                 </div>
                 {p.note && <div style={{ fontSize: "0.88rem", color: "var(--muted)", marginTop: 4 }}>{p.note}</div>}
+                {p.created_at && (
+                  <div style={{ fontSize: "0.88rem", color: "var(--muted)", marginTop: 4 }}>
+                    Recorded {String(p.created_at).slice(0, 10)}
+                  </div>
+                )}
                 {p.voided_at && (
                   <div style={{ fontSize: "0.88rem", color: "#9b2d15", marginTop: 4 }}>
-                    Void reason: {p.void_reason || "—"}
+                    Void reason: {p.void_reason || "—"} • Voided {new Date(p.voided_at).toLocaleString()}
                   </div>
                 )}
                 {voidPayment.id === p.id && (
