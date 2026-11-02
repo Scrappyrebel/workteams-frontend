@@ -5,6 +5,7 @@ import Link from "next/link";
 import { supabase } from "../../../../lib/supabase";
 import { useCompany } from "../../../../lib/company-context";
 import { chicagoToday, formatTime12h } from "../../../../lib/dates";
+import { findScheduleConflicts, findTimeOffConflicts, summarizeWeekCoverage } from "../../../../lib/schedule-conflicts.mjs";
 import ClockPicker from "../../../../components/ClockPicker";
 
 const WEEKDAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
@@ -881,9 +882,79 @@ export default function SchedulePage() {
     };
   })();
 
+  // Every shift this page has already loaded, across the three views,
+  // deduped — the pool the double-booking warnings below are computed
+  // from. No new reads are made for warnings: a shift the page has not
+  // loaded simply cannot warn, and a warning never blocks a create or
+  // a save that works today (see lib/schedule-conflicts.mjs).
+  const loadedShifts = (() => {
+    const byKey = new Map();
+    for (const s of [...shifts, ...weekShifts, ...monthShifts]) {
+      const key = s.id || `${s.member_id || ""}|${s.shift_date}|${s.start_time}|${s.end_time}`;
+      if (!byKey.has(key)) byKey.set(key, s);
+    }
+    return [...byKey.values()];
+  })();
+
+  // Warnings for the prepared create, computed from its exact rows:
+  // same-person time overlaps among loaded shifts, plus approved time
+  // off covering any of the new shift dates.
+  const addConflicts = confirmAdd ? findScheduleConflicts(confirmAdd.rows, loadedShifts) : [];
+  const addOffConflicts = confirmAdd ? findTimeOffConflicts(confirmAdd.rows, approvedOff) : [];
+
+  function conflictLines(conflicts, offConflicts, max) {
+    const lines = [];
+    for (const c of conflicts) {
+      const who = members.find((m) => m.id === c.candidate.member_id);
+      lines.push(
+        `${who ? who.display_name : (c.existing.assignee_name || "This person")} already has a shift ${fmtReqDay(c.existing.shift_date)} · ${formatTime12h(c.existing.start_time)}–${formatTime12h(c.existing.end_time)}${c.existing.locations?.name ? ` at ${c.existing.locations.name}` : ""} — the new ${fmtReqDay(c.candidate.shift_date)} shift overlaps it.`
+      );
+    }
+    for (const c of offConflicts) {
+      lines.push(
+        `${c.off.name || "This person"} has approved time off ${fmtReqDay(c.off.start_date)} to ${fmtReqDay(c.off.end_date)} — this shift falls on ${fmtReqDay(c.candidate.shift_date)}.`
+      );
+    }
+    if (lines.length > max) {
+      const shown = lines.slice(0, max);
+      shown.push(`…and ${lines.length - max} more — check this person's shifts before you go ahead.`);
+      return shown;
+    }
+    return lines;
+  }
+
+  function warningBox(lines) {
+    if (lines.length === 0) return null;
+    return (
+      <div style={{ border: "1px solid #f0c36d", background: "#fdf6e0", borderRadius: 12, padding: "10px 14px" }}>
+        <strong style={{ fontSize: "0.92rem" }}>⚠️ Possible double-booking</strong>
+        <ul style={{ margin: "6px 0 0", paddingLeft: 18, display: "grid", gap: 4, fontSize: "0.9rem" }}>
+          {lines.map((line, i) => <li key={i}>{line}</li>)}
+        </ul>
+        <p style={{ fontSize: "0.85rem", color: "var(--muted)", margin: "6px 0 0" }}>
+          This is a warning only — nothing here stops you. If the overlap is on purpose, go ahead as planned.
+        </p>
+      </div>
+    );
+  }
+
   // One shift card, shared by the list view and the week view — edit and
   // delete work the same in both.
   function shiftCard(s) {
+    // Live warning for the edit form: the edited shift compared against
+    // every other loaded shift for the (possibly new) assignee. The
+    // shift itself is excluded; in series scope the series' own future
+    // rows are excluded too, since the same save rewrites them all.
+    // Display only — Save below runs exactly as it always has.
+    const editNorm = editingId === s.id ? normalizeDateTime(editForm) : null;
+    const editCandidate = editNorm && editNorm.ok && editForm.member_id
+      ? [{ id: s.id, member_id: editForm.member_id, shift_date: editNorm.shift_date, start_time: editNorm.start_time, end_time: editNorm.end_time }]
+      : [];
+    const editConflicts = findScheduleConflicts(editCandidate, loadedShifts, {
+      excludeIds: [s.id],
+      excludeSeriesId: editScope === "series" ? s.series_id : null,
+    });
+    const editOffConflicts = findTimeOffConflicts(editCandidate, approvedOff);
     return (
       <div key={s.id} className="portal-card" style={{ minHeight: 0, padding: "16px 20px" }}>
         {editingId === s.id ? (
@@ -936,6 +1007,7 @@ export default function SchedulePage() {
             {entryToggle(editForm, setEditForm)}
             {dateTimeFields(editForm, setEditForm)}
             <input value={editForm.notes} onChange={(e) => setEditForm({ ...editForm, notes: e.target.value })} placeholder="Notes (optional)" style={input} />
+            {warningBox(conflictLines(editConflicts, editOffConflicts, 3))}
             <div style={{ display: "flex", gap: 8 }}>
               <button onClick={() => saveEdit(s)} style={{ ...button, flex: 1 }}>Save</button>
               <button onClick={() => setEditingId(null)} style={{ ...secondaryButton, flex: 1 }}>Cancel</button>
@@ -1011,6 +1083,19 @@ export default function SchedulePage() {
           <button type="button" onClick={() => changeWeek(1)} style={ghostBtn}>Next →</button>
           <button type="button" onClick={goThisWeek} style={ghostBtn}>This week</button>
         </div>
+        {(() => {
+          const coverage = summarizeWeekCoverage(weekShifts);
+          if (coverage.total === 0) return null;
+          return (
+            <p style={{ fontSize: "0.9rem", color: "var(--muted)", margin: "0 0 12px" }}>
+              This week: <strong style={{ color: "inherit" }}>{coverage.total} shift{coverage.total === 1 ? "" : "s"}</strong>
+              {" · "}{coverage.assigned} assigned
+              {" · "}{coverage.open} open (unassigned)
+              {" · "}{coverage.people} {coverage.people === 1 ? "person" : "people"} scheduled
+              {" · "}{coverage.hours} scheduled hours
+            </p>
+          );
+        })()}
         <div style={{ display: "grid", gap: 10 }}>{days}</div>
       </div>
     );
@@ -1252,6 +1337,7 @@ export default function SchedulePage() {
                   )}
                   {addSummary.first.notes && <li>Notes: {addSummary.first.notes}</li>}
                 </ul>
+                {warningBox(conflictLines(addConflicts, addOffConflicts, 5))}
                 <div style={{ display: "flex", gap: 8 }}>
                   <button type="button" onClick={confirmAddShift} disabled={adding} style={{ ...button, flex: 1 }}>
                     {adding ? "Creating…" : confirmAdd.dates.length > 1 ? `Create ${confirmAdd.dates.length} shifts` : "Create shift"}
