@@ -17,6 +17,21 @@ const RANGES = [
 
 const emptyEntry = (tz) => ({ location_id: "", amount: "", description: "", entry_date: chicagoToday(tz) });
 
+function csvCell(v) {
+  const s = String(v ?? "");
+  return /[",\n]/.test(s) ? `"${s.replaceAll('"', '""')}"` : s;
+}
+
+function downloadCsv(filename, lines) {
+  const blob = new Blob([lines.join("\n")], { type: "text/csv" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 export default function ProfitabilityPage() {
   const { company, member, loading } = useCompany();
   const { clockedIn, checking } = useClockedIn(true);
@@ -35,6 +50,17 @@ export default function ProfitabilityPage() {
   const [auditReady, setAuditReady] = useState(false);
   const [editing, setEditing] = useState(null);
   const [busy, setBusy] = useState(false);
+  // Invoiced revenue (migration 061 invoices). Issued invoices are a
+  // SEPARATE figure from the Revenue total on this page: an invoice can
+  // bill work already counted in an accepted bid, so the two are shown
+  // side by side and never added together.
+  const [invRows, setInvRows] = useState([]);
+  const [invList, setInvList] = useState([]);
+  const [invError, setInvError] = useState(false);
+  // Void confirm panel (replaces the old browser-prompt void flow): holds
+  // the entry being voided plus the typed reason and any error. Nothing
+  // is written until the panel's Void button is pressed.
+  const [voiding, setVoiding] = useState(null);
   // Company-local date default once the company's timezone is known.
   useEffect(() => {
     if (company?.timezone) {
@@ -239,6 +265,43 @@ export default function ProfitabilityPage() {
         },
       });
     }
+    // Issued invoices in this range (migration 061; "issued" in the
+    // sense of migration 077: status issued or paid -- drafts are not
+    // billed yet and voided invoices are excluded entirely). The cohort
+    // is by issue_date, the same basis Money by Location uses. Paid is
+    // the ledger-derived amount_paid on those same invoices, so
+    // Still owed = Invoiced - Paid holds per location and in total.
+    let invQ = sb.from("invoices")
+      .select("id, invoice_number, location_id, client_name, issue_date, status, total, amount_paid")
+      .eq("company_id", company.id)
+      .in("status", ["issued", "paid"])
+      .order("issue_date", { ascending: false });
+    if (since) invQ = invQ.gte("issue_date", since);
+    const { data: invs, error: invErr } = await invQ;
+    if (invErr) {
+      setInvError(true);
+      setInvRows([]);
+      setInvList([]);
+    } else {
+      setInvError(false);
+      setInvList(invs || []);
+      const byLoc = {};
+      let unInv = null;
+      for (const inv of invs || []) {
+        const bucket = inv.location_id
+          ? (byLoc[inv.location_id] = byLoc[inv.location_id] || { invoiced: 0, paid: 0, count: 0 })
+          : (unInv = unInv || { invoiced: 0, paid: 0, count: 0 });
+        bucket.invoiced += Number(inv.total) || 0;
+        bucket.paid += Number(inv.amount_paid) || 0;
+        bucket.count += 1;
+      }
+      const irows = locList
+        .filter((l) => byLoc[l.id])
+        .map((l) => ({ id: l.id, name: l.name, ...byLoc[l.id] }));
+      if (unInv) irows.push({ id: "__unallocated", name: "No location", ...unInv });
+      setInvRows(irows);
+    }
+
     setRows(out);
     setComputing(false);
   }
@@ -303,15 +366,29 @@ export default function ProfitabilityPage() {
     }
   }
 
+  function startVoid(entry) {
+    setVoiding({
+      kind: entry.kind,
+      id: entry.id,
+      location_id: entry.location_id || "",
+      amount: entry.amount,
+      description: entry.description || "",
+      entry_date: entry.entry_date,
+      reason: "",
+      error: "",
+    });
+  }
+
+  // Writes the void ONLY when the confirm panel's Void button is
+  // pressed (confirmVoid below); opening the panel and cancelling it
+  // write nothing. The update itself is exactly the one this page has
+  // always written: same fields, same voided_at-null guard, same
+  // 10-500 character reason rule (migration 066 enforces the same rule
+  // in the database). Returns an error message for the panel, or null.
   async function voidEntry(entry) {
-    const reason = window.prompt(
-      "Void this entry? It stays on record with your reason and stops counting in the totals.\n\nReason (10-500 characters):"
-    );
-    if (reason === null) return;
-    const trimmed = reason.trim();
+    const trimmed = String(entry.reason || "").trim();
     if (trimmed.length < 10 || trimmed.length > 500) {
-      alert("Enter a reason of 10 to 500 characters.");
-      return;
+      return "Enter a reason of 10 to 500 characters.";
     }
     setBusy(true);
     const table = entry.kind === "rev" ? "revenue_entries" : "expense_entries";
@@ -324,8 +401,16 @@ export default function ProfitabilityPage() {
       updated_by: member.user_id,
     }).eq("id", entry.id).eq("company_id", company.id).is("voided_at", null);
     setBusy(false);
-    if (error) alert("Could not void: " + error.message);
-    else compute();
+    if (error) return "Could not void: " + error.message;
+    setVoiding(null);
+    compute();
+    return null;
+  }
+
+  async function confirmVoid() {
+    if (!voiding) return;
+    const err = await voidEntry(voiding);
+    if (err) setVoiding((v) => (v ? { ...v, error: err } : v));
   }
 
   if (loading || checking || !company) return <p>Loading…</p>;
@@ -361,6 +446,57 @@ export default function ProfitabilityPage() {
     { revenue: 0, cost: 0, profit: 0 }
   );
 
+  const rangeLabel = (RANGES.find((r) => r.key === range) || {}).label || "";
+  const invTotals = invRows.reduce(
+    (s, r) => ({ invoiced: s.invoiced + r.invoiced, paid: s.paid + r.paid, count: s.count + r.count }),
+    { invoiced: 0, paid: 0, count: 0 }
+  );
+
+  function exportCsv() {
+    const basis =
+      "Revenue = accepted bids (all time -- bids record no acceptance date) + manual revenue entries in the range. Cost = labor (closed shifts in the range x each shift's pay rate) + manual expense entries in the range. The invoiced section below = issued invoices with an issue date in the range, shown separately and never added to Revenue (an invoice can bill work already counted in an accepted bid).";
+    const lines = [
+      ["Profitability"].map(csvCell).join(","),
+      ["Company", company.name || ""].map(csvCell).join(","),
+      ["Range", rangeLabel].map(csvCell).join(","),
+      ["Basis", basis].map(csvCell).join(","),
+      "",
+      ["Location", "Revenue", "Labor", "Expenses", "Profit", "Margin %"].map(csvCell).join(","),
+      ...rows.map((r) =>
+        [
+          r.name,
+          r.revenue.toFixed(2),
+          r.labor.toFixed(2),
+          r.expenses.toFixed(2),
+          r.profit.toFixed(2),
+          r.revenue > 0 ? ((r.profit / r.revenue) * 100).toFixed(1) : "",
+        ].map(csvCell).join(",")
+      ),
+      [
+        "All locations",
+        totals.revenue.toFixed(2),
+        rows.reduce((s, r) => s + r.labor, 0).toFixed(2),
+        rows.reduce((s, r) => s + r.expenses, 0).toFixed(2),
+        totals.profit.toFixed(2),
+        totals.revenue > 0 ? ((totals.profit / totals.revenue) * 100).toFixed(1) : "",
+      ].map(csvCell).join(","),
+      "",
+      ["Invoiced revenue -- issued invoices in this range (separate from the figures above; do not add together)"].map(csvCell).join(","),
+      ["Location", "Issued invoices", "Invoiced", "Paid on these invoices", "Still owed"].map(csvCell).join(","),
+      ...invRows.map((r) =>
+        [r.name, r.count, r.invoiced.toFixed(2), r.paid.toFixed(2), (r.invoiced - r.paid).toFixed(2)].map(csvCell).join(",")
+      ),
+      [
+        "All locations",
+        invTotals.count,
+        invTotals.invoiced.toFixed(2),
+        invTotals.paid.toFixed(2),
+        (invTotals.invoiced - invTotals.paid).toFixed(2),
+      ].map(csvCell).join(","),
+    ];
+    downloadCsv(`profitability_${range}.csv`, lines);
+  }
+
   return (
     <div>
       <p className="eyebrow">PROFITABILITY</p>
@@ -388,6 +524,12 @@ export default function ProfitabilityPage() {
         ))}
       </div>
 
+      <p style={{ fontSize: "0.85rem", color: "var(--muted)", marginTop: 2 }}>
+        The date range applies to manual entries, labor, and invoiced revenue.
+        Accepted bids record no acceptance date, so bid revenue counts all-time
+        in every range.
+      </p>
+
       {computing ? (
         <p>Crunching numbers…</p>
       ) : (
@@ -399,6 +541,12 @@ export default function ProfitabilityPage() {
               <Stat label="Profit" value={totals.profit} highlight />
             </div>
           </section>
+
+          <div style={{ marginBottom: 18 }}>
+            <button type="button" onClick={exportCsv} disabled={rows.length === 0} style={smallButton}>
+              Download CSV for your bookkeeper
+            </button>
+          </div>
 
           <div style={{ display: "grid", gap: 10 }}>
             {rows.length === 0 && <p style={{ color: "var(--muted)" }}>No locations yet.</p>}
@@ -428,6 +576,55 @@ export default function ProfitabilityPage() {
             })}
           </div>
 
+          <section className="panel" style={{ padding: 22, marginTop: 18 }}>
+            <h3 style={{ marginTop: 0 }}>Invoiced revenue — issued invoices in this range</h3>
+            <p style={{ color: "var(--muted)", fontSize: "0.9rem" }}>
+              Invoices your company has issued (drafts are not billed yet, and
+              voided invoices are not counted). Paid is everything paid on those
+              same invoices so far. An invoice can bill work already counted in
+              an accepted bid above, so these figures are shown separately and
+              are never added to the Revenue total.
+            </p>
+            {invError ? (
+              <p style={{ color: "var(--muted)" }}>Invoice figures couldn't be loaded right now.</p>
+            ) : invRows.length === 0 ? (
+              <p style={{ color: "var(--muted)" }}>No issued invoices in this range.</p>
+            ) : (
+              <>
+                <div style={{ display: "flex", gap: 18, flexWrap: "wrap" }}>
+                  <Stat label="Invoiced" value={invTotals.invoiced} />
+                  <Stat label="Paid on these invoices" value={invTotals.paid} />
+                  <Stat label="Still owed" value={invTotals.invoiced - invTotals.paid} />
+                </div>
+                <div style={{ display: "grid", gap: 6, marginTop: 14 }}>
+                  {invRows.map((r) => (
+                    <div key={r.id} style={{ fontSize: "0.88rem", color: "var(--muted)" }}>
+                      <strong style={{ color: "var(--ink)" }}>{r.name}</strong>{" "}
+                      Invoiced ${r.invoiced.toFixed(2)} • Paid ${r.paid.toFixed(2)} • Still owed $
+                      {(r.invoiced - r.paid).toFixed(2)} • {counted(r.count, "invoice", "invoices")}
+                    </div>
+                  ))}
+                </div>
+                <div style={{ display: "grid", gap: 6, marginTop: 14 }}>
+                  {invList.map((inv) => (
+                    <div key={inv.id} style={{ fontSize: "0.88rem", borderTop: "1px solid var(--line)", paddingTop: 6 }}>
+                      <Link
+                        href={`/app/${company.id}/invoices/${inv.id}`}
+                        style={{ color: "var(--brand-deep)", fontWeight: 700 }}
+                      >
+                        Invoice #{inv.invoice_number}
+                      </Link>{" "}
+                      {inv.client_name ? `${inv.client_name} • ` : ""}
+                      {inv.issue_date} • {inv.status} • Total ${Number(inv.total).toFixed(2)} • Paid $
+                      {Number(inv.amount_paid).toFixed(2)} • Still owed $
+                      {(Number(inv.total) - Number(inv.amount_paid)).toFixed(2)}
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+          </section>
+
           <div style={{ display: "grid", gap: 18, marginTop: 26 }}>
             <EntryForm
               title="Add revenue"
@@ -455,7 +652,7 @@ export default function ProfitabilityPage() {
             setEditing={setEditing}
             busy={busy}
             onSaveEdit={saveEdit}
-            onVoid={voidEntry}
+            onVoid={startVoid}
           />
           <EntriesList
             title="Expense entries in this range"
@@ -466,8 +663,43 @@ export default function ProfitabilityPage() {
             setEditing={setEditing}
             busy={busy}
             onSaveEdit={saveEdit}
-            onVoid={voidEntry}
+            onVoid={startVoid}
           />
+          {voiding && (
+            <section className="panel" style={{ padding: 22, marginTop: 18 }}>
+              <h3 style={{ marginTop: 0 }}>
+                Void this {voiding.kind === "rev" ? "revenue" : "expense"} entry?
+              </h3>
+              <p style={{ fontSize: "0.9rem" }}>
+                <strong>${Number(voiding.amount).toFixed(2)}</strong> {voiding.entry_date} •{" "}
+                {(locations.find((l) => l.id === voiding.location_id) || {}).name || "No location"}
+                {voiding.description ? ` — ${voiding.description}` : ""}
+              </p>
+              <p style={{ fontSize: "0.9rem", color: "var(--muted)" }}>
+                It stays on record with your reason and stops counting in the totals.
+              </p>
+              <label style={{ display: "grid", gap: 6, fontSize: "0.9rem", color: "var(--muted)", maxWidth: 520 }}>
+                Reason (10-500 characters)
+                <textarea
+                  value={voiding.reason}
+                  onChange={(e) => setVoiding({ ...voiding, reason: e.target.value, error: "" })}
+                  rows={3}
+                  style={input}
+                />
+              </label>
+              {voiding.error && (
+                <p style={{ color: "#b3261e", fontSize: "0.9rem" }}>{voiding.error}</p>
+              )}
+              <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+                <button onClick={confirmVoid} disabled={busy} style={button}>
+                  {busy ? "Voiding…" : "Void this entry"}
+                </button>
+                <button onClick={() => setVoiding(null)} disabled={busy} style={smallButton}>
+                  Cancel
+                </button>
+              </div>
+            </section>
+          )}
           <p style={{ fontSize: "0.85rem", color: "var(--muted)", marginTop: 16 }}>
             Tip: set each team member's hourly rate on the{" "}
             <Link href={`/app/${company.id}/team`} style={{ color: "var(--brand-deep)", fontWeight: 700 }}>
