@@ -36,6 +36,20 @@ export default function InspectionDetailPage() {
   const [publicationSummary, setPublicationSummary] = useState("");
   const [publicationError, setPublicationError] = useState("");
   const [publicationBusy, setPublicationBusy] = useState(false);
+  // Depth additions (D-WT-21): site history, follow-up work orders
+  // linked to this inspection, and the manager follow-up form state.
+  const [siteHistory, setSiteHistory] = useState([]);
+  const [followUps, setFollowUps] = useState([]);
+  const [teamMembers, setTeamMembers] = useState([]);
+  const [woTitle, setWoTitle] = useState("");
+  const [woDescription, setWoDescription] = useState("");
+  const [woPriority, setWoPriority] = useState("normal");
+  const [woAssignedTo, setWoAssignedTo] = useState("");
+  const [woDueDate, setWoDueDate] = useState("");
+  const [woBusy, setWoBusy] = useState(false);
+  const [woError, setWoError] = useState("");
+  const [woCreatedId, setWoCreatedId] = useState(null);
+  const [woFormReady, setWoFormReady] = useState(false);
 
   const inspectionId = params.id;
   const isManager = member && (member.role === "owner" || member.role === "admin");
@@ -101,12 +115,155 @@ export default function InspectionDetailPage() {
     const { data: ph } = await sb.from("inspection_photos").select("*")
       .eq("inspection_id", inspectionId).is("inspection_item_id", null).order("created_at");
     setPhotos(await withSignedUrls(sb, ph || []));
+    // Depth additions (D-WT-21): other inspections at this site, the
+    // follow-up work orders already created from this inspection, and
+    // the team list for the follow-up form. All fail-soft: any failure
+    // leaves the lists empty and the page renders as it did before.
+    try {
+      if (insp.location_id) {
+        const { data: hist } = await sb.from("inspections")
+          .select("id, inspection_date, score, inspector_id")
+          .eq("company_id", company.id)
+          .eq("location_id", insp.location_id)
+          .neq("id", inspectionId)
+          .order("inspection_date", { ascending: false })
+          .order("created_at", { ascending: false })
+          .limit(6);
+        const rows = hist || [];
+        const hIds = [...new Set(rows.map((r) => r.inspector_id).filter(Boolean))];
+        const hNames = {};
+        if (hIds.length > 0) {
+          const { data: ms } = await sb.from("team_directory").select("id, display_name").in("id", hIds);
+          for (const m of ms || []) hNames[m.id] = m.display_name;
+        }
+        setSiteHistory(rows.map((r) => ({ ...r, inspector_name: hNames[r.inspector_id] || null })));
+      } else {
+        setSiteHistory([]);
+      }
+    } catch { setSiteHistory([]); }
+    try {
+      // Follow-ups created from this page carry source "inspection"
+      // and this inspection's id inside their description text (the
+      // work_orders table has no inspection link column — the label
+      // in the record is the link, the same labelling approach the
+      // portal uses with source "portal").
+      const { data: wos } = await sb.from("work_orders")
+        .select("id, title, status, priority, due_date, assigned_to, created_at")
+        .eq("company_id", company.id)
+        .eq("source", "inspection")
+        .ilike("description", `%${inspectionId}%`)
+        .order("created_at", { ascending: false });
+      const rows = wos || [];
+      const aIds = [...new Set(rows.map((r) => r.assigned_to).filter(Boolean))];
+      const aNames = {};
+      if (aIds.length > 0) {
+        const { data: ms } = await sb.from("team_directory").select("id, display_name").in("id", aIds);
+        for (const m of ms || []) aNames[m.id] = m.display_name;
+      }
+      setFollowUps(rows.map((r) => ({ ...r, assignee_name: aNames[r.assigned_to] || "Unassigned" })));
+    } catch { setFollowUps([]); }
+    if (isManager) {
+      try {
+        const { data: ms } = await sb.from("team_directory").select("id, display_name").eq("company_id", company.id).order("display_name");
+        setTeamMembers(ms || []);
+      } catch { setTeamMembers([]); }
+    }
   }
 
   useEffect(() => {
     if (!loading && company) load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loading, company]);
+
+  // ---- Depth additions (D-WT-21): derived from stored results only ----
+  // Nothing below writes anything on view. Every figure comes from
+  // rows the page already loads (sections + their per-item results).
+  const allItemResults = sections.flatMap((s) => (s.itemResults || []).map((r) => ({ ...r, section_name: s.section_name })));
+  const itemCounts = {
+    pass: allItemResults.filter((r) => r.outcome === "pass").length,
+    issue: allItemResults.filter((r) => r.outcome === "issue").length,
+    na: allItemResults.filter((r) => r.outcome === "na").length,
+  };
+  const itemScores = allItemResults.map((r) => r.score).filter((v) => v !== null && v !== undefined);
+  const itemAverage = itemScores.length > 0 ? itemScores.reduce((a, b) => a + Number(b), 0) / itemScores.length : null;
+  // What counts as needing follow-up, stated on screen with the list:
+  // an item the inspector marked "Issue", or a whole section scored
+  // 1 or 2 of 5 (this page's own labels for those scores are Poor and
+  // Fair). Nothing else is listed, and items with no recorded result
+  // are never counted as failures.
+  const deficiencies = [];
+  for (const s of sections) {
+    for (const r of s.itemResults || []) {
+      if (r.outcome === "issue") {
+        deficiencies.push({ kind: "item", section: s.section_name, label: r.item_label, note: r.note || null, score: r.score });
+      }
+    }
+    if (s.score !== null && s.score !== undefined && Number(s.score) <= 2) {
+      deficiencies.push({ kind: "section", section: s.section_name, label: null, note: s.notes || null, score: s.score });
+    }
+  }
+  const WO_STATUS_LABELS = { open: "Open", in_progress: "In progress", completed: "Completed", cancelled: "Cancelled" };
+  const WO_PRIORITY_LABELS = { low: "Low", normal: "Normal", high: "High", urgent: "Urgent" };
+
+  // Prefill the follow-up form once, from the stored record. The
+  // manager can edit every field before anything is created.
+  useEffect(() => {
+    if (!inspection || woFormReady || sections.length === 0) return;
+    const lines = [
+      `Follow-up from the inspection on ${inspection.inspection_date} at ${inspection.locations?.name || "this site"}.`,
+      "Needs attention:",
+      ...deficiencies.map((d) => d.kind === "item"
+        ? `• ${d.section} — ${d.label}${d.score !== null && d.score !== undefined ? ` (item score ${d.score}/5)` : ""}${d.note ? ` — ${d.note}` : ""}`
+        : `• ${d.section} — section scored ${d.score} of 5${d.note ? ` — ${d.note}` : ""}`),
+      `Inspection record: ${inspectionId}`,
+    ];
+    setWoTitle(`Follow-up: ${inspection.locations?.name || "Site"} inspection ${inspection.inspection_date}`);
+    setWoDescription(lines.join("\n"));
+    setWoFormReady(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [inspection, sections, woFormReady]);
+
+  // Manager-initiated corrective action: creates ONE normal work
+  // order through the work orders module's own insert shape (the
+  // same fields the Work Orders page writes), labelled with
+  // source "inspection" and this inspection's id in the description
+  // so the follow-up stays traceable back to this record. Viewing
+  // this page never creates anything; only this submit does. The
+  // work order is internal — customer publication stays the separate
+  // manager step on the work order itself, exactly as today.
+  async function createFollowUpWorkOrder(e) {
+    e.preventDefault();
+    if (!requireClockedIn(clockedIn, "create a follow-up work order")) return;
+    if (!woTitle.trim()) { setWoError("Give the follow-up work order a title."); return; }
+    setWoBusy(true);
+    setWoError("");
+    const { data: created, error } = await supabase().from("work_orders").insert({
+      company_id: company.id,
+      location_id: inspection.location_id || null,
+      title: woTitle.trim(),
+      description: woDescription.trim() || null,
+      priority: woPriority,
+      assigned_to: woAssignedTo || null,
+      due_date: woDueDate || null,
+      source: "inspection",
+      status: "open",
+    }).select("id").single();
+    setWoBusy(false);
+    if (error) { setWoError("Could not create the follow-up work order: " + error.message); return; }
+    // Notify the assignee (best effort — the same call the Work
+    // Orders page makes after creating an assigned order).
+    if (created?.id && woAssignedTo) {
+      try {
+        await fetch("/api/work-orders/notify", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ work_order_id: created.id, event: "assigned", actor_member_id: member.id }),
+        });
+      } catch {}
+    }
+    setWoCreatedId(created?.id || null);
+    load();
+  }
 
   async function updatePortalPublication(publish) {
     if(!isManager||!inspection||publicationBusy)return;
@@ -267,6 +424,144 @@ export default function InspectionDetailPage() {
           </button>
         )}
       </section>
+
+      {sections.length > 0 && (
+        <section className="panel" style={{ padding: 22, margin: "18px 0" }}>
+          <h3 style={{ marginTop: 0 }}>Results at a glance</h3>
+          <p style={{ margin: "0 0 8px" }}>
+            Overall score as recorded: <strong>{inspection.score ? (SCORE_LABELS[inspection.score] || `Score ${inspection.score}`) : "Not scored"}</strong>
+            <span style={{ color: "var(--muted)" }}> — recorded as the rounded average of the section scores below.</span>
+          </p>
+          {allItemResults.length > 0 ? (
+            <p style={{ margin: "0 0 8px" }}>
+              {allItemResults.length} item result{allItemResults.length === 1 ? "" : "s"} recorded:{" "}
+              <strong>{itemCounts.pass} Pass</strong> · <strong>{itemCounts.issue} Issue</strong> · <strong>{itemCounts.na} N/A</strong>
+              {itemAverage !== null && (
+                <span> · Average of the {itemScores.length} recorded item score{itemScores.length === 1 ? "" : "s"}: <strong>{itemAverage.toFixed(1)}/5</strong></span>
+              )}
+              <span style={{ color: "var(--muted)" }}> Items with no recorded result are not counted.</span>
+            </p>
+          ) : (
+            <p style={{ margin: "0 0 8px", color: "var(--muted)" }}>No per-item results were recorded for this inspection — the section scores and ticked checklists below are the record.</p>
+          )}
+          <ul style={{ margin: 0, paddingLeft: 20, fontSize: "0.92rem" }}>
+            {sections.map((s) => {
+              const rs = s.itemResults || [];
+              const p = rs.filter((r) => r.outcome === "pass").length;
+              const i2 = rs.filter((r) => r.outcome === "issue").length;
+              const n = rs.filter((r) => r.outcome === "na").length;
+              return (
+                <li key={s.id} style={{ marginBottom: 3 }}>
+                  <strong>{s.section_name}</strong> — {s.score ? (SCORE_LABELS[s.score] || `Score ${s.score}`) : "Not scored"}
+                  {rs.length > 0 && <span> · {p} Pass · {i2} Issue · {n} N/A</span>}
+                  {Array.isArray(s.checklist) && s.checklist.length > 0 && <span> · {s.checklist.length} checklist item{s.checklist.length === 1 ? "" : "s"} ticked as passed</span>}
+                </li>
+              );
+            })}
+          </ul>
+        </section>
+      )}
+
+      {(deficiencies.length > 0 || followUps.length > 0 || isManager) && (
+        <section className="panel" style={{ padding: 22, margin: "18px 0" }}>
+          <h3 style={{ marginTop: 0 }}>Follow-up</h3>
+          {deficiencies.length > 0 ? (
+            <>
+              <p style={{ margin: "0 0 8px" }}>
+                <strong>Needs attention ({deficiencies.length})</strong>
+                <span style={{ color: "var(--muted)" }}> — from the stored results: an item marked Issue, or a section scored 1–2 of 5. Nothing was created automatically; a manager decides what becomes a work order below.</span>
+              </p>
+              <ul style={{ margin: "0 0 10px", paddingLeft: 20, fontSize: "0.92rem" }}>
+                {deficiencies.map((d, di) => (
+                  <li key={di} style={{ marginBottom: 3 }}>
+                    {d.kind === "item" ? (
+                      <><strong>{d.section}</strong> — {d.label}
+                        {d.score !== null && d.score !== undefined && <span> · Score {d.score}/5</span>}
+                        {d.note && <span style={{ color: "var(--muted)", whiteSpace: "pre-wrap" }}> — {d.note}</span>}</>
+                    ) : (
+                      <><strong>{d.section}</strong> — section scored {d.score} of 5
+                        {d.note && <span style={{ color: "var(--muted)", whiteSpace: "pre-wrap" }}> — {d.note}</span>}</>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </>
+          ) : (
+            <p style={{ margin: "0 0 10px", color: "var(--muted)" }}>No item is marked Issue and no section is scored 1–2 of 5 in the stored results.</p>
+          )}
+          {followUps.length > 0 && (
+            <>
+              <p style={{ fontWeight: 700, margin: "0 0 6px" }}>Follow-up work orders from this inspection</p>
+              <div style={{ display: "grid", gap: 8, marginBottom: 10 }}>
+                {followUps.map((w) => (
+                  <Link key={w.id} href={`/app/${company.id}/work-orders/${w.id}`} className="portal-card" style={{ minHeight: 0, padding: "12px 16px", textDecoration: "none", color: "inherit" }}>
+                    <span className="card-kicker">{WO_STATUS_LABELS[w.status] || w.status} • {WO_PRIORITY_LABELS[w.priority] || w.priority} priority</span>
+                    <p style={{ margin: "4px 0 0", fontWeight: 700 }}>{w.title}</p>
+                    <p style={{ margin: "2px 0 0", color: "var(--muted)", fontSize: "0.88rem" }}>
+                      {w.assignee_name}{w.due_date ? ` • due ${w.due_date}` : " • no due date"} • created {String(w.created_at).slice(0, 10)}
+                    </p>
+                    <span className="card-link">Open →</span>
+                  </Link>
+                ))}
+              </div>
+            </>
+          )}
+          {woCreatedId && (
+            <p style={{ color: "#1e8e4d", fontWeight: 700 }}>
+              Follow-up work order created.{" "}
+              <Link href={`/app/${company.id}/work-orders/${woCreatedId}`} style={{ color: "var(--brand-deep)" }}>Open it →</Link>
+            </p>
+          )}
+          {isManager && (
+            <form onSubmit={createFollowUpWorkOrder} style={{ display: "grid", gap: 10, maxWidth: 520, marginTop: 6 }}>
+              <p style={{ fontWeight: 700, margin: 0 }}>Create a follow-up work order</p>
+              {woError && <p role="alert" style={{ color: "#b3261e", margin: 0 }}>{woError}</p>}
+              <input value={woTitle} onChange={(e) => setWoTitle(e.target.value)} placeholder="Title" required style={input} />
+              <textarea value={woDescription} onChange={(e) => setWoDescription(e.target.value)} rows={5} style={{ ...input, resize: "vertical" }} />
+              <div style={{ display: "flex", gap: 8 }}>
+                <select value={woPriority} onChange={(e) => setWoPriority(e.target.value)} style={{ ...input, flex: 1 }}>
+                  {Object.keys(WO_PRIORITY_LABELS).map((p) => (
+                    <option key={p} value={p}>{WO_PRIORITY_LABELS[p]}</option>
+                  ))}
+                </select>
+                <select value={woAssignedTo} onChange={(e) => setWoAssignedTo(e.target.value)} style={{ ...input, flex: 1 }}>
+                  <option value="">Unassigned</option>
+                  {teamMembers.map((m) => (
+                    <option key={m.id} value={m.id}>{m.display_name}</option>
+                  ))}
+                </select>
+                <label style={{ flex: 1, fontSize: "0.9rem", color: "var(--muted)" }}>
+                  Due date
+                  <input type="date" value={woDueDate} onChange={(e) => setWoDueDate(e.target.value)} style={{ ...input, marginTop: 6 }} />
+                </label>
+              </div>
+              <button type="submit" disabled={woBusy} style={button}>
+                {woBusy ? "Creating…" : "Create follow-up work order"}
+              </button>
+              <p style={{ fontSize: "0.85rem", color: "var(--muted)", margin: 0 }}>
+                Creates a normal WorkTeams work order for this site, labelled as coming from this inspection so it stays traceable. It is not published to the customer portal — publishing a work order stays a separate step on the work order itself.
+              </p>
+            </form>
+          )}
+        </section>
+      )}
+
+      {siteHistory.length > 0 && (
+        <section className="panel" style={{ padding: 22, margin: "18px 0" }}>
+          <h3 style={{ marginTop: 0 }}>Other inspections at this site</h3>
+          <div style={{ display: "grid", gap: 8 }}>
+            {siteHistory.map((h) => (
+              <Link key={h.id} href={`/app/${company.id}/inspections/${h.id}`} className="portal-card" style={{ minHeight: 0, padding: "12px 16px", textDecoration: "none", color: "inherit" }}>
+                <p style={{ margin: 0, fontWeight: 700 }}>
+                  {h.inspection_date} • {h.score ? (SCORE_LABELS[h.score] || `Score ${h.score}`) : "Not scored"}
+                  {h.inspector_name ? <span style={{ fontWeight: 400, color: "var(--muted)" }}> • {h.inspector_name}</span> : ""}
+                </p>
+                <span className="card-link">Open →</span>
+              </Link>
+            ))}
+          </div>
+        </section>
+      )}
 
       {isManager&&<section className="panel" style={{padding:22,margin:"18px 0"}}>
         <h3 style={{marginTop:0}}>Customer Portal — Published Quality Report</h3>
