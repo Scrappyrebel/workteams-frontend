@@ -53,6 +53,7 @@ export default function AppShell({ company, member, children }) {
   const [pushStatus, setPushStatus] = useState("unknown");
   const [unacked, setUnacked] = useState(0);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [navSearch, setNavSearch] = useState("");
   const menuRef = useRef(null);
   // Temp staffing module: only the temp agency company gets the tab.
   // Everyone else never sees it (gated second-company feature).
@@ -166,10 +167,33 @@ export default function AppShell({ company, member, children }) {
     };
   });
 
+  // Menu search (Wendy, 2026-11-01): filters the SAME permission-filtered
+  // list above, so a search can never surface an item the viewer couldn't
+  // already see. The nav order itself is unchanged. null = no search term
+  // (panel shows the full nav, exactly as usual).
+  const navQuery = navSearch.trim().toLowerCase();
+  let navResults = null;
+  if (navQuery) {
+    const seen = new Set();
+    navResults = linksMapped.filter((item) => {
+      if (!item.label.toLowerCase().includes(navQuery)) return false;
+      const dedupeKey = `${item.label}|${item.href}`;
+      if (seen.has(dedupeKey)) return false;
+      seen.add(dedupeKey);
+      return true;
+    });
+  }
+  const panelItems = navResults ?? linksMapped;
+
   // Hamburger menu: closes on route change, Escape, or an outside tap.
   useEffect(() => {
     setMenuOpen(false);
   }, [pathname]);
+
+  // A fresh menu open starts with an empty search box.
+  useEffect(() => {
+    if (!menuOpen) setNavSearch("");
+  }, [menuOpen]);
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -266,7 +290,37 @@ export default function AppShell({ company, member, children }) {
                   >
                     ALL SECTIONS &amp; TOOLS
                   </p>
-                  {linksMapped.map((item) => {
+                  <input
+                    type="search"
+                    value={navSearch}
+                    onChange={(e) => setNavSearch(e.target.value)}
+                    placeholder="Search sections & tools…"
+                    aria-label="Search sections and tools"
+                    style={{
+                      width: "100%",
+                      boxSizing: "border-box",
+                      minHeight: 44,
+                      margin: "0 0 6px",
+                      padding: "10px 14px",
+                      border: "1px solid var(--line)",
+                      borderRadius: 12,
+                      fontSize: "1rem",
+                      color: "var(--ink)",
+                      background: "#fff",
+                    }}
+                  />
+                  {navResults !== null && navResults.length === 0 && (
+                    <p
+                      style={{
+                        margin: "6px 12px 10px",
+                        fontSize: "0.9rem",
+                        color: "var(--muted)",
+                      }}
+                    >
+                      No matches
+                    </p>
+                  )}
+                  {panelItems.map((item) => {
                     const active = pathname === item.href || (item.key === "dashboard" && pathname === `/app/${companyId}`);
                     return (
                       <Link
