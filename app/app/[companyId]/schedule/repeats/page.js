@@ -5,7 +5,7 @@ import Link from "next/link";
 import { supabase } from "../../../../../lib/supabase";
 import { useCompany } from "../../../../../lib/company-context";
 import { chicagoToday, formatTime12h } from "../../../../../lib/dates";
-import { summarizeSeries, formatMinutes, daysBetween } from "../../../../../lib/repeat-series.mjs";
+import { summarizeSeries, formatMinutes, daysBetween, countWorkedShifts } from "../../../../../lib/repeat-series.mjs";
 
 // Parse "YYYY-MM-DD" as local noon so timezone shifts can't move the day.
 function parseDay(iso) {
@@ -28,10 +28,44 @@ export default function RepeatsPage() {
   // Depth (D-WT-13): how many shifts each series already has in the
   // past (kept as history), and the "end this series sooner" picker.
   const [pastCountBySeries, setPastCountBySeries] = useState({});
+  // Worked-shift guard (owner ruling 2026-11-02): how many shifts in
+  // each series already have recorded work. A series above zero cannot
+  // be deleted — see deleteSeries.
+  const [workedCountBySeries, setWorkedCountBySeries] = useState({});
   const [endPick, setEndPick] = useState(null); // { seriesId, date }
   const [confirmEndSeriesId, setConfirmEndSeriesId] = useState(null);
 
   const isManager = member && (member.role === "owner" || member.role === "admin");
+
+  // Read-only worked check for one series (owner ruling 2026-11-02):
+  // fetch the series' shift ids — any date, because recorded work is
+  // usually on today's or an earlier shift and Delete series is judged
+  // on the whole series — then count how many of those shifts carry a
+  // time record. Returns the count, or null when the check itself
+  // failed; callers must treat null as "not verified", never as zero.
+  // This only READS the time records. Nothing about how time is
+  // recorded changes, and nothing here writes to them.
+  async function fetchWorkedCount(sb, seriesId) {
+    const { data: rows, error: rowsError } = await sb
+      .from("shifts")
+      .select("id")
+      .eq("company_id", company.id)
+      .eq("series_id", seriesId);
+    if (rowsError) return null;
+    const ids = (rows || []).map((r) => r.id);
+    if (ids.length === 0) return 0;
+    const workedIds = new Set();
+    for (let i = 0; i < ids.length; i += 100) {
+      const { data: entries, error: entriesError } = await sb
+        .from("time_entries")
+        .select("shift_id")
+        .eq("company_id", company.id)
+        .in("shift_id", ids.slice(i, i + 100));
+      if (entriesError) return null;
+      for (const e of entries || []) if (e.shift_id) workedIds.add(e.shift_id);
+    }
+    return countWorkedShifts(ids, workedIds);
+  }
 
   async function load() {
     const sb = supabase();
@@ -74,6 +108,22 @@ export default function RepeatsPage() {
     } else {
       setPastCountBySeries({});
     }
+    // Worked counts for the delete guard (see fetchWorkedCount). A
+    // series whose check fails is simply left out — its Delete button
+    // still appears, and deleteSeries re-checks fresh before removing
+    // anything, failing closed if the check cannot be made there.
+    if (seriesIds.length > 0) {
+      const worked = {};
+      await Promise.all(
+        seriesIds.map(async (sid) => {
+          const n = await fetchWorkedCount(sb, sid);
+          if (typeof n === "number" && n > 0) worked[sid] = n;
+        })
+      );
+      setWorkedCountBySeries(worked);
+    } else {
+      setWorkedCountBySeries({});
+    }
   }
 
   useEffect(() => {
@@ -87,7 +137,22 @@ export default function RepeatsPage() {
       return;
     }
     setConfirmSeriesId(null);
-    const { error } = await supabase()
+    // Worked-shift guard (owner ruling 2026-11-02), checked fresh at
+    // delete time: if work has been recorded on any shift in this
+    // series, the series is NOT deleted — deleting a worked shift
+    // would detach its time record. The check fails closed: when it
+    // cannot be made, nothing is deleted either.
+    const sb = supabase();
+    const worked = await fetchWorkedCount(sb, seriesId);
+    if (worked === null) {
+      alert("Could not check whether this series has recorded work on it, so nothing was deleted. Please try again.");
+      return;
+    }
+    if (worked > 0) {
+      setWorkedCountBySeries((prev) => ({ ...prev, [seriesId]: worked }));
+      return;
+    }
+    const { error } = await sb
       .from("shifts")
       .delete()
       .eq("series_id", seriesId)
@@ -156,6 +221,7 @@ export default function RepeatsPage() {
       // and scheduled time are read off the shifts themselves.
       summary: summarizeSeries(rows),
       pastCount: pastCountBySeries[seriesId] || 0,
+      workedCount: workedCountBySeries[seriesId] || 0,
     };
   });
   const todayISO = chicagoToday(company?.timezone);
@@ -266,7 +332,7 @@ export default function RepeatsPage() {
                 >
                   {expanded === g.seriesId ? "Hide dates" : "Show all dates"}
                 </button>
-                {isManager && (
+                {isManager && g.workedCount === 0 && (
                   <button
                     type="button"
                     onClick={() => deleteSeries(g.seriesId)}
@@ -288,6 +354,12 @@ export default function RepeatsPage() {
                   </button>
                 )}
               </div>
+              {isManager && g.workedCount > 0 && (
+                <div style={{ fontSize: "0.85rem", color: "#b91c1c", marginTop: 8 }}>
+                  This series can&rsquo;t be deleted: work has been recorded on {g.workedCount} of its shifts, and deleting a worked shift would detach its time record.
+                  {g.rows.length > 1 ? " To stop it going forward, use \u201CEnd series sooner\u201D." : ""}
+                </div>
+              )}
               {isManager && endPick && endPick.seriesId === g.seriesId && (
                 <div style={{ marginTop: 8, display: "grid", gap: 6 }}>
                   <label style={{ fontSize: "0.85rem", fontWeight: 700 }}>
