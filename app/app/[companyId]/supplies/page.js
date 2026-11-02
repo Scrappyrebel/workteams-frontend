@@ -6,15 +6,19 @@ import { supabase } from "../../../../lib/supabase";
 import { useCompany } from "../../../../lib/company-context";
 import { useClockedIn, requireClockedIn } from "../../../../lib/use-clocked-in";
 import { canUseWithRole } from "../../../../lib/tiers";
+import { buildIdentityPayload, identityValuesEntered, isMissingIdentityColumnError, identityLineParts, supplyItemMatchesSearch } from "../../../../lib/supply-item-identity";
 
 const emptyForm = {
   name: "",
   category: "",
+  vendor: "",
+  sku: "",
   quantity_on_hand: "0",
   unit: "units",
   reorder_level: "0",
   cost_per_unit: "",
   notes: "",
+  location_id: "",
 };
 
 const CONDITION_LABEL = {
@@ -44,6 +48,12 @@ export default function SuppliesPage() {
   const { company, member, loading } = useCompany();
   const { clockedIn } = useClockedIn();
   const [items, setItems] = useState([]);
+  // Item identity (migration 087): where the stock is kept, plus the
+  // probe that says whether the new columns exist yet. Fail-soft: an
+  // empty locations list or a failed probe changes nothing else.
+  const [locations, setLocations] = useState([]);
+  const [identityReady, setIdentityReady] = useState(false);
+  const [search, setSearch] = useState("");
   const [form, setForm] = useState(emptyForm);
   const [saving, setSaving] = useState(false);
   const [editing, setEditing] = useState(null);
@@ -82,12 +92,19 @@ export default function SuppliesPage() {
   // Member view loads the same list WITHOUT the cost column: who can see
   // costs does not widen with this upgrade.
   async function loadMemberItems() {
-    const cols = "id, company_id, name, category, quantity_on_hand, unit, reorder_level, notes, condition";
+    const baseCols = "id, company_id, name, category, quantity_on_hand, unit, reorder_level, notes, condition";
     let { data, error } = await supabase()
       .from("supplies")
-      .select(cols)
+      .select(`${baseCols}, vendor, sku, location_id`)
       .eq("company_id", company.id)
       .order("name");
+    if (error) {
+      ({ data, error } = await supabase()
+        .from("supplies")
+        .select(baseCols)
+        .eq("company_id", company.id)
+        .order("name"));
+    }
     if (error) {
       ({ data } = await supabase()
         .from("supplies")
@@ -96,6 +113,44 @@ export default function SuppliesPage() {
         .order("name"));
     }
     setItems(data || []);
+  }
+
+  // Locations for the item's "stocked at" association (migration 087).
+  // The locations table has existed since 001; any failure just leaves
+  // the picker empty and names unresolved — the list is unchanged.
+  async function loadLocations() {
+    try {
+      const { data } = await supabase()
+        .from("locations")
+        .select("id, name")
+        .eq("company_id", company.id)
+        .order("name");
+      if (data) setLocations(data);
+    } catch {
+      /* locations stay empty; stocked-at names simply do not render */
+    }
+  }
+
+  // Probe for the migration-087 identity columns. Fail-soft both ways:
+  // the form fields render either way and the save ladder is the
+  // authority — this only drives the "turns on" note by the fields.
+  async function probeIdentity() {
+    try {
+      const { error } = await supabase()
+        .from("supplies")
+        .select("vendor, sku, location_id")
+        .eq("company_id", company.id)
+        .limit(1);
+      setIdentityReady(!error);
+    } catch {
+      setIdentityReady(false);
+    }
+  }
+
+  function locationNameOf(item) {
+    if (!item?.location_id) return null;
+    const found = locations.find((l) => l.id === item.location_id);
+    return found ? found.name : null;
   }
 
   // Probes + loads for the inventory-control tables. Any failure leaves
@@ -135,6 +190,8 @@ export default function SuppliesPage() {
       if (isManager) load();
       else loadMemberItems();
       loadInventory();
+      loadLocations();
+      probeIdentity();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loading, company, allowed]);
@@ -182,16 +239,36 @@ export default function SuppliesPage() {
       cost_per_unit: form.cost_per_unit === "" ? null : parseFloat(form.cost_per_unit),
       notes: form.notes.trim() || null,
     };
+    // Migration 087 identity fields, written tolerantly: the full
+    // payload goes first. If those columns are not there yet, values a
+    // manager entered are never silently dropped — the save stops and
+    // says so. Only when nothing was entered does it step down to the
+    // exact payload this form has always written.
+    const identity = buildIdentityPayload(form);
+    const entered = identityValuesEntered(form);
+    const fullPayload = { ...payload, ...identity };
     let error;
     let savedId = editing;
     const original = editing ? items.find((i) => i.id === editing) : null;
-    if (editing) {
-      ({ error } = await supabase().from("supplies").update(payload).eq("id", editing));
-    } else {
-      const res = await supabase().from("supplies").insert(payload).select("id").single();
-      error = res.error;
-      savedId = res.data?.id || null;
+    async function writeItem(body) {
+      if (editing) {
+        const res = await supabase().from("supplies").update(body).eq("id", editing);
+        return { error: res.error, id: editing };
+      }
+      const res = await supabase().from("supplies").insert(body).select("id").single();
+      return { error: res.error, id: res.data?.id || null };
     }
+    let writeRes = await writeItem(fullPayload);
+    if (writeRes.error && isMissingIdentityColumnError(writeRes.error)) {
+      if (entered) {
+        setSaving(false);
+        alert(`"${form.name.trim()}" could not be saved yet: the vendor, SKU and stocked-at fields turn on with the latest WorkTeams update. Nothing was saved — try again once the update is in, or clear those three fields to save the item without them.`);
+        return;
+      }
+      writeRes = await writeItem(payload);
+    }
+    error = writeRes.error;
+    savedId = writeRes.id || savedId;
     setSaving(false);
     if (error) alert("Could not save: " + error.message);
     else {
@@ -245,11 +322,14 @@ export default function SuppliesPage() {
     setForm({
       name: item.name,
       category: item.category || "",
+      vendor: item.vendor || "",
+      sku: item.sku || "",
       quantity_on_hand: String(item.quantity_on_hand),
       unit: item.unit || "units",
       reorder_level: String(item.reorder_level),
       cost_per_unit: item.cost_per_unit == null ? "" : String(item.cost_per_unit),
       notes: item.notes || "",
+      location_id: item.location_id || "",
     });
     setChangeNote("");
     setJobReference("");
@@ -585,6 +665,9 @@ export default function SuppliesPage() {
   }
 
   const lowStock = items.filter((i) => Number(i.quantity_on_hand) <= Number(i.reorder_level));
+  // Search is purely additive: an empty search shows the list exactly
+  // as it has always been, and every count above still uses all items.
+  const displayedItems = items.filter((i) => supplyItemMatchesSearch(i, locationNameOf(i), search));
 
   // ---- Member view: the list, who has what, and restock requests.
   // No costs, no editing — costs stay manager-only, exactly as before.
@@ -614,9 +697,18 @@ export default function SuppliesPage() {
             })}
           </section>
         )}
+        <input
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search supplies — name, category, vendor, SKU, location, notes…"
+          style={{ ...input, marginBottom: 14 }}
+        />
         <div style={{ display: "grid", gap: 10 }}>
           {items.length === 0 && <p style={{ color: "var(--muted)" }}>No supplies tracked yet.</p>}
-          {items.map((i) => {
+          {items.length > 0 && displayedItems.length === 0 && (
+            <p style={{ color: "var(--muted)" }}>No supplies match “{search}”.</p>
+          )}
+          {displayedItems.map((i) => {
             const low = Number(i.quantity_on_hand) <= Number(i.reorder_level);
             const out = openAssignmentsFor(i.id);
             return (
@@ -636,6 +728,11 @@ export default function SuppliesPage() {
                   {i.category ? `${i.category} • ` : ""}
                   {Number(i.quantity_on_hand)} {i.unit} on hand
                 </div>
+                {identityLineParts(i, locationNameOf(i)).length > 0 && (
+                  <div style={{ fontSize: "0.85rem", color: "var(--muted)" }}>
+                    {identityLineParts(i, locationNameOf(i)).join(" • ")}
+                  </div>
+                )}
                 {i.notes && <div style={{ fontSize: "0.85rem", color: "var(--muted)" }}>{i.notes}</div>}
                 {out.map((a) => (
                   <div key={a.id} style={{ fontSize: "0.85rem", color: "var(--muted)" }}>
@@ -694,6 +791,41 @@ export default function SuppliesPage() {
               style={{ ...input, flex: 1 }}
             />
           </div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <input
+              value={form.vendor}
+              onChange={(e) => setForm({ ...form, vendor: e.target.value })}
+              placeholder="Vendor (optional)"
+              style={{ ...input, flex: 1 }}
+            />
+            <input
+              value={form.sku}
+              onChange={(e) => setForm({ ...form, sku: e.target.value })}
+              placeholder="SKU / item code (optional)"
+              style={{ ...input, flex: 1 }}
+            />
+          </div>
+          <label style={{ fontSize: "0.9rem", color: "var(--muted)" }}>
+            Stocked at (optional)
+            <select
+              value={form.location_id}
+              onChange={(e) => setForm({ ...form, location_id: e.target.value })}
+              style={{ ...input, marginTop: 6 }}
+            >
+              <option value="">Not set</option>
+              {locations.map((l) => (
+                <option key={l.id} value={l.id}>{l.name}</option>
+              ))}
+              {form.location_id && !locations.some((l) => l.id === form.location_id) && (
+                <option value={form.location_id}>Current location</option>
+              )}
+            </select>
+          </label>
+          {!identityReady && (
+            <p style={{ fontSize: "0.82rem", color: "var(--muted)", margin: 0 }}>
+              Vendor, SKU and stocked-at turn on with the latest WorkTeams update.
+            </p>
+          )}
           <div style={{ display: "flex", gap: 8 }}>
             <label style={{ flex: 1, fontSize: "0.9rem", color: "var(--muted)" }}>
               On hand
@@ -770,9 +902,18 @@ export default function SuppliesPage() {
         </form>
       </section>
 
+      <input
+        value={search}
+        onChange={(e) => setSearch(e.target.value)}
+        placeholder="Search supplies — name, category, vendor, SKU, location, notes…"
+        style={{ ...input, marginBottom: 14 }}
+      />
       <div style={{ display: "grid", gap: 10 }}>
         {items.length === 0 && <p style={{ color: "var(--muted)" }}>No supplies tracked yet.</p>}
-        {items.map((i) => {
+        {items.length > 0 && displayedItems.length === 0 && (
+          <p style={{ color: "var(--muted)" }}>No supplies match “{search}”.</p>
+        )}
+        {displayedItems.map((i) => {
           const low = Number(i.quantity_on_hand) <= Number(i.reorder_level);
           const cond = conditionOf(i);
           const out = openAssignmentsFor(i.id);
@@ -796,6 +937,11 @@ export default function SuppliesPage() {
                     {Number(i.quantity_on_hand)} {i.unit} on hand
                     {i.cost_per_unit != null ? ` • $${Number(i.cost_per_unit).toFixed(2)} each` : ""}
                   </div>
+                  {identityLineParts(i, locationNameOf(i)).length > 0 && (
+                    <div style={{ fontSize: "0.85rem", color: "var(--muted)" }}>
+                      {identityLineParts(i, locationNameOf(i)).join(" • ")}
+                    </div>
+                  )}
                   {i.notes && <div style={{ fontSize: "0.85rem", color: "var(--muted)" }}>{i.notes}</div>}
                   {invReady && out.map((a) => (
                     <div key={a.id} style={{ fontSize: "0.85rem", color: "var(--muted)" }}>
