@@ -5,13 +5,14 @@ import { useEffect, useState } from "react";
 import { supabase } from "../../../../lib/supabase";
 import { useCompany } from "../../../../lib/company-context";
 import { useClockedIn, requireClockedIn } from "../../../../lib/use-clocked-in";
-import { isSupervisorRole } from "../../../../lib/roles";
+import { isSupervisorRole, isManagerRole } from "../../../../lib/roles";
 import { canUseWithRole } from "../../../../lib/tiers";
 import { chicagoToday } from "../../../../lib/dates";
 import { validatePhotoFile } from "../../../../lib/inspection-photos";
 import { INSPECTION_STARTERS, starterById } from "../../../../lib/inspection-starters";
 import InspectionChecklistDetails from "../../../../components/InspectionChecklistDetails";
 import { buildItemResultRows, saveItemResults } from "../../../../lib/inspection-item-results";
+import { loadChecklistTemplates, saveChecklistTemplate, deleteChecklistTemplate, loadInspectionResultCounts } from "../../../../lib/inspection-checklist-templates";
 
 const SCORE_LABELS = { 1: "1 — Poor", 2: "2 — Fair", 3: "3 — Good", 4: "4 — Very good", 5: "5 — Excellent" };
 const CHECKLIST = [
@@ -49,6 +50,30 @@ export default function InspectionsPage() {
   const [startFrom, setStartFrom] = useState("blank");
   const [plan, setPlan] = useState(null);
   const [planPos, setPlanPos] = useState(0);
+  // Checklist templates (migration 084): a company-owned template can
+  // give an inspection its own checklist items instead of the standard
+  // 8. Fail-soft — until 084 runs there are no templates, the panel
+  // shows an honest note, and every inspection uses the standard
+  // checklist exactly as it always has.
+  const [templates, setTemplates] = useState([]);
+  const [templatesAvailable, setTemplatesAvailable] = useState(false);
+  const [templateId, setTemplateId] = useState("");
+  const [activeTemplate, setActiveTemplate] = useState(null);
+  const [tplName, setTplName] = useState("");
+  const [tplSiteType, setTplSiteType] = useState("");
+  const [tplLocationId, setTplLocationId] = useState("");
+  const [tplItemsText, setTplItemsText] = useState("");
+  const [tplSaving, setTplSaving] = useState(false);
+  const [tplError, setTplError] = useState("");
+  // Stored per-item results (migration 076), counted per inspection
+  // for the list: { [inspectionId]: { resulted, issues } }.
+  const [resultCounts, setResultCounts] = useState({});
+  // List depth: search + location/score filters over the rows the
+  // page already loads. Nothing here changes what is loaded or the
+  // order it arrives in.
+  const [listSearch, setListSearch] = useState("");
+  const [listLocation, setListLocation] = useState("all");
+  const [listScore, setListScore] = useState("all");
 
   const canInspect = isSupervisorRole(member?.role);
   const allowed = canUseWithRole(company?.effectiveTier || company?.tier, "inspections", member?.role);
@@ -78,6 +103,13 @@ export default function InspectionsPage() {
     })));
     const { data: locs } = await sb.from("locations").select("id, name").eq("company_id", company.id).order("name");
     setLocations(locs || []);
+    // Additive loads, both fail-soft: checklist templates (084) and
+    // the stored per-item result counts (076). Either failing leaves
+    // the page behaving exactly as it did before.
+    const tpl = await loadChecklistTemplates(sb, company.id);
+    setTemplates(tpl.templates);
+    setTemplatesAvailable(tpl.available);
+    setResultCounts(await loadInspectionResultCounts(sb, rows.map((r) => r.id)));
   }
 
   useEffect(() => {
@@ -124,6 +156,12 @@ export default function InspectionsPage() {
         };
       }
     }
+    // A picked checklist template applies to this inspection only:
+    // its sections use the template's items instead of the standard
+    // checklist. No pick (or a template that has gone away) keeps the
+    // standard checklist, exactly as before.
+    const chosenTemplate = templates.find((t) => t.id === templateId) || null;
+    setActiveTemplate(chosenTemplate && chosenTemplate.items.length > 0 ? chosenTemplate : null);
     setSaving(false);
     setActiveId(data.id);
     setSections([]);
@@ -144,6 +182,35 @@ export default function InspectionsPage() {
     setPlan(null);
     setPlanPos(0);
     setNewSection(emptySection);
+  }
+
+  async function addTemplate(e) {
+    e.preventDefault();
+    setTplError("");
+    setTplSaving(true);
+    const result = await saveChecklistTemplate(supabase(), {
+      companyId: company.id,
+      name: tplName,
+      siteType: tplSiteType,
+      locationId: tplLocationId,
+      itemsText: tplItemsText,
+      createdBy: member?.id || null,
+    });
+    setTplSaving(false);
+    if (result.error) { setTplError(result.error); return; }
+    setTemplates([...templates, result.template]);
+    setTplName("");
+    setTplSiteType("");
+    setTplLocationId("");
+    setTplItemsText("");
+  }
+
+  async function removeTemplate(t) {
+    if (!confirm(`Delete the “${t.name}” checklist template? Inspections already recorded with it keep their checklists.`)) return;
+    const result = await deleteChecklistTemplate(supabase(), t.id);
+    if (result.error) { alert(result.error); return; }
+    setTemplates(templates.filter((x) => x.id !== t.id));
+    if (templateId === t.id) setTemplateId("");
   }
 
   async function addSection(e) {
@@ -193,6 +260,8 @@ export default function InspectionsPage() {
     setStartFrom("blank");
     setPlan(null);
     setPlanPos(0);
+    setTemplateId("");
+    setActiveTemplate(null);
     load();
   }
 
@@ -213,9 +282,53 @@ export default function InspectionsPage() {
   const activeLocation = locations.find((l) => l.id === locationId);
   const planSection = plan && planPos < plan.sections.length ? plan.sections[planPos] : null;
   const planFocus = new Set(planSection?.focus || []);
+  // The checklist a section is scored against: the picked template's
+  // items while a template inspection is running, otherwise the
+  // standard checklist — byte-identical behaviour on the standard path.
+  const baseChecklist = activeTemplate && activeTemplate.items.length > 0 ? activeTemplate.items : CHECKLIST;
   const orderedChecklist = planSection
-    ? [...CHECKLIST.filter((c) => planFocus.has(c)), ...CHECKLIST.filter((c) => !planFocus.has(c))]
-    : CHECKLIST;
+    ? [...baseChecklist.filter((c) => planFocus.has(c)), ...baseChecklist.filter((c) => !planFocus.has(c))]
+    : baseChecklist;
+
+  // List depth derivations — all from rows and stored results the
+  // page already loads; averages are arithmetic over recorded scores
+  // only, and unscored inspections never count as zero.
+  const chosenTemplate = templates.find((t) => t.id === templateId) || null;
+  const listQuery = listSearch.trim().toLowerCase();
+  const visibleInspections = inspections.filter((i) => {
+    if (listLocation !== "all" && i.location_id !== listLocation) return false;
+    if (listScore === "5" && i.score !== 5) return false;
+    if (listScore === "4" && i.score !== 4) return false;
+    if (listScore === "low" && !(i.score && i.score <= 3)) return false;
+    if (listScore === "unscored" && i.score) return false;
+    if (!listQuery) return true;
+    return (
+      (i.locations?.name || "").toLowerCase().includes(listQuery) ||
+      (i.inspector_name || "").toLowerCase().includes(listQuery) ||
+      (i.notes || "").toLowerCase().includes(listQuery)
+    );
+  });
+  const filtersActive = listQuery !== "" || listLocation !== "all" || listScore !== "all";
+  const scoredInspections = inspections.filter((i) => i.score);
+  const averageScore = scoredInspections.length > 0
+    ? Math.round((scoredInspections.reduce((s, i) => s + i.score, 0) / scoredInspections.length) * 10) / 10
+    : null;
+  const inspectionsWithIssues = inspections.filter((i) => (resultCounts[i.id]?.issues || 0) > 0).length;
+  const siteHistory = [];
+  {
+    const bySite = new Map();
+    for (const i of inspections) {
+      const key = i.location_id || "none";
+      if (!bySite.has(key)) bySite.set(key, { key, name: i.locations?.name || "No location", count: 0, scored: 0, scoreSum: 0, lastDate: "" });
+      const row = bySite.get(key);
+      row.count += 1;
+      if (i.score) { row.scored += 1; row.scoreSum += i.score; }
+      if (i.inspection_date > row.lastDate) row.lastDate = i.inspection_date;
+    }
+    siteHistory.push(...bySite.values());
+    siteHistory.sort((a, b) => a.name.localeCompare(b.name));
+  }
+  const isManager = isManagerRole(member?.role);
 
   return (
     <div>
@@ -280,10 +393,90 @@ export default function InspectionsPage() {
                 results, notes, or photos.
               </p>
             )}
+            {templatesAvailable ? (
+              <label style={{ fontSize: "0.9rem", color: "var(--muted)" }}>
+                Checklist template
+                <select value={templateId} onChange={(e) => setTemplateId(e.target.value)} style={{ ...input, marginTop: 6 }}>
+                  <option value="">Standard checklist — the usual 8 items</option>
+                  {templates.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.name}{t.site_type ? ` — ${t.site_type}` : ""} ({t.items.length} item{t.items.length === 1 ? "" : "s"})
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ) : (
+              <p style={{ fontSize: "0.88rem", color: "var(--muted)", margin: 0 }}>
+                Checklist templates turn on with the latest WorkTeams update — until then, every inspection uses the standard checklist.
+              </p>
+            )}
+            {chosenTemplate && (
+              <p style={{ fontSize: "0.88rem", color: "var(--muted)", margin: 0 }}>
+                This inspection's sections will use the “{chosenTemplate.name}” checklist
+                ({chosenTemplate.items.length} items) instead of the standard one. Sections,
+                scores, notes and photos work the same.
+              </p>
+            )}
             <button onClick={startInspection} disabled={saving} style={button}>
               {saving ? "Starting…" : "Start inspection →"}
             </button>
           </div>
+        </section>
+      )}
+
+      {canInspect && !activeId && (
+        <section className="panel" style={{ padding: 22, margin: "18px 0" }}>
+          <h3 style={{ marginTop: 0 }}>Checklist templates</h3>
+          <p style={{ fontSize: "0.9rem", color: "var(--muted)" }}>
+            A template gives a kind of site — or one specific site — its own checklist items
+            instead of the standard 8. Pick one when you start an inspection; inspections
+            recorded without one keep the standard checklist, and inspections already
+            recorded never change.
+          </p>
+          {!templatesAvailable ? (
+            <p style={{ fontSize: "0.9rem", color: "var(--muted)" }}>
+              Checklist templates turn on with the latest WorkTeams update — until then, every inspection uses the standard checklist.
+            </p>
+          ) : (
+            <>
+              {templates.length === 0 && (
+                <p style={{ fontSize: "0.9rem", color: "var(--muted)" }}>No templates yet. Add the first one below.</p>
+              )}
+              {templates.map((t) => (
+                <div key={t.id} style={{ border: "1px solid var(--line)", borderRadius: 12, padding: 14, marginBottom: 10 }}>
+                  <p style={{ fontWeight: 800, margin: "0 0 4px" }}>
+                    {t.name}
+                    <span style={{ fontWeight: 400, color: "var(--muted)", fontSize: "0.85rem" }}>
+                      {t.site_type ? ` • ${t.site_type}` : ""}
+                      {t.location_id ? ` • ${locations.find((l) => l.id === t.location_id)?.name || "Location"}` : ""}
+                      {` • ${t.items.length} item${t.items.length === 1 ? "" : "s"}`}
+                    </span>
+                  </p>
+                  <p style={{ fontSize: "0.88rem", color: "var(--muted)", margin: 0 }}>{t.items.join(" · ")}</p>
+                  {isManager && (
+                    <button type="button" onClick={() => removeTemplate(t)} style={{ ...smallGhost, marginTop: 8 }}>Delete template</button>
+                  )}
+                </div>
+              ))}
+              <form onSubmit={addTemplate} style={{ display: "grid", gap: 10, marginTop: 14, padding: 14, background: "var(--bg-soft)", borderRadius: 12 }}>
+                <h4 style={{ margin: 0 }}>Add a checklist template</h4>
+                <input value={tplName} onChange={(e) => setTplName(e.target.value)}
+                  placeholder="Template name — e.g. Medical office" style={input} required />
+                <input value={tplSiteType} onChange={(e) => setTplSiteType(e.target.value)}
+                  placeholder="Kind of site (optional) — e.g. Medical, Bank, Warehouse…" style={input} />
+                <select value={tplLocationId} onChange={(e) => setTplLocationId(e.target.value)} style={input}>
+                  <option value="">For any location</option>
+                  {locations.map((l) => <option key={l.id} value={l.id}>For {l.name} only</option>)}
+                </select>
+                <textarea value={tplItemsText} onChange={(e) => setTplItemsText(e.target.value)}
+                  placeholder={"Checklist items — one per line, e.g.\nExam rooms — surfaces disinfected\nWaiting room — chairs and tables wiped"} rows={5} style={{ ...input, resize: "vertical" }} required />
+                {tplError && <p style={{ fontSize: "0.88rem", color: "#b3261e", margin: 0 }}>{tplError}</p>}
+                <button type="submit" disabled={tplSaving} style={secondaryBtn}>
+                  {tplSaving ? "Saving…" : "Save template"}
+                </button>
+              </form>
+            </>
+          )}
         </section>
       )}
 
@@ -293,6 +486,11 @@ export default function InspectionsPage() {
           <p style={{ fontSize: "0.9rem", color: "var(--muted)" }}>
             Add each room or area as its own section. Score it, note issues, snap photos as you go.
           </p>
+          {activeTemplate && (
+            <p style={{ fontSize: "0.9rem", color: "var(--muted)" }}>
+              Checklist: <strong>{activeTemplate.name}</strong> template ({activeTemplate.items.length} items) — this inspection only.
+            </p>
+          )}
 
           {plan && planSection && (
             <div style={{ border: "1px dashed var(--brand)", borderRadius: 12, padding: 12, marginBottom: 12, background: "var(--bg-soft)" }}>
@@ -373,9 +571,69 @@ export default function InspectionsPage() {
         </section>
       )}
 
+      {inspections.length > 0 && (
+        <section className="panel" style={{ padding: 22, margin: "18px 0" }}>
+          <h3 style={{ marginTop: 0 }}>Inspection history by site</h3>
+          <p style={{ fontSize: "0.9rem", color: "var(--muted)", marginTop: 0 }}>
+            {inspections.length} inspection{inspections.length === 1 ? "" : "s"} recorded
+            {averageScore !== null && <> • Average recorded score {averageScore} / 5 across {scoredInspections.length} scored inspection{scoredInspections.length === 1 ? "" : "s"}</>}
+            {inspectionsWithIssues > 0 && <> • {inspectionsWithIssues} inspection{inspectionsWithIssues === 1 ? "" : "s"} with items marked Issue</>}
+          </p>
+          <div style={{ display: "grid", gap: 6 }}>
+            {siteHistory.map((s) => (
+              <p key={s.key} style={{ margin: 0, fontSize: "0.92rem" }}>
+                <strong>{s.name}</strong>
+                <span style={{ color: "var(--muted)" }}>
+                  {` — ${s.count} inspection${s.count === 1 ? "" : "s"}`}
+                  {s.scored > 0 ? ` • average score ${Math.round((s.scoreSum / s.scored) * 10) / 10} / 5` : " • no scores recorded"}
+                  {s.lastDate ? ` • last inspected ${s.lastDate}` : ""}
+                </span>
+              </p>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {inspections.length > 0 && (
+        <section className="panel" style={{ padding: 22, margin: "18px 0" }}>
+          <div style={{ display: "grid", gap: 10, maxWidth: 520 }}>
+            <label style={{ fontSize: "0.9rem", color: "var(--muted)" }}>
+              Search inspections
+              <input value={listSearch} onChange={(e) => setListSearch(e.target.value)} type="search"
+                placeholder="Location, inspector, or notes…" style={{ ...input, marginTop: 6 }} />
+            </label>
+            <label style={{ fontSize: "0.9rem", color: "var(--muted)" }}>
+              Location
+              <select value={listLocation} onChange={(e) => setListLocation(e.target.value)} style={{ ...input, marginTop: 6 }}>
+                <option value="all">All locations</option>
+                {locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
+              </select>
+            </label>
+            <label style={{ fontSize: "0.9rem", color: "var(--muted)" }}>
+              Score
+              <select value={listScore} onChange={(e) => setListScore(e.target.value)} style={{ ...input, marginTop: 6 }}>
+                <option value="all">All scores</option>
+                <option value="5">5 — Excellent only</option>
+                <option value="4">4 — Very good only</option>
+                <option value="low">3 or below</option>
+                <option value="unscored">Not scored yet</option>
+              </select>
+            </label>
+            {filtersActive && (
+              <p style={{ fontSize: "0.88rem", color: "var(--muted)", margin: 0 }}>
+                Showing {visibleInspections.length} of {inspections.length} inspections.
+              </p>
+            )}
+          </div>
+        </section>
+      )}
+
       <div style={{ display: "grid", gap: 10 }}>
         {inspections.length === 0 && <p style={{ color: "var(--muted)" }}>No inspections yet.</p>}
-        {inspections.map((i) => (
+        {inspections.length > 0 && visibleInspections.length === 0 && (
+          <p style={{ color: "var(--muted)" }}>No inspections match your search or filters.</p>
+        )}
+        {visibleInspections.map((i) => (
           <Link key={i.id} href={`/app/${company.id}/inspections/${i.id}`}
             className="portal-card" style={{ minHeight: 0, padding: "16px 20px", textDecoration: "none", color: "inherit" }}>
             <span className="card-kicker">
@@ -386,6 +644,11 @@ export default function InspectionsPage() {
               {i.inspector_name}
               {i.notes ? ` — ${i.notes.slice(0, 80)}${i.notes.length > 80 ? "…" : ""}` : ""}
             </p>
+            {(resultCounts[i.id]?.issues || 0) > 0 && (
+              <p style={{ margin: "6px 0 0", color: "#b3261e", fontSize: "0.9rem", fontWeight: 700 }}>
+                ⚠ {resultCounts[i.id].issues} checklist item{resultCounts[i.id].issues === 1 ? "" : "s"} marked Issue
+              </p>
+            )}
             <span className="card-link">Open →</span>
           </Link>
         ))}
