@@ -23,8 +23,14 @@ const NAV = [
   { key: "shiftvideos", label: "🎬 Shift Videos", href: (c) => `/app/${c}/shift-videos`, minRole: "manager", featureFlag: "enable_shift_videos" },
   { key: "commbook", label: "📖 Comm Book", href: (c) => `/app/${c}/comm-book`, minRole: null, featureFlag: "enable_comm_book" },
   { key: "messaging", label: "Messages", href: (c) => `/app/${c}/messages`, minRole: null },
-  { key: "bidding", label: "Bids", href: (c) => `/app/${c}/bids`, minRole: "manager" },
+  // Walkthrough and Bidding (owner, 2026-11-03): the whole chain --
+  // Walkthroughs, Bids, Contracts -- sits together under one heading
+  // in the menu panel, anchored where Walkthroughs already was. The
+  // three items keep their labels, hrefs and role gates; only their
+  // position in this list (and the panel heading) is new.
   { key: "walkthroughs", label: "Walkthroughs", href: (c) => `/app/${c}/walkthroughs`, minRole: "manager" },
+  { key: "bidding", label: "Bids", href: (c) => `/app/${c}/bids`, minRole: "manager" },
+  { key: "contracts", label: "Contracts", href: (c) => `/app/${c}/contracts`, minRole: "manager" },
   { key: "workorders", label: "Work Orders", href: (c) => `/app/${c}/work-orders`, minRole: null },
   { key: "supplies", label: "Supplies", href: (c) => `/app/${c}/supplies`, minRole: null },
   { key: "portal", label: "Client Portal", href: (c) => `/app/${c}/client-portal`, minRole: "manager" },
@@ -33,7 +39,6 @@ const NAV = [
   { key: "locationmoney", label: "Money by Location", href: (c) => `/app/${c}/location-money`, minRole: "manager" },
   { key: "plans", label: "Plans", href: (c) => `/app/${c}/plans`, minRole: null },
   { key: "settings", label: "Settings", href: (c) => `/app/${c}/settings`, minRole: "owner" },
-  { key: "contracts", label: "Contracts", href: (c) => `/app/${c}/contracts`, minRole: "manager" },
   { key: "tierprices", label: "Tier Prices", href: (c) => `/app/${c}/tier-prices`, minRole: null, productOwnerOnly: true },
   { key: "sales", label: "Sales", href: (c) => `/app/${c}/sales`, minRole: null, productOwnerOnly: true },
   { key: "training", label: "Training", href: (c) => `/app/${c}/training`, minRole: null },
@@ -349,7 +354,7 @@ export default function AppShell({ company, member, children }) {
                   )}
                   {panelItems.map((item) => {
                     const active = pathname === item.href || (item.key === "dashboard" && pathname === `/app/${companyId}`);
-                    return (
+                    const link = (
                       <Link
                         key={item.key}
                         href={item.href}
@@ -371,6 +376,31 @@ export default function AppShell({ company, member, children }) {
                         {item.label}
                       </Link>
                     );
+                    // Walkthrough and Bidding heading (owner, 2026-11-03):
+                    // presentational only -- it is not a link and never a
+                    // search result, so it renders only over the full
+                    // (unsearched) panel, directly above Walkthroughs.
+                    // All three chain items are manager-gated, so the
+                    // heading appears exactly when they do.
+                    if (navResults === null && item.key === "walkthroughs") {
+                      return [
+                        <p
+                          key="walkthrough-bidding-heading"
+                          aria-hidden="true"
+                          style={{
+                            margin: "10px 12px 2px",
+                            fontSize: "0.75rem",
+                            fontWeight: 800,
+                            letterSpacing: "0.08em",
+                            color: "var(--muted)",
+                          }}
+                        >
+                          WALKTHROUGH AND BIDDING
+                        </p>,
+                        link,
+                      ];
+                    }
+                    return link;
                   })}
                 </div>
               )}
