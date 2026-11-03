@@ -300,7 +300,7 @@ export default function ShiftVideosPage() {
       const filename = evidenceFilename("video", video.video_url, label, blob.type);
       if (share) {
         setPreparedShare({ blob, filename, id: video.id });
-        setExportNote("Video ready. Tap Open phone sharing options below this video, then choose Gmail, email, Drive, or another app.");
+        setExportNote("Video is ready beside this recording. Tap Send To to choose messages, email, Drive, or another app.");
       } else {
         const result = await exportEvidence(blob, filename, false);
         if (result === "downloaded") {
@@ -562,7 +562,7 @@ export default function ShiftVideosPage() {
                 {isManager && (
                   <>
                     <button type="button" disabled={exportingId === v.id} onClick={() => void shareVideo(v, true)}>
-                      {exportingId === v.id ? "Preparing…" : "↗ Share (prepare video)"}
+                      {exportingId === v.id ? "Preparing…" : "↗ Share video (prepare to send)"}
                     </button>
                     <button type="button" disabled={exportingId === v.id} onClick={() => void shareVideo(v, false)}>
                       ↓ Save copy
@@ -584,7 +584,7 @@ export default function ShiftVideosPage() {
                   <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                     <button type="button" onClick={() => void openPreparedVideoShare()}
                       style={{ padding: "12px 16px", fontWeight: 800, background: "var(--primary)", color: "#fff", borderRadius: 8 }}>
-                      ↗ Open phone sharing options
+                      ↗ Send To — Open phone sharing options
                     </button>
                     <button type="button" onClick={() => void exportEvidence(preparedShare.blob, preparedShare.filename, false)
                       .then(() => setExportNote("Download requested. Check your phone's Downloads folder."))
