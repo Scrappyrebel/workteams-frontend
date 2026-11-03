@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { deliverInternalWorkTeamsProofs } from "../../../../lib/workteams-internal-telegram-delivery.mjs";
 import { createClient } from "@supabase/supabase-js";
 import { sendOwnerAlert } from "../../../../lib/owner-alerts";
 import { shiftBounds, hasShiftAttendance } from "../../../../lib/attendance-shifts.mjs";
@@ -66,7 +67,12 @@ export async function GET(req) {
     const scheduled = shiftBounds(shift, tzFor(shift)).start;
     return scheduled <= now && scheduled >= earliest;
   });
-  if (!candidates.length) return NextResponse.json({ ok: true, alerts: 0 });
+  if (!candidates.length) {
+    let telegram={state:"unavailable"};
+    try { telegram=await deliverInternalWorkTeamsProofs(); }
+    catch { console.warn("Private WorkTeams Telegram delivery unavailable; attendance unaffected."); }
+    return NextResponse.json({ok:true,alerts:0,internal_telegram:telegram.state});
+  }
 
   const memberIds = [...new Set(candidates.map((s) => s.member_id))];
   const entries = [];
@@ -177,5 +183,8 @@ export async function GET(req) {
     existingKeys.add(dedupeKey);
     if (!result.duplicate) alerts++;
   }
-  return NextResponse.json({ ok: true, alerts });
+  let telegram={state:"unavailable"};
+  try { telegram=await deliverInternalWorkTeamsProofs(); }
+  catch { console.warn("Private WorkTeams Telegram delivery unavailable; attendance unaffected."); }
+  return NextResponse.json({ok:true,alerts,internal_telegram:telegram.state});
 }
