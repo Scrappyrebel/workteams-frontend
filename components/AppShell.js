@@ -42,6 +42,31 @@ const NAV = [
   { key: "emergency", label: "🚨 Emergency Alerts", href: (c) => `/app/${c}/emergency`, minRole: null },
 ];
 
+// Word-tolerant menu search matching (Wendy, 2026-11-03): the plain
+// plural words an owner types -- "Clients", "Invoices" -- must find the
+// nav's singular labels ("Client Portal"). A label matches when it
+// contains the query as typed, or the query with a trailing plural
+// ending stripped word by word ("ies" -> "y", "es" after ss/x/z/ch/sh,
+// or a plain trailing "s"). The item list, its order, and who can see
+// each item are unchanged.
+function navQueryVariants(query) {
+  const singular = (word) => {
+    if (word.length > 3 && word.endsWith("ies")) return word.slice(0, -3) + "y";
+    if (word.length > 4 && /(ss|x|z|ch|sh)es$/.test(word)) return word.slice(0, -2);
+    if (word.length > 1 && word.endsWith("s")) return word.slice(0, -1);
+    return word;
+  };
+  const variants = new Set([query]);
+  const perWord = query.split(/\s+/).map(singular).join(" ");
+  if (perWord.length >= 3) variants.add(perWord);
+  return [...variants];
+}
+
+function navLabelMatches(label, query) {
+  const text = label.toLowerCase();
+  return navQueryVariants(query).some((variant) => text.includes(variant));
+}
+
 function roleAtLeast(role, level) {
   return roleRank(role) >= roleRank(level);
 }
@@ -169,14 +194,16 @@ export default function AppShell({ company, member, children }) {
 
   // Menu search (Wendy, 2026-11-01): filters the SAME permission-filtered
   // list above, so a search can never surface an item the viewer couldn't
-  // already see. The nav order itself is unchanged. null = no search term
+  // already see. Matching is word-tolerant (2026-11-03): a plural query
+  // also matches singular labels, so "Clients" finds "Client Portal".
+  // The nav order itself is unchanged. null = no search term
   // (panel shows the full nav, exactly as usual).
   const navQuery = navSearch.trim().toLowerCase();
   let navResults = null;
   if (navQuery) {
     const seen = new Set();
     navResults = linksMapped.filter((item) => {
-      if (!item.label.toLowerCase().includes(navQuery)) return false;
+      if (!navLabelMatches(item.label, navQuery)) return false;
       const dedupeKey = `${item.label}|${item.href}`;
       if (seen.has(dedupeKey)) return false;
       seen.add(dedupeKey);
