@@ -7,6 +7,18 @@ import { useCompany } from "../../../../lib/company-context";
 import { canUseWithRole } from "../../../../lib/tiers";
 import RateLookup from "../../../../components/RateLookup";
 import RateGuidance from "../../../../components/RateGuidance";
+import { chicagoToday } from "../../../../lib/dates";
+import {
+  bidAgeDays,
+  bidHasNoLineItems,
+  bidItemStats,
+  bidValidity,
+  bidValidityDaysLeft,
+  searchBids,
+  sentBidsAwaitingDecision,
+  sortBids,
+  summarizeBidPipeline,
+} from "../../../../lib/bid-list.mjs";
 
 const emptyForm = {
   client_name: "",
@@ -65,6 +77,8 @@ export default function BidsPage() {
   const [form, setForm] = useState(emptyForm);
   const [saving, setSaving] = useState(false);
   const [filter, setFilter] = useState("all");
+  const [query, setQuery] = useState("");
+  const [sort, setSort] = useState("newest");
   const [rateAreas, setRateAreas] = useState([]);
   const [raForm, setRaForm] = useState({ name: "", rate_per_sqft: "", rate_per_hour: "", notes: "" });
   const [editingRa, setEditingRa] = useState(null);
@@ -84,13 +98,20 @@ export default function BidsPage() {
     // Totals in one batch (line-item mode only; hourly/sqft compute directly).
     const lineIds = rows.filter((r) => (r.pricing_mode || "line_items") === "line_items").map((r) => r.id);
     let totals = {};
+    // Item counts come from the same batch rows: a line-item bid with
+    // no items yet is an empty draft (its derived total is honestly
+    // $0.00), which the list now says out loud instead of letting the
+    // $0.00 read as a real price.
+    let itemCounts = {};
     if (lineIds.length > 0) {
       const { data: items } = await sb.from("bid_items").select("bid_id, quantity, unit_price").in("bid_id", lineIds);
+      const stats = bidItemStats(items || []);
       for (const it of items || []) {
         totals[it.bid_id] = (totals[it.bid_id] || 0) + Number(it.quantity) * Number(it.unit_price);
       }
+      for (const id of Object.keys(stats)) itemCounts[id] = stats[id].count;
     }
-    setBids(rows.map((r) => ({ ...r, total: (r.pricing_mode || "line_items") === "line_items" ? (totals[r.id] || 0) : modeTotal(r) })));
+    setBids(rows.map((r) => ({ ...r, total: (r.pricing_mode || "line_items") === "line_items" ? (totals[r.id] || 0) : modeTotal(r), item_count: (r.pricing_mode || "line_items") === "line_items" ? (itemCounts[r.id] || 0) : null })));
     const { data: locs } = await sb.from("locations").select("id, name, address, rate_area_id").eq("company_id", company.id).order("name");
     setLocations(locs || []);
     const { data: ra } = await sb.from("rate_areas").select("*").eq("company_id", company.id).order("name");
@@ -235,6 +256,30 @@ export default function BidsPage() {
 
   const shown = filter === "all" ? bids : bids.filter((b) => b.status === filter);
 
+  // List depth (D-WT-25): everything below derives from the rows
+  // load() already fetched — no new queries, no writes. The summary
+  // and follow-up panels describe the whole loaded pipeline; search
+  // and sort only reorder/filter what is already on the page.
+  const today = chicagoToday(company?.timezone);
+  const visible = sortBids(searchBids(shown, query, STATUS_LABELS), sort);
+  const pipeline = summarizeBidPipeline(bids);
+  const awaiting = sentBidsAwaitingDecision(bids);
+  const validityPassed = bids.filter(
+    (b) => (b.status === "draft" || b.status === "sent") && bidValidity(b, today) === "passed"
+  );
+  const emptyDrafts = bids.filter((b) => b.status === "draft" && bidHasNoLineItems(b));
+  const money = (n) => `$${Number(n || 0).toFixed(2)}`;
+  const valueLine = (label, v) => {
+    const parts = [];
+    if (v.perVisit > 0) parts.push(`${money(v.perVisit)} per visit · ~${money(v.monthlyEstimate)}/mo`);
+    if (v.oneTime > 0) parts.push(`${money(v.oneTime)} one-time`);
+    return (
+      <p style={{ margin: "4px 0 0", fontSize: "0.95rem" }}>
+        <strong>{label}:</strong> {parts.length > 0 ? parts.join(" · ") : money(0)}
+      </p>
+    );
+  };
+
   return (
     <div>
       <p className="eyebrow">BIDS</p>
@@ -357,6 +402,11 @@ export default function BidsPage() {
               ))}
             </div>
           </div>
+          {form.pricing_mode === "line_items" && (
+            <p style={{ margin: 0, fontSize: "0.9rem", color: "var(--muted)" }}>
+              Line items and their prices are added on the bid's own page, right after this draft is created — until the first item is added, the bid's total is $0.00.
+            </p>
+          )}
           {form.pricing_mode === "hourly" && (
             <div>
               <div style={{ display: "flex", gap: 8 }}>
@@ -537,9 +587,101 @@ export default function BidsPage() {
         ))}
       </div>
 
+      {bids.length > 0 && (
+        <section className="panel" style={{ padding: 22, margin: "18px 0" }}>
+          <h3 style={{ marginTop: 0 }}>Bids at a glance</h3>
+          <p style={{ margin: 0, fontSize: "0.95rem" }}>
+            {pipeline.counts.all} {pipeline.counts.all === 1 ? "bid" : "bids"} · {pipeline.counts.draft} draft · {pipeline.counts.sent} sent · {pipeline.counts.accepted} accepted · {pipeline.counts.declined} declined
+          </p>
+          {valueLine("Open pipeline (draft + sent)", pipeline.open)}
+          {valueLine("Accepted", pipeline.accepted)}
+          <p style={{ margin: "8px 0 0", fontSize: "0.85rem", color: "var(--muted)" }}>
+            Totals are each bid's own derived total — line-item bids sum their items; hourly and square-footage bids use their saved rates — grouped by price basis, so per-visit and one-time amounts are never added together without saying so.
+          </p>
+        </section>
+      )}
+
+      {(awaiting.length > 0 || validityPassed.length > 0 || emptyDrafts.length > 0) && (
+        <section className="panel" style={{ padding: 22, margin: "18px 0" }}>
+          <h3 style={{ marginTop: 0 }}>Needs follow-up</h3>
+          {awaiting.length > 0 && (
+            <div style={{ marginBottom: 12 }}>
+              <p style={{ margin: "0 0 6px", fontWeight: 700, fontSize: "0.95rem" }}>
+                Sent — awaiting the client's decision ({awaiting.length})
+              </p>
+              {awaiting.map((b) => (
+                <p key={b.id} style={{ margin: "2px 0", fontSize: "0.9rem" }}>
+                  <Link href={`/app/${company.id}/bids/${b.id}`} style={{ color: "var(--brand-deep)", fontWeight: 700 }}>
+                    {b.title}
+                  </Link>
+                  {" — "}
+                  {b.client_name} · created {String(b.created_at || "").slice(0, 10)}
+                  {bidAgeDays(b, today) != null
+                    ? ` (${bidAgeDays(b, today)} day${bidAgeDays(b, today) === 1 ? "" : "s"} ago)`
+                    : ""}
+                </p>
+              ))}
+              <p style={{ margin: "6px 0 0", fontSize: "0.85rem", color: "var(--muted)" }}>
+                Bids don't record the day they were sent, so age is counted from the day each bid was created.
+              </p>
+            </div>
+          )}
+          {validityPassed.length > 0 && (
+            <div style={{ marginBottom: 12 }}>
+              <p style={{ margin: "0 0 6px", fontWeight: 700, fontSize: "0.95rem" }}>
+                Valid-until date has passed ({validityPassed.length})
+              </p>
+              {validityPassed.map((b) => (
+                <p key={b.id} style={{ margin: "2px 0", fontSize: "0.9rem" }}>
+                  <Link href={`/app/${company.id}/bids/${b.id}`} style={{ color: "var(--brand-deep)", fontWeight: 700 }}>
+                    {b.title}
+                  </Link>
+                  {" — "}
+                  {b.client_name} · valid until {b.valid_until}
+                </p>
+              ))}
+            </div>
+          )}
+          {emptyDrafts.length > 0 && (
+            <p style={{ margin: 0, fontSize: "0.9rem" }}>
+              {emptyDrafts.length} draft {emptyDrafts.length === 1 ? "bid has" : "bids have"} no line items yet —{" "}
+              {emptyDrafts.length === 1 ? "its total is" : "their totals are"} $0.00 until the first item is added.
+            </p>
+          )}
+        </section>
+      )}
+
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 14 }}>
+        <input
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Search title, client, or location"
+          style={{ ...input, flex: "1 1 220px", width: "auto" }}
+        />
+        <select value={sort} onChange={(e) => setSort(e.target.value)} style={{ ...input, flex: "0 1 240px", width: "auto" }}>
+          <option value="newest">Newest first</option>
+          <option value="oldest">Oldest first</option>
+          <option value="amount_desc">Amount (highest first)</option>
+          <option value="amount_asc">Amount (lowest first)</option>
+          <option value="valid_until">Valid until (soonest first)</option>
+        </select>
+      </div>
+
+      {bids.length > 0 && (
+        <p style={{ color: "var(--muted)", fontSize: "0.9rem", margin: "0 0 10px" }}>
+          Showing {visible.length} of {bids.length} bids.
+        </p>
+      )}
+
       <div style={{ display: "grid", gap: 10 }}>
-        {shown.length === 0 && <p style={{ color: "var(--muted)" }}>No bids yet.</p>}
-        {shown.map((b) => (
+        {bids.length === 0 && <p style={{ color: "var(--muted)" }}>No bids yet.</p>}
+        {bids.length > 0 && shown.length === 0 && (
+          <p style={{ color: "var(--muted)" }}>No {STATUS_LABELS[filter]} bids.</p>
+        )}
+        {shown.length > 0 && visible.length === 0 && (
+          <p style={{ color: "var(--muted)" }}>No bids match your search.</p>
+        )}
+        {visible.map((b) => (
           <Link
             key={b.id}
             href={`/app/${company.id}/bids/${b.id}`}
@@ -555,6 +697,37 @@ export default function BidsPage() {
               {b.locations?.name ? ` • ${b.locations.name}` : ""}
               {b.valid_until ? ` • valid until ${b.valid_until}` : ""}
             </p>
+            {bidHasNoLineItems(b) && (
+              <p style={{ margin: "4px 0 0", fontSize: "0.9rem", color: "var(--muted)" }}>
+                {b.status === "draft"
+                  ? "No line items yet — add them on the bid page. The total stays $0.00 until the first item is added."
+                  : "No line items — this bid's total is $0.00."}
+              </p>
+            )}
+            {(b.status === "draft" || b.status === "sent") && bidValidity(b, today) === "passed" && (
+              <p style={{ margin: "4px 0 0", fontSize: "0.9rem", color: "#b3261e", fontWeight: 700 }}>
+                Valid-until date has passed — a client opening the approval link sees this proposal as expired.
+              </p>
+            )}
+            {(b.status === "draft" || b.status === "sent") && bidValidity(b, today) === "today" && (
+              <p style={{ margin: "4px 0 0", fontSize: "0.9rem", fontWeight: 700 }}>
+                Valid until today.
+              </p>
+            )}
+            {(b.status === "draft" || b.status === "sent") && bidValidity(b, today) === "soon" && (
+              <p style={{ margin: "4px 0 0", fontSize: "0.9rem", fontWeight: 700 }}>
+                Valid for {bidValidityDaysLeft(b, today)} more day{bidValidityDaysLeft(b, today) === 1 ? "" : "s"}.
+              </p>
+            )}
+            {b.status === "sent" && (
+              <p style={{ margin: "4px 0 0", fontSize: "0.9rem", color: "var(--muted)" }}>
+                Awaiting the client's decision — created {String(b.created_at || "").slice(0, 10)}
+                {bidAgeDays(b, today) != null
+                  ? ` (${bidAgeDays(b, today)} day${bidAgeDays(b, today) === 1 ? "" : "s"} ago)`
+                  : ""}
+                .
+              </p>
+            )}
             <span className="card-link">Open →</span>
           </Link>
         ))}
