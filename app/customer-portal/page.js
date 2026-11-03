@@ -7,6 +7,7 @@ import AuthenticatedCustomerQuality from "../../components/AuthenticatedCustomer
 import AuthenticatedCustomerWorkOrders from "../../components/AuthenticatedCustomerWorkOrders";
 import AuthenticatedCustomerDocuments from "../../components/AuthenticatedCustomerDocuments";
 import AuthenticatedCustomerServiceSchedule from "../../components/AuthenticatedCustomerServiceSchedule";
+import AuthenticatedCustomerPortalSummary from "../../components/AuthenticatedCustomerPortalSummary";
 
 export default function AuthenticatedCustomerPortal(){
  const [language,setLanguage]=useState("en");
@@ -146,6 +147,9 @@ export default function AuthenticatedCustomerPortal(){
          "Only manager-approved reports, work orders, service visits, private PDFs and requests for this location are shown. Invoices, employee records and internal business information remain private.",
          "Solo se muestran informes, órdenes de trabajo, visitas, archivos PDF privados y solicitudes aprobados para esta ubicación. Las facturas, los expedientes del personal y la información interna siguen siendo privados."
        )}</p>
+       <AuthenticatedCustomerPortalSummary
+         companyId={loc.company_id} locationId={loc.location_id}
+         language={language}/>
        <AuthenticatedCustomerQuality
          companyId={loc.company_id} locationId={loc.location_id}
          language={language}/>
