@@ -3,6 +3,7 @@ import {useEffect,useRef,useState} from "react";
 import {supabase} from "../lib/supabase";
 import {makeCustomerInvitation} from "../lib/customer-invitation.mjs";
 import {findReadyCustomerContacts} from "../lib/customer-pilot-readiness.mjs";
+import {contactAccessDates} from "../lib/client-portal-manager-depth.mjs";
 
 export default function ClientIdentityContactManager({companyId,locations,pilotRequested,pilotEnabled}){
  const [contacts,setContacts]=useState([]);
@@ -301,6 +302,12 @@ export default function ClientIdentityContactManager({companyId,locations,pilotR
     {t("Verified customer account: ","Cuenta verificada de cliente: ")}
     <strong>{c.account_linked?t("Linked","Vinculada"):t("Not yet linked","Aún sin vincular")}</strong>
    </p>
+   {contactAccessDates(c).approvedAt&&<p style={{fontSize:13,margin:"4px 0"}}>
+    {t("Approved ","Aprobado el ")}{new Date(contactAccessDates(c).approvedAt).toLocaleDateString(language==="es"?"es-US":"en-US")}
+   </p>}
+   {c.account_linked&&contactAccessDates(c).accountLinkedAt&&<p style={{fontSize:13,margin:"4px 0"}}>
+    {t("Account linked ","Cuenta vinculada el ")}{new Date(contactAccessDates(c).accountLinkedAt).toLocaleDateString(language==="es"?"es-US":"en-US")}
+   </p>}
    <div style={{display:"grid",gap:8,margin:"10px 0"}}>
     {(c.locations||[]).length===0&&<p>{t("No approved locations","No hay ubicaciones autorizadas")}</p>}
     {(c.locations||[]).map(l=><div key={l.id}
