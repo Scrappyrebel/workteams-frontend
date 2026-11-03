@@ -25,7 +25,7 @@ function CommBookPhoto({ path, canExport, label }) {
       const filename = evidenceFilename("book-photo", path, label);
       if (share) {
         setPreparedShare({ blob, filename });
-        setExportNote("Book photo ready. Tap Open phone sharing options below to choose Gmail, email, or another app.");
+        setExportNote("Photo is ready beside this entry. Tap Send To to choose messages, email, Drive, or another app.");
       } else {
         const result = await exportEvidence(blob, filename, false);
         if (result === "downloaded") setExportNote("Photo copy saved. Attach the file to your email or customer dispute.");
@@ -72,7 +72,7 @@ function CommBookPhoto({ path, canExport, label }) {
       {canExport && (
         <div style={{ marginTop: 8, display: "flex", gap: 8, flexWrap: "wrap" }}>
           <button type="button" disabled={exportBusy} onClick={() => void exportPhoto(true)}>
-            {exportBusy ? "Preparing photo…" : "↗ Share book photo"}
+            {exportBusy ? "Preparing photo…" : "↗ Share book photo (prepare to send)"}
           </button>
           <button type="button" disabled={exportBusy} onClick={() => void exportPhoto(false)}>↓ Save copy</button>
         </div>
@@ -93,7 +93,7 @@ function CommBookPhoto({ path, canExport, label }) {
                     setExportNote("The share menu could not open. A download was requested; check Files > Downloads, or try again.");
                   }
                 }).catch((err) => setExportError(err?.message || "Phone sharing failed. Try Save copy."))}>
-              ↗ Open phone sharing options
+              ↗ Send To — Open phone sharing options
             </button>
             <button type="button" onClick={() => void exportEvidence(preparedShare.blob, preparedShare.filename, false)
               .then(() => setExportNote("Photo download requested. Check Downloads."))
