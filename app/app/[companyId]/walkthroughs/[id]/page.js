@@ -153,6 +153,7 @@ export default function WalkthroughDetailPage() {
   const [wtForm, setWtForm] = useState({ name: "", notes: "" });
   const [savingWt, setSavingWt] = useState(false);
   const [creatingWOs, setCreatingWOs] = useState(false);
+  const [linkedBid, setLinkedBid] = useState(null);
   const [loadError, setLoadError] = useState(null);
   // Migration-067 question set. Each flag starts null (unknown) and is set
   // by a probe in load(); false means that piece of 067 has not been run
@@ -187,6 +188,19 @@ export default function WalkthroughDetailPage() {
       return;
     }
     setWalkthrough(data);
+    // Conversion trail: when a bid is linked, read its stored title and
+    // status so the record can show where that bid stands. Fail-soft —
+    // any failure leaves the summary showing the link itself.
+    setLinkedBid(null);
+    if (data.bid_id) {
+      const { data: b } = await sb
+        .from("bids")
+        .select("id, title, client_name, status")
+        .eq("id", data.bid_id)
+        .eq("company_id", company.id)
+        .maybeSingle();
+      if (b) setLinkedBid(b);
+    }
     // Probe for the migration-067 pieces. select("*") above works either
     // way; a probe error (or the column simply absent from the row) means
     // that part of 067 has not been run yet.
@@ -518,6 +532,8 @@ export default function WalkthroughDetailPage() {
   if (!walkthrough) return <p>Loading…</p>;
 
   const scopeText = buildScope(walkthrough, areas);
+  const intakeSaved = walkthrough.intake && typeof walkthrough.intake === "object" ? walkthrough.intake : {};
+  const answersSaved = walkthrough.answers && typeof walkthrough.answers === "object" ? walkthrough.answers : {};
 
   return (
     <div>
@@ -562,6 +578,69 @@ export default function WalkthroughDetailPage() {
             </div>
           </div>
         </div>
+      )}
+
+      <section className="panel" style={{ padding: 18, marginBottom: 16 }}>
+        <h3 style={{ margin: "0 0 10px", fontSize: "1.1rem" }}>Where this stands</h3>
+        <div style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: "0.95rem" }}>
+          {walkthrough.created_at && (
+            <div>
+              <span style={{ fontWeight: 700 }}>Recorded:</span>{" "}
+              {new Date(walkthrough.created_at).toLocaleDateString([], { dateStyle: "medium" })}
+            </div>
+          )}
+          {walkthrough.scheduled_at && (
+            <div>
+              <span style={{ fontWeight: 700 }}>Walkthrough appointment:</span>{" "}
+              {new Date(walkthrough.scheduled_at).toLocaleString([], { dateStyle: "medium", timeStyle: "short" })}
+              {walkthrough.meet_contact ? ` — meet ${walkthrough.meet_contact}` : ""}
+            </div>
+          )}
+          {answersSaved.leave_proposal_date ? (
+            <div>
+              <span style={{ fontWeight: 700 }}>Proposal date promised:</span> {String(answersSaved.leave_proposal_date)}
+            </div>
+          ) : null}
+          {answersSaved.decision_proposal ? (
+            <div>
+              <span style={{ fontWeight: 700 }}>When will you decide? Proposal promised by (date):</span> {String(answersSaved.decision_proposal)}
+            </div>
+          ) : null}
+          {intakeSaved.start_hoped ? (
+            <div>
+              <span style={{ fontWeight: 700 }}>When are you hoping to start service?</span> {String(intakeSaved.start_hoped)}
+            </div>
+          ) : null}
+          <div>
+            <span style={{ fontWeight: 700 }}>Bid:</span>{" "}
+            {walkthrough.bid_id ? (
+              <>
+                {linkedBid ? (
+                  <>
+                    {linkedBid.title || "Linked bid"}
+                    {linkedBid.client_name ? ` — ${linkedBid.client_name}` : ""} · status: {linkedBid.status || "—"}{" "}
+                  </>
+                ) : (
+                  "Linked. "
+                )}
+                <Link href={`/app/${company.id}/bids/${walkthrough.bid_id}`} style={{ color: "var(--brand-deep)", fontWeight: 700 }}>
+                  Open bid →
+                </Link>
+              </>
+            ) : (
+              "No bid linked yet."
+            )}
+          </div>
+        </div>
+        <p style={{ fontSize: "0.85rem", color: "var(--muted)", margin: "10px 0 0" }}>
+          Everything here comes from what is saved on this walkthrough — the phone answers, the appointment, the before-you-leave checklist, and the bid link.
+        </p>
+      </section>
+
+      {wtQReady === false && (
+        <p style={{ fontSize: "0.85rem", color: "var(--muted)", margin: "0 0 16px" }}>
+          The phone-question set turns on with the latest WorkTeams update.
+        </p>
       )}
 
       {wtQReady && (
@@ -624,6 +703,11 @@ export default function WalkthroughDetailPage() {
 
       <section className="panel" style={{ padding: 18, marginBottom: 20 }}>
         <h3 style={{ margin: "0 0 12px", fontSize: "1.1rem" }}>{editing ? "Edit area" : "Add area"}</h3>
+        {areaQReady === false && (
+          <p style={{ fontSize: "0.85rem", color: "var(--muted)", margin: "0 0 12px" }}>
+            Floor type, restroom fixtures, and the room-by-room questions turn on with the latest WorkTeams update.
+          </p>
+        )}
         <form onSubmit={saveArea} style={{ display: "flex", flexDirection: "column", gap: 10 }}>
           <input
             value={form.area_name}
@@ -838,6 +922,12 @@ export default function WalkthroughDetailPage() {
         ))}
       </div>
 
+      {wtQReady === false && (
+        <p style={{ fontSize: "0.85rem", color: "var(--muted)", margin: "0 0 20px" }}>
+          The walkthrough-question set turns on with the latest WorkTeams update.
+        </p>
+      )}
+
       {wtQReady && (
         <section className="panel" style={{ padding: 18, marginBottom: 20 }}>
           <h3 style={{ margin: "0 0 4px", fontSize: "1.1rem" }}>Part 2 — Walkthrough questions</h3>
@@ -893,6 +983,12 @@ export default function WalkthroughDetailPage() {
             </button>
           </div>
         </section>
+      )}
+
+      {photosReady === false && (
+        <p style={{ fontSize: "0.85rem", color: "var(--muted)", margin: "0 0 20px" }}>
+          Walkthrough photos turn on with the latest WorkTeams update.
+        </p>
       )}
 
       {photosReady && (
