@@ -11,6 +11,15 @@ import {
   isMissingSchemaError,
   pruneAnswers,
 } from "../../../../lib/walkthrough-questions";
+import {
+  countWalkthroughStages,
+  filterWalkthroughsByStage,
+  searchWalkthroughs,
+  walkthroughClientName,
+  walkthroughContactName,
+  walkthroughPhoneAnswerCount,
+  walkthroughStage,
+} from "../../../../lib/walkthrough-list.mjs";
 
 const emptyForm = { name: "", location_id: "", bid_id: "", notes: "" };
 const emptyAppt = { scheduled_at: "", meet_contact: "", entry_notes: "" };
@@ -69,6 +78,8 @@ export default function WalkthroughsPage() {
   const [showIntake, setShowIntake] = useState(false);
   const [intake, setIntake] = useState({});
   const [appt, setAppt] = useState(emptyAppt);
+  const [search, setSearch] = useState("");
+  const [stageFilter, setStageFilter] = useState("all");
 
   const isManager = member && (member.role === "owner" || member.role === "admin");
   const allowed = canUseWithRole(company?.effectiveTier || company?.tier, "walkthroughs", member?.role);
@@ -187,6 +198,10 @@ export default function WalkthroughsPage() {
     );
   }
 
+  const now = Date.now();
+  const stageCounts = countWalkthroughStages(walkthroughs, now);
+  const shown = filterWalkthroughsByStage(searchWalkthroughs(walkthroughs, search, now), stageFilter, now);
+
   return (
     <div>
       <p className="eyebrow">WALKTHROUGHS</p>
@@ -284,17 +299,83 @@ export default function WalkthroughsPage() {
         </form>
       </section>
 
+      {walkthroughs.length > 0 && (
+        <section className="panel" style={{ padding: 18, marginBottom: 20 }}>
+          <h3 style={{ margin: "0 0 8px", fontSize: "1.1rem" }}>Walkthroughs at a glance</h3>
+          <p style={{ fontSize: "0.9rem", margin: "0 0 8px" }}>
+            {stageCounts.all} walkthrough{stageCounts.all === 1 ? "" : "s"} · {stageCounts.scheduled} scheduled ·{" "}
+            {stageCounts.walked} walked, no bid yet · {stageCounts.bid_linked} bid linked ·{" "}
+            {stageCounts.phone_intake} phone intake started · {stageCounts.new} new
+          </p>
+          {stageCounts.followUp > 0 && (
+            <p style={{ fontSize: "0.9rem", margin: "0 0 8px", color: "#c0392b", fontWeight: 700 }}>
+              {stageCounts.followUp} appointment{stageCounts.followUp === 1 ? " has" : "s have"} passed with no areas recorded yet — follow up.
+            </p>
+          )}
+          <p style={{ fontSize: "0.85rem", color: "var(--muted)", margin: 0 }}>
+            Stage is worked out from what is already recorded on each walkthrough — phone answers, the
+            appointment, the areas, and a linked bid. It is not a separate status you set.
+          </p>
+        </section>
+      )}
+
+      {walkthroughs.length > 0 && (
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search name, client, contact, or location"
+            style={{ ...input, flex: 1, minWidth: 200 }}
+          />
+          <select value={stageFilter} onChange={(e) => setStageFilter(e.target.value)} style={{ ...input, width: "auto" }} aria-label="Filter by stage">
+            <option value="all">All stages</option>
+            <option value="scheduled">Scheduled</option>
+            <option value="appointment_passed">Appointment passed — no areas yet</option>
+            <option value="walked">Walked — no bid linked yet</option>
+            <option value="bid_linked">Bid linked</option>
+            <option value="phone_intake">Phone intake started</option>
+            <option value="new">New</option>
+          </select>
+        </div>
+      )}
+      {walkthroughs.length > 0 && (
+        <p style={{ fontSize: "0.9rem", color: "var(--muted)", margin: "0 0 12px" }}>
+          Showing {shown.length} of {walkthroughs.length} walkthroughs.
+        </p>
+      )}
+
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
         {walkthroughs.length === 0 && (
           <p style={{ color: "var(--muted)" }}>No walkthroughs yet — start one above, then add rooms as you walk the building.</p>
         )}
-        {walkthroughs.map((w) => (
+        {walkthroughs.length > 0 && shown.length === 0 && (
+          <p style={{ color: "var(--muted)" }}>No walkthroughs match your search or stage filter.</p>
+        )}
+        {shown.map((w) => (
           <div key={w.id} className="panel" style={{ padding: 0, overflow: "hidden" }}>
             <div style={{ display: "flex", alignItems: "stretch", gap: 0 }}>
               <Link href={`/app/${company.id}/walkthroughs/${w.id}`} style={{ flex: 1, padding: 16, textDecoration: "none", color: "inherit", display: "block" }}>
                 <div style={{ fontWeight: 800, fontSize: "1.05rem", color: "var(--brand-deep)" }}>
                   {w.name}
                 </div>
+                {(walkthroughClientName(w) || walkthroughContactName(w)) && (
+                  <div style={{ fontSize: "0.9rem", marginTop: 4 }}>
+                    {walkthroughClientName(w) ? <>Client: <strong>{walkthroughClientName(w)}</strong></> : null}
+                    {walkthroughClientName(w) && walkthroughContactName(w) ? " · " : ""}
+                    {walkthroughContactName(w) ? <>Contact: {walkthroughContactName(w)}</> : null}
+                  </div>
+                )}
+                <div style={{ fontSize: "0.85rem", marginTop: 4 }}>
+                  Stage: <strong>{walkthroughStage(w, now).label}</strong>
+                </div>
+                <div style={{ fontSize: "0.8rem", color: "var(--muted)" }}>
+                  Worked out from the record: {walkthroughStage(w, now).basis}
+                </div>
+                {walkthroughPhoneAnswerCount(w) > 0 && (
+                  <div style={{ fontSize: "0.85rem", color: "var(--muted)" }}>
+                    {walkthroughPhoneAnswerCount(w)} phone answer{walkthroughPhoneAnswerCount(w) === 1 ? "" : "s"} recorded
+                  </div>
+                )}
                 <div style={{ fontSize: "0.85rem", color: "var(--muted)", marginTop: 4 }}>
                   {w.locations?.name || "No location"} · {w.count} area{w.count === 1 ? "" : "s"} · {Math.round(w.sqft).toLocaleString()} sq ft
                 </div>
