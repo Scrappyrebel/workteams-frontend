@@ -10,6 +10,10 @@ import {
   getEnrollment,
   enroll,
 } from "../../../../../lib/training";
+import {
+  courseOutlineRows,
+  courseProgressSummary,
+} from "../../../../../lib/training-course-outline";
 
 export default function CoursePage() {
   const params = useParams();
@@ -17,6 +21,7 @@ export default function CoursePage() {
   const slug = params.slug;
   const { company, member, loading } = useCompany();
   const [data, setData] = useState(null);
+  const [notFound, setNotFound] = useState(false);
   const [enrollment, setEnrollment] = useState(null);
   const [progress, setProgress] = useState({});
   const [busy, setBusy] = useState(false);
@@ -26,6 +31,7 @@ export default function CoursePage() {
     (async () => {
       const d = await getCourse(slug);
       setData(d);
+      if (!d) setNotFound(true);
       if (d) {
         const e = await getEnrollment(companyId, member.id, d.course.id);
         setEnrollment(e);
@@ -59,8 +65,27 @@ export default function CoursePage() {
     setBusy(false);
   }
 
-  if (loading || !data) return <p>Loading…</p>;
+  if (loading || (!data && !notFound)) return <p>Loading…</p>;
+  if (notFound) {
+    return (
+      <div>
+        <Link href={`/app/${companyId}/training`} className="card-link">← Training Center</Link>
+        <h2 style={{ fontSize: "1.8rem", marginTop: 12 }}>Course not found</h2>
+        <p style={{ color: "var(--muted)" }}>
+          We could not find a course at this link. It may have been renamed or is no longer offered.
+        </p>
+        <Link
+          href={`/app/${companyId}/training`}
+          style={{ background: "var(--brand)", color: "#fff", fontWeight: 700, padding: "10px 22px", borderRadius: 999, textDecoration: "none", display: "inline-block", marginTop: 8 }}
+        >
+          Browse the Training Center
+        </Link>
+      </div>
+    );
+  }
   const { course, steps } = data;
+  const outlineRows = courseOutlineRows(steps, STEP_DEFS);
+  const progressSummary = courseProgressSummary(steps, progress);
 
   return (
     <div>
@@ -73,6 +98,7 @@ export default function CoursePage() {
       </p>
 
       {!enrollment ? (
+        <>
         <button
           onClick={start}
           disabled={busy}
@@ -80,8 +106,41 @@ export default function CoursePage() {
         >
           {busy ? "Enrolling…" : "Start this course"}
         </button>
+          {outlineRows.length > 0 && (
+            <div style={{ marginTop: 20 }}>
+              <h3 style={{ fontSize: "1.1rem", margin: "0 0 8px" }}>What this course covers</h3>
+              <div style={{ display: "grid", gap: 10 }}>
+                {outlineRows.map((row) => (
+                  <div key={row.step_number} className="portal-card" style={{ minHeight: 0 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                      <span
+                        style={{
+                          width: 30, height: 30, borderRadius: "50%",
+                          display: "inline-flex", alignItems: "center", justifyContent: "center",
+                          background: "var(--brand)",
+                          color: "#fff", fontWeight: 800, flexShrink: 0,
+                        }}
+                      >
+                        {row.step_number}
+                      </span>
+                      <div style={{ flex: 1 }}>
+                        <strong>{row.label}</strong>
+                        <p style={{ color: "var(--muted)", fontSize: "0.88rem", margin: "2px 0 0" }}>
+                          {row.desc}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </>
       ) : (
         <div style={{ marginTop: 16, display: "grid", gap: 10 }}>
+          <p style={{ color: "var(--muted)", margin: 0 }}>
+            Your progress: {progressSummary.completed} of {progressSummary.total} steps completed ({progressSummary.percent}%)
+          </p>
           {enrollment.status === "certified" && (
             <p style={{ color: "green", fontWeight: 700 }}>✓ Certified — nice work.</p>
           )}
