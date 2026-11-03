@@ -9,6 +9,7 @@ import ClientIdentityContactManager from "../../../../components/ClientIdentityC
 import CustomerDocumentManager from "../../../../components/CustomerDocumentManager";
 import PublishedServiceScheduleManager from "../../../../components/PublishedServiceScheduleManager";
 import {CUSTOMER_INBOX_FILTERS,filterCustomerInbox,summarizeCustomerInbox} from "../../../../lib/customer-inbox-dashboard.mjs";
+import {locationRequestActivity} from "../../../../lib/client-portal-manager-depth.mjs";
 
 export default function ClientPortalPage() {
   const { company, member, loading } = useCompany();
@@ -739,6 +740,7 @@ export default function ClientPortalPage() {
         {locations.length === 0 && <p style={{ color: "var(--muted)" }}>{tr("Add a location first.","Añada primero una ubicación.")}</p>}
         {locations.map((l) => {
           const t = tokenByLocation[l.id];
+          const activity = locationRequestActivity(messages, l.id);
           return (
             <div key={l.id} className="portal-card" style={{ minHeight: 0, padding: "16px 20px" }}>
               <strong>{l.name}</strong>
@@ -755,6 +757,11 @@ export default function ClientPortalPage() {
                       {tr("Expires","Vence")} {new Date(t.expires_at).toLocaleDateString(managerLanguage==="es"?"es-US":"en-US")}
                     </p>
                   )}
+                  {t.created_at && (
+                    <p style={{ fontSize: "0.8rem", color: "var(--muted)" }}>
+                      {tr("Link created","Enlace creado el")} {new Date(t.created_at).toLocaleDateString(managerLanguage==="es"?"es-US":"en-US")}
+                    </p>
+                  )}
                   <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
                     <button type="button" disabled={working||linkExpired(t)||Boolean(loadError)} onClick={()=>void copyLink(t)} style={button}>{tr("Copy link","Copiar enlace")}</button>
                      <button type="button" disabled={working||linkExpired(t)||Boolean(loadError)} onClick={()=>void copyLink(t,"invitation")} style={button}>{tr("Copy customer invitation","Copiar invitación")}</button>
@@ -769,6 +776,14 @@ export default function ClientPortalPage() {
                   </button>
                 </div>
               )}
+              <p style={{ fontSize: "0.85rem", color: "var(--muted)", marginTop: 10 }}>
+                {tr("Recent requests at this location","Solicitudes recientes en esta ubicación")}:{" "}
+                {loadError || inboxError
+                  ? tr("Unavailable","No disponible")
+                  : activity.recent === 0
+                    ? tr("none in the requests loaded above","ninguna en las solicitudes cargadas arriba")
+                    : `${activity.recent} · ${activity.unread} ${tr("unread","sin leer")} · ${activity.open} ${tr("open","abiertas")}${activity.latestAt ? ` · ${tr("latest","última")} ${new Date(activity.latestAt).toLocaleDateString(managerLanguage==="es"?"es-US":"en-US")}` : ""}`}
+              </p>
             </div>
           );
         })}
