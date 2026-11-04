@@ -112,6 +112,10 @@ export default function CustomerLogin(){
     <input id="wt-customer-password" type="password" required minLength={8}
      autoComplete={mode==="create"?"new-password":"current-password"}
      value={password} onChange={e=>setPassword(e.target.value)}/>
+    {mode==="create"&&<p className="small" style={{margin:0}}>{t(
+     "Choose a password of at least 8 characters. You will use it only for this customer portal.",
+     "Elija una contraseña de al menos 8 caracteres. La usará solo para este portal de clientes."
+    )}</p>}
     <button type="submit" disabled={busy}>
      {busy?t("Checking…","Verificando…"):
        mode==="create"?t("Create account","Crear cuenta"):t("Sign in","Entrar")}
@@ -122,6 +126,31 @@ export default function CustomerLogin(){
    <p><Link href={`/forgot-password?source=customer&lang=${language}`}>
     {t("Forgot password?","¿Olvidó su contraseña?")}</Link></p>
    <p><Link href="/">{t("Use your existing location link instead","Utilice su enlace de ubicación existente")}</Link></p>
+   <div style={{borderTop:"1px solid rgba(127,127,127,0.35)",marginTop:16,paddingTop:12}}>
+    <h2 style={{fontSize:18}}>{t("How customer access works","Cómo funciona el acceso de clientes")}</h2>
+    <ol style={{margin:"8px 0",paddingLeft:20,display:"grid",gap:6}}>
+     <li>{t(
+      "Create your account here with the email your business has on file for you.",
+      "Cree su cuenta aquí con el correo que la empresa tiene registrado para usted."
+     )}</li>
+     <li>{t(
+      "Confirm your email address from the message we send you.",
+      "Confirme su correo desde el mensaje que le enviamos."
+     )}</li>
+     <li>{t(
+      "The business approves your email and your service location, and turns on customer login. Until then, signing in shows no company information — that is expected, not an error.",
+      "La empresa aprueba su correo y su ubicación de servicio y activa el acceso de clientes. Hasta entonces, al iniciar sesión no verá información de la empresa: es lo esperado, no un error."
+     )}</li>
+     <li>{t(
+      "Sign in here to open your customer portal. Employee access is a different sign-in and a different password rule.",
+      "Inicie sesión aquí para abrir su portal de clientes. El acceso de empleados usa otro inicio de sesión y otra regla de contraseña."
+     )}</li>
+    </ol>
+    <p className="small">{t(
+     "No account? Your business may have given you a service-location link instead — use the link above; it needs no password.",
+     "¿Sin cuenta? Es posible que la empresa le haya dado un enlace de ubicación de servicio: use el enlace anterior; no necesita contraseña."
+    )}</p>
+   </div>
   </section>
  </main>;
 }
