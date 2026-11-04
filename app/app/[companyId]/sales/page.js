@@ -50,6 +50,18 @@ export default function SalesPage() {
 
       {data && (
         <>
+          {data.generatedAt && (
+            <p style={{ color: "var(--muted)", fontSize: "0.9rem" }}>
+              Figures as of {new Date(data.generatedAt).toLocaleString()}.
+            </p>
+          )}
+          {data.capped && (
+            <p style={{ background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 10, padding: "10px 14px", fontWeight: 600 }}>
+              ⚠ More than 100 active subscriptions exist — the totals
+              below cover the first 100 and are a floor, not the full
+              count.
+            </p>
+          )}
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, margin: "18px 0" }}>
             <section className="panel" style={{ padding: 22, textAlign: "center" }}>
               <div style={{ fontSize: "0.85rem", color: "var(--muted)", fontWeight: 800 }}>MONTHLY RECURRING REVENUE</div>
@@ -83,6 +95,15 @@ export default function SalesPage() {
               );
             })}
           </div>
+
+          {data.byTier?.unknown?.count > 0 && (
+            <p style={{ color: "var(--muted)", fontSize: "0.9rem", marginTop: 10 }}>
+              {data.byTier.unknown.count} active subscription item(s) sit on a
+              price that is not mapped to a tier — they are counted in the
+              totals above but appear in no tier row. Map the price in the
+              tier setup to place them.
+            </p>
+          )}
 
           <h3 style={{ margin: "22px 0 10px" }}>Recent payments</h3>
           <div style={{ display: "grid", gap: 8 }}>

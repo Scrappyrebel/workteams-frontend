@@ -5,6 +5,7 @@ import { useCompany } from "../../../../lib/company-context";
 import { supabase } from "../../../../lib/supabase";
 import { DEFAULT_TZ } from "../../../../lib/dates";
 import { US_STATES } from "../../../../lib/rate-guidance";
+import { planStanding, settingsCompleteness } from "../../../../lib/settings-summary";
 
 const TIMEZONES = [
   { value: "America/New_York", label: "Eastern — New York" },
@@ -27,6 +28,9 @@ export default function SettingsPage() {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState("");
+  // Team size for the at-a-glance panel (D-WT-40): a tolerant
+  // probe — any failure leaves it null and the line is omitted.
+  const [memberCount, setMemberCount] = useState(null);
 
   useEffect(() => {
     if (company) {
@@ -40,10 +44,24 @@ export default function SettingsPage() {
         .eq("id", company.id)
         .single()
         .then(({ data, error }) => {
-          if (!error && data && data.state != null) {
+          // D-WT-40 repair: the probe used to require a non-null
+          // state before marking the column present, which
+          // conflated "column missing" with "column present but
+          // not set yet" — a company whose state was never set
+          // could never set it (save omitted the field forever).
+          // An error-free row means the column was served,
+          // whether or not a value is stored yet.
+          if (!error && data) {
             setHasStateColumn(true);
-            setState(String(data.state));
+            if (data.state != null) setState(String(data.state));
           }
+        });
+      supabase()
+        .from("company_members")
+        .select("id")
+        .eq("company_id", company.id)
+        .then(({ data, error }) => {
+          if (!error && data) setMemberCount(data.length);
         });
     }
   }, [company]);
@@ -158,6 +176,62 @@ export default function SettingsPage() {
           {saving ? "Saving…" : "Save settings"}
         </button>
       </form>
+      {company && (
+        <div className="card" style={{ marginTop: 16 }}>
+          <h3 style={{ margin: "0 0 10px" }}>Your company at a glance</h3>
+          {(() => {
+            const standing = planStanding(company);
+            const completeness = settingsCompleteness({
+              name,
+              timezone,
+              state,
+              hasStateColumn,
+            });
+            return (
+              <>
+                <p style={{ margin: "0 0 6px" }}>
+                  <strong>Plan:</strong>{" "}
+                  {standing.tierName || "Not recorded"}
+                  {standing.complimentary ? " (complimentary)" : ""}
+                </p>
+                <p style={{ margin: "0 0 6px" }}>
+                  <strong>Subscription:</strong>{" "}
+                  {standing.statusText || "Not recorded"}
+                </p>
+                {standing.sinceLabel && (
+                  <p style={{ margin: "0 0 6px" }}>
+                    <strong>Company since:</strong> {standing.sinceLabel}
+                  </p>
+                )}
+                {memberCount != null && (
+                  <p style={{ margin: "0 0 6px" }}>
+                    <strong>Team members:</strong> {memberCount}
+                  </p>
+                )}
+                <p style={{ margin: "0 0 6px" }}>
+                  <strong>Settings on this page:</strong>{" "}
+                  {completeness.filled} of {completeness.total} set
+                  {completeness.missing.length > 0
+                    ? " — still to set: " + completeness.missing.join(", ") + "."
+                    : " — everything here is set."}
+                </p>
+                {completeness.stateUnavailable && (
+                  <p style={{ color: "var(--muted)", fontSize: "0.9rem", margin: "0 0 6px" }}>
+                    State saving is not active in this workspace yet —
+                    the State choice above will start saving once it is.
+                  </p>
+                )}
+                <p style={{ color: "var(--muted)", fontSize: "0.9rem", margin: 0 }}>
+                  Plan changes and billing live on the Plans page in
+                  this company's menu — nothing about billing is
+                  changed here. This panel only shows what is
+                  already recorded for your company.
+                </p>
+              </>
+            );
+          })()}
+        </div>
+      )}
     </div>
   );
 }
