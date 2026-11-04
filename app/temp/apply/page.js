@@ -175,6 +175,11 @@ export default function TempApply() {
             Thanks — we'll review your application and background check and be
             in touch by email.
           </p>
+          <p style={{ color: "var(--muted)", fontSize: 14 }}>
+            If you don't hear back within a few business days, check your
+            spam folder for an email from the agency before applying again —
+            a second application isn't needed.
+          </p>
         </section>
       </main>
     );
