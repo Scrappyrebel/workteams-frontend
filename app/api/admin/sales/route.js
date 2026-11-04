@@ -96,6 +96,12 @@ export async function GET(req) {
       totalActive: subs.data.length,
       byTier,
       recent,
+      // Honesty markers (D-WT-44): the subscriptions read is a
+      // single page of 100. When Stripe says more exist, the
+      // totals are a floor, not the full count — the page now
+      // says so instead of presenting a partial total as exact.
+      capped: subs.has_more === true,
+      generatedAt: new Date().toISOString(),
     });
   } catch (e) {
     console.error("admin sales error", e);
