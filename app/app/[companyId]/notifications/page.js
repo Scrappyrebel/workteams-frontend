@@ -212,6 +212,21 @@ export default function NotificationSettingsPage() {
             Per-type choices turn on with the latest WorkTeams update.
           </p>
         )}
+        {prefsReady && prefs && (
+          <p style={{ color: "var(--muted)", fontWeight: 700 }}>
+            {/* Combined-state summary (D-WT-52): derived only from
+                the choices already loaded on this page — the three
+                sections below each show their own state, and this
+                line answers "what will actually buzz me?" in one
+                place. Nothing is read or saved here. */}
+            Right now: {PREF_CATEGORIES.filter((c) => prefs[c.key]).length} of{" "}
+            {PREF_CATEGORIES.length} kinds on
+            {quiet?.start && quiet?.end
+              ? `; quiet hours ${quiet.start}–${quiet.end}`
+              : "; no quiet hours set"}
+            . Emergency and help alerts always come through.
+          </p>
+        )}
         <div style={{ display: "grid", gap: 12 }}>
           {PREF_CATEGORIES.map((c) => (
             <label
