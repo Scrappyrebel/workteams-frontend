@@ -44,6 +44,11 @@ export default function TempDashboard() {
   const [apps, setApps] = useState([]);
   const [cfg, setCfg] = useState(null);
   const [msg, setMsg] = useState("");
+  // Load-failure state (D-WT-54): the dashboard reads used to
+  // destructure only { data }, so a failed read rendered as
+  // "No requests yet" / empty tabs — fake-empty on the
+  // dispatch board. A failed load is not an empty board.
+  const [loadError, setLoadError] = useState("");
 
   const isManager = member && ["owner", "admin", "manager"].includes(member.role);
 
@@ -64,7 +69,7 @@ export default function TempDashboard() {
 
   async function loadAll() {
     const sb = supabase();
-    const [{ data: rq }, { data: ap }, { data: cf }] = await Promise.all([
+    const [{ data: rq, error: rqErr }, { data: ap, error: apErr }, { data: cf, error: cfErr }] = await Promise.all([
       sb.from("temp_job_requests").select("*").eq("company_id", company.id).order("created_at", { ascending: false }).limit(100),
       sb.from("temp_applications").select("*").eq("company_id", company.id).order("created_at", { ascending: false }).limit(200),
       sb.from("temp_agency_config").select("*").eq("company_id", company.id).maybeSingle(),
@@ -72,6 +77,11 @@ export default function TempDashboard() {
     setRequests(rq || []);
     setApps(ap || []);
     setCfg(cf || null);
+    if (rqErr || apErr || cfErr) {
+      setLoadError("We couldn't load the temp board just now. A failed load is not an empty board — reload before dispatching anyone.");
+    } else {
+      setLoadError("");
+    }
     // Skill tags (tolerant: table arrives with migration 046).
     try {
       const { data: sk, error: skErr } = await sb.from("temp_member_skills").select("*").eq("company_id", company.id).limit(500);
@@ -82,8 +92,11 @@ export default function TempDashboard() {
     // Assignments for this company's requests (profiles + dispatch view).
     const ids = (rq || []).map((r) => r.id);
     if (ids.length > 0) {
-      const { data: asg } = await sb.from("temp_assignments").select("*").in("job_request_id", ids).limit(500);
+      const { data: asg, error: asgErr } = await sb.from("temp_assignments").select("*").in("job_request_id", ids).limit(500);
       setAssignments(asg || []);
+      if (asgErr) {
+        setLoadError("We couldn't load current assignments just now. A failed load is not an empty board — reload before dispatching anyone.");
+      }
     } else {
       setAssignments([]);
     }
@@ -348,12 +361,15 @@ export default function TempDashboard() {
           ))}
         </div>
         {msg && <p style={{ color: "var(--muted)", fontSize: 14 }}>{msg}</p>}
+        {loadError && (
+          <p role="alert" style={{ color: "#b3261e", fontWeight: 600, fontSize: 14, marginTop: 8 }}>{loadError}</p>
+        )}
       </section>
 
       {tab === "requests" && (
         <section className="panel" style={{ padding: 24, marginTop: 16 }}>
           <h2 style={{ marginTop: 0 }}>Job requests</h2>
-          {requests.length === 0 && <p style={{ color: "var(--muted)" }}>No requests yet.</p>}
+          {!loadError && requests.length === 0 && <p style={{ color: "var(--muted)" }}>No requests yet.</p>}
           {requests.map((r) => {
             const reqAsg = assignments.filter((a) => a.job_request_id === r.id);
             const assignedIds = new Set(reqAsg.map((a) => a.member_id));
