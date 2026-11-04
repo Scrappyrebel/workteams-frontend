@@ -15,6 +15,11 @@ export default function TempBookSuccess() {
           Need them long-term? Ask about temp-to-hire after 90 days — or 6
           months for ongoing placements.
         </p>
+        <p style={{ color: "var(--muted)", fontSize: 14 }}>
+          Questions about your booking? Reply to your confirmation email
+          or contact the agency directly — keep the email handy until
+          your crew is confirmed.
+        </p>
         <Link href="/temp" className="btn-ghost" style={{ padding: "10px 24px" }}>
           Back to temp staffing
         </Link>
