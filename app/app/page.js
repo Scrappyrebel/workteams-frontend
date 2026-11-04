@@ -16,6 +16,13 @@ export default function CompaniesPage() {
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
   const [justJoined, setJustJoined] = useState(0);
+  // Load-failure state for the memberships read (D-WT-10): the
+  // read used to destructure only { data }, so a failed read
+  // looked EXACTLY like "You're not on any team yet" — and the
+  // create form below it invited a duplicate company. A failed
+  // load is not an empty list: on error the picker says so and
+  // hides both the empty-state copy and the create form.
+  const [loadError, setLoadError] = useState("");
   // Company ids (subset of memberships) where this person has a shift
   // today — see the badge lookup in the load effect below.
   const [shiftToday, setShiftToday] = useState(() => new Set());
@@ -38,11 +45,22 @@ export default function CompaniesPage() {
       const sb = supabase();
       const claimed = await linkMemberOnSignIn(sb, u);
       if (claimed > 0) setJustJoined(claimed);
-      const { data } = await sb
+      const { data, error: membersErr } = await sb
         .from("company_members")
-        .select("id, role, companies(id, name, tier)")
+        // subscription_status + is_complimentary are inside the
+        // existing column-level grants for browser reads (the
+        // create flow below selects the same safe columns), so
+        // the picker can show a company's standing on its card.
+        .select("id, role, companies(id, name, tier, subscription_status, is_complimentary)")
         .not("user_id", "is", null)
         .eq("user_id", u.id);
+      if (membersErr) {
+        setLoadError(
+          "We couldn't load your companies. A failed load is not an empty list — check your connection and try again. If it keeps happening, contact support."
+        );
+        setLoading(false);
+        return;
+      }
       setMemberships(data || []);
       // Wrong-company guardrail (2026-10-29): an employee signed in and
       // landed in the wrong company, where every screen honestly showed
@@ -126,7 +144,15 @@ export default function CompaniesPage() {
             ✅ You've been added to the team! Pick your company below.
           </p>
         )}
-        {memberships.length === 0 && (
+        {loadError && (
+          <div role="alert" style={{ background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 10, padding: "12px 16px", marginBottom: 12 }}>
+            <p style={{ color: "#991b1b", fontWeight: 600, margin: "0 0 8px" }}>{loadError}</p>
+            <button type="button" onClick={() => window.location.reload()} style={{ padding: "8px 16px", borderRadius: 999, border: "1px solid #fecaca", background: "#fff", fontWeight: 700, cursor: "pointer" }}>
+              Try again
+            </button>
+          </div>
+        )}
+        {!loadError && memberships.length === 0 && (
           <p style={{ color: "var(--muted)" }}>
             You're not on any team yet. Create your first company below — or ask your
             manager to add you by email.
@@ -158,10 +184,21 @@ export default function CompaniesPage() {
                   🕐 Shift today
                 </span>
               )}
+              {m.companies?.subscription_status && m.companies.subscription_status !== "active" && (
+                <span style={{ display: "block", color: "#92400e", fontWeight: 700, fontSize: "0.85rem", margin: "0 0 4px" }}>
+                  ⚠ Subscription {m.companies.subscription_status} — check with the owner before relying on this company.
+                </span>
+              )}
+              {m.companies?.is_complimentary && (
+                <span style={{ display: "block", color: "var(--muted)", fontSize: "0.85rem", margin: "0 0 4px" }}>
+                  Complimentary company
+                </span>
+              )}
               <span className="card-link">Open →</span>
             </Link>
           ))}
         </div>
+        {!loadError && (
         <form onSubmit={createCompany}>
           <label style={{ display: "block", fontWeight: 700, marginBottom: 8 }}>
             Start a new company
@@ -200,6 +237,7 @@ export default function CompaniesPage() {
             New companies start on the Starter tier. You'll be the owner.
           </p>
         </form>
+        )}
       </section>
     </main>
   );
