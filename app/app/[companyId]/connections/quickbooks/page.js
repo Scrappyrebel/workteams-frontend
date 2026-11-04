@@ -40,6 +40,13 @@ export default function QuickBooksSyncPage() {
 
   const [invoices, setInvoices] = useState([]);
   const [syncItems, setSyncItems] = useState([]);
+  // Load-failure state for the queue reads (D-WT-51): the two
+  // reads that decide "waiting" used to destructure only
+  // { data }, so a failed read rendered as "Nothing waiting.
+  // Every issued invoice is in QuickBooks." — a false all-
+  // clear on the one section that moves money. A failed load
+  // is not an empty queue: on error the section says so.
+  const [queueError, setQueueError] = useState("");
   const [sendingId, setSendingId] = useState("");
   const [queueMsg, setQueueMsg] = useState({});
 
@@ -78,7 +85,7 @@ export default function QuickBooksSyncPage() {
     setConnection(conn || "none");
     if (!conn) return;
 
-    const [{ data: maps }, { data: invs }, { data: items }, { data: logRows }] = await Promise.all([
+    const [{ data: maps }, invRes, itemRes, { data: logRows }] = await Promise.all([
       sb.from("integration_account_mappings").select("*").eq("company_id", company.id).eq("provider", "quickbooks"),
       sb
         .from("invoices")
@@ -96,9 +103,16 @@ export default function QuickBooksSyncPage() {
         .limit(20),
     ]);
     setMappings(maps || []);
-    setInvoices(invs || []);
-    setSyncItems(items || []);
+    setInvoices(invRes.data || []);
+    setSyncItems(itemRes.data || []);
     setLog(logRows || []);
+    if (invRes.error || itemRes.error) {
+      setQueueError(
+        "We couldn't load the sending queue just now. A failed load is not an empty queue — reload this page before sending anything."
+      );
+    } else {
+      setQueueError("");
+    }
   }
 
   useEffect(() => {
@@ -395,7 +409,9 @@ export default function QuickBooksSyncPage() {
               {postedCount === 1 ? " has" : "s have"} been sent. Sending is safe to retry --
               an invoice can never land in QuickBooks twice.
             </p>
-            {waiting.length === 0 ? (
+            {queueError ? (
+              <p role="alert" style={{ color: "#b3261e", fontWeight: 600, marginBottom: 0 }}>{queueError}</p>
+            ) : waiting.length === 0 ? (
               <p style={{ marginBottom: 0 }}>Nothing waiting. Every issued invoice is in QuickBooks.</p>
             ) : (
               <div style={{ display: "grid", gap: 8 }}>
