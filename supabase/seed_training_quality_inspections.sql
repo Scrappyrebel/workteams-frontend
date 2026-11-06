@@ -121,14 +121,14 @@ RESTROOMS (scope: disinfect fixtures, mirrors, dispensers, mop, trash). Men''s: 
 
 HALLWAY: floors — 4; high dusting on a vent — 3.
 
-SCORES: 24 items. Twenty 4s, three 3s (lobby glass, sill dust, break room floor, vent dust — that is four 3s), two 2s (microwave, men''s mirror). Overall: solid 4-level work with two clear misses.
+SCORES: 21 items. Fifteen 4s, four 3s (lobby glass, sill dust, break room floor, vent dust), two 2s (microwave, men''s mirror). Overall: solid 4-level work with two clear misses.
 
 FINDINGS WRITTEN FOR ACTION:
 1. ''Break room: microwave interior has baked-on splatter (scored 2). Standard: microwave cleaned inside/out each visit. Correct by Thursday''s service; send a photo.'' [photo attached]
 2. ''Men''s restroom: mirror streaked (scored 2). Standard: streak-free mirrors each visit — use the glass cloth, not the restroom cloth. Correct by Thursday.'' [photo attached]
 3. Watch items (scored 3, no callback): lobby door fingerprints, window sill dust, sticky spot by break room trash, vent dust in hallway.
 
-DELIVERY (same day, in person): ''Lobby and offices look great — 4s across the board, and the women''s restroom is perfect. Two things need attention by Thursday: the microwave and the men''s mirror — here are the photos. Is anything making those hard — time, supplies?'' Maria: ''The microwave — honestly we have been skipping it when we run long.'' Root cause found: time pressure, not laziness. You: ''Got it. The microwave is in the scope, so let''s protect 5 minutes for it — start the break room 5 minutes earlier. I will re-inspect Thursday.''
+DELIVERY (same day, in person): ''Lobby and offices look great — mostly 4s, and the women''s restroom is perfect. Two things need attention by Thursday: the microwave and the men''s mirror — here are the photos. Is anything making those hard — time, supplies?'' Maria: ''The microwave — honestly we have been skipping it when we run long.'' Root cause found: time pressure, not laziness. You: ''Got it. The microwave is in the scope, so let''s protect 5 minutes for it — start the break room 5 minutes earlier. I will re-inspect Thursday.''
 
 THURSDAY RE-INSPECTION: microwave clean — back to 4. Mirror streak-free — 4. You tell Maria on the spot: ''Both fixed. Thank you.'' The loop is closed, the standard is reinforced, and Maria knows inspections are fair — because they were.', null;
 
