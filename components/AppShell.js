@@ -33,6 +33,11 @@ const NAV = [
   { key: "contracts", label: "Contracts", href: (c) => `/app/${c}/contracts`, minRole: "manager" },
   { key: "workorders", label: "Work Orders", href: (c) => `/app/${c}/work-orders`, minRole: null },
   { key: "supplies", label: "Supplies", href: (c) => `/app/${c}/supplies`, minRole: null },
+  // Documents & Forms (D-WT-58, decided 2026-11-06): the company
+  // document library + built-in starter forms. Additive entry — no
+  // existing item moved or renamed. The section itself applies the
+  // per-document audience floors (lib/documents/library).
+  { key: "documents", label: "Documents & Forms", href: (c) => `/app/${c}/documents`, minRole: null },
   { key: "portal", label: "Client Portal", href: (c) => `/app/${c}/client-portal`, minRole: "manager" },
   { key: "profitability", label: "Profitability", href: (c) => `/app/${c}/profitability`, minRole: "manager" },
   { key: "invoices", label: "Invoices", href: (c) => `/app/${c}/invoices`, minRole: "manager" },
