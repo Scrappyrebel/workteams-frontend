@@ -3,9 +3,9 @@
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useState } from "react";
-import { useCompany } from "../../../../../lib/company-context";
-import { categoryLabel } from "../../../../../lib/documents/library";
-import { starterFormByKey } from "../../../../../lib/documents/starters";
+import { useCompany } from "../../../../../../lib/company-context";
+import { categoryLabel } from "../../../../../../lib/documents/library";
+import { starterFormByKey } from "../../../../../../lib/documents/starters";
 
 // One built-in starter form: fill it in on screen, then print it or
 // save it as a PDF from the browser. Entries are NOT stored in the app
