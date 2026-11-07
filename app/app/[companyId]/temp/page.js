@@ -6,6 +6,8 @@ import { CompanyContext } from "../../../../lib/company-context";
 import Playbook from "./Playbook";
 import { ClientsTab, OffersTab } from "./Intake";
 import StatePricing from "./StatePricing";
+import SkillsTests from "./SkillsTests";
+import Walkthroughs from "./Walkthroughs";
 
 const TABS = [
   { key: "requests", label: "Job Requests" },
