@@ -6,6 +6,8 @@ import { CompanyContext } from "../../../../lib/company-context";
 import Playbook from "./Playbook";
 import { ClientsTab, OffersTab } from "./Intake";
 import Walkthroughs from "./Walkthroughs";
+import SkillsTests from "./SkillsTests";
+import { isTestTag, testRecordsFromSkills, laneGateStatus } from "../../../../lib/temp-tests";
 
 const TABS = [
   { key: "requests", label: "Job Requests" },
@@ -163,6 +165,10 @@ export default function TempDashboard() {
   async function addSkill(memberId) {
     const skill = (newSkill[memberId] || "").trim().toLowerCase();
     if (!skill || !memberId) return;
+    if (isTestTag(skill)) {
+      setMsg("That name is reserved for skills-test records — record results in the Skills Tests panel on the temp's profile.");
+      return;
+    }
     const { error } = await supabase().from("temp_member_skills").insert({
       company_id: company.id,
       member_id: memberId,
@@ -213,6 +219,14 @@ export default function TempDashboard() {
     const app = apps.find((a) => a.id === appId);
     if (!app?.member_id) {
       setMsg("Temp needs an approved team invite first.");
+      return;
+    }
+    // Test-to-place gate (2026-11-07): a temp is assignable to a lane
+    // only when that lane's required tests are passed on their file.
+    const reqLane = requests.find((r) => r.id === jobId)?.staffing_type || "cleaning";
+    const gate = laneGateStatus(testRecordsFromSkills(skillsFor(app.member_id)), reqLane);
+    if (!gate.assignable) {
+      setMsg(`Can't assign ${app.full_name}: missing required tests for ${LANE_LABELS[reqLane] || reqLane} — ${gate.missing.map((t) => t.label).join(", ")}. Record results in the Skills Tests panel on their profile.`);
       return;
     }
     const days = parseInt(hireTrack[jobId] || "90", 10);
@@ -420,7 +434,7 @@ export default function TempDashboard() {
                     >
                       <option value="">Choose temp…</option>
                       {availableTemps.map((t) => {
-                        const sk = skillsFor(t.member_id).map((s) => s.skill).join(", ");
+                        const sk = skillsFor(t.member_id).filter((s) => !isTestTag(s.skill)).map((s) => s.skill).join(", ");
                         const crossLane = !((t.staffing_types || ["cleaning"]).includes(reqLane));
                         return (
                           <option key={t.id} value={t.id}>
@@ -490,7 +504,7 @@ export default function TempDashboard() {
                           >
                             <option value="">Choose replacement…</option>
                             {availableTemps.map((t) => {
-                              const sk = skillsFor(t.member_id).map((s) => s.skill).join(", ");
+                              const sk = skillsFor(t.member_id).filter((s) => !isTestTag(s.skill)).map((s) => s.skill).join(", ");
                               return <option key={t.id} value={t.id}>{t.full_name}{sk ? ` (${sk})` : ""}</option>;
                             })}
                           </select>
@@ -560,7 +574,7 @@ export default function TempDashboard() {
             ))}
           </div>
           {approvedTemps.filter((a) => poolLane === "all" || (a.staffing_types || ["cleaning"]).includes(poolLane)).map((a) => {
-            const sk = skillsFor(a.member_id);
+            const sk = skillsFor(a.member_id).filter((s) => !isTestTag(s.skill));
             const hist = assignmentsFor(a.member_id);
             const open = expandedTemp === a.id;
             return (
@@ -626,6 +640,16 @@ export default function TempDashboard() {
                         Add
                       </button>
                     </div>
+                    {a.member_id && (
+                      <SkillsTests
+                        companyId={company.id}
+                        memberId={a.member_id}
+                        lanes={a.staffing_types || ["cleaning"]}
+                        skills={skills}
+                        setSkills={setSkills}
+                        onMsg={setMsg}
+                      />
+                    )}
                     <div style={{ fontSize: 13, fontWeight: 600, marginTop: 10, marginBottom: 4 }}>
                       Past assignments ({hist.length})
                     </div>
