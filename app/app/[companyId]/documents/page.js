@@ -6,13 +6,17 @@ import { supabase } from "../../../../lib/supabase";
 import { useCompany } from "../../../../lib/company-context";
 import { isManagerRole } from "../../../../lib/roles";
 import {
+  DOCUMENT_AUDIENCES,
   DOCUMENT_CATEGORIES,
+  DOCUMENTS_BUCKET,
   DOCUMENTS_TABLE,
   audienceLabel,
   categoryLabel,
+  documentStoragePath,
   filterDocuments,
   formatBytes,
   formatDocDate,
+  validateDocumentFile,
 } from "../../../../lib/documents/library";
 import { STARTER_FORMS } from "../../../../lib/documents/starters";
 import { documentSignedUrl } from "../../../../lib/documents/storage";
@@ -33,6 +37,11 @@ export default function DocumentsPage() {
   const [query, setQuery] = useState("");
   const [busyId, setBusyId] = useState(null);
   const [msg, setMsg] = useState("");
+  const [confirmDeleteId, setConfirmDeleteId] = useState(null);
+  const [upload, setUpload] = useState({ title: "", category: "general", min_role: "employee", description: "" });
+  const [uploadFile, setUploadFile] = useState(null);
+  const [uploading, setUploading] = useState(false);
+  const [uploadMsg, setUploadMsg] = useState("");
 
   const role = member?.role || "employee";
   const canManage = isManagerRole(role);
@@ -73,6 +82,92 @@ export default function DocumentsPage() {
       return;
     }
     window.open(url, "_blank", "noopener");
+  }
+
+  // Upload (managers and owners): the file goes to the private
+  // company-documents bucket first, then the library row is written.
+  // If the row fails, the stored file is removed again — a document
+  // never exists in storage without its library record, and the
+  // audience floor the manager picked is stored on the row.
+  async function submitUpload(e) {
+    e.preventDefault();
+    setUploadMsg("");
+    const problem = validateDocumentFile(uploadFile);
+    if (problem) {
+      setUploadMsg(problem);
+      return;
+    }
+    const title = (upload.title || uploadFile.name || "").trim();
+    if (title.length < 3 || title.length > 140) {
+      setUploadMsg("Give the document a title of 3–140 characters.");
+      return;
+    }
+    setUploading(true);
+    const sb = supabase();
+    const unique =
+      typeof crypto !== "undefined" && crypto.randomUUID
+        ? crypto.randomUUID()
+        : `${Date.now()}-${Math.round(Math.random() * 1e9)}`;
+    const path = documentStoragePath(company.id, uploadFile.name, unique);
+    const { error: upErr } = await sb.storage
+      .from(DOCUMENTS_BUCKET)
+      .upload(path, uploadFile, { contentType: uploadFile.type || undefined, upsert: false });
+    if (upErr) {
+      setUploading(false);
+      setUploadMsg("The file could not be stored. The library storage may not be set up yet — nothing was added.");
+      return;
+    }
+    const { data: row, error: insErr } = await sb
+      .from(DOCUMENTS_TABLE)
+      .insert({
+        company_id: company.id,
+        title,
+        description: upload.description.trim() || null,
+        category: upload.category,
+        storage_key: path,
+        file_name: uploadFile.name,
+        mime_type: uploadFile.type || null,
+        size_bytes: uploadFile.size,
+        min_role: upload.min_role,
+        uploaded_by: member?.id || null,
+      })
+      .select("id,company_id,title,description,category,storage_key,file_name,mime_type,size_bytes,min_role,uploaded_by,created_at")
+      .single();
+    if (insErr || !row) {
+      await sb.storage.from(DOCUMENTS_BUCKET).remove([path]);
+      setUploading(false);
+      setUploadMsg("The document could not be registered, so the stored file was removed. Nothing was added to the library.");
+      return;
+    }
+    setDocs((prev) => [row, ...prev]);
+    setUpload({ title: "", category: "general", min_role: "employee", description: "" });
+    setUploadFile(null);
+    setUploading(false);
+    setUploadMsg(`"${title}" is in the library.`);
+  }
+
+  // Delete (managers and owners): two-step confirm, storage object
+  // first, then the row — the same order the app uses for photos.
+  async function deleteDocument(doc) {
+    if (confirmDeleteId !== doc.id) {
+      setConfirmDeleteId(doc.id);
+      return;
+    }
+    setConfirmDeleteId(null);
+    setBusyId(doc.id);
+    setMsg("");
+    const sb = supabase();
+    if (doc.storage_key) {
+      await sb.storage.from(DOCUMENTS_BUCKET).remove([doc.storage_key]);
+    }
+    const { error } = await sb.from(DOCUMENTS_TABLE).delete().eq("id", doc.id).eq("company_id", company.id);
+    setBusyId(null);
+    if (error) {
+      setMsg("That document could not be deleted. Reload the library and try again.");
+      return;
+    }
+    setDocs((prev) => prev.filter((d) => d.id !== doc.id));
+    setMsg(`"${doc.title}" was deleted from the library.`);
   }
 
   if (loading || !company) {
@@ -141,6 +236,80 @@ export default function DocumentsPage() {
               </span>
             )}
           </div>
+        )}
+
+        {libraryReady && canManage && (
+          <form className="form" onSubmit={submitUpload} style={{ margin: "12px 0 20px" }}>
+            <strong>Upload a document or form</strong>
+            <div>
+              <label htmlFor="doc-file">File (PDF, Word, Excel, CSV, text, or image — 15 MB max)</label>
+              <input
+                id="doc-file"
+                className="input"
+                type="file"
+                accept=".pdf,.doc,.docx,.xls,.xlsx,.csv,.txt,.rtf,.png,.jpg,.jpeg,.webp"
+                onChange={(e) => {
+                  const f = e.target.files?.[0] || null;
+                  setUploadFile(f);
+                  if (f && !upload.title) setUpload((u) => ({ ...u, title: f.name.replace(/\.[^.]+$/, "") }));
+                }}
+              />
+            </div>
+            <div>
+              <label htmlFor="doc-title">Title</label>
+              <input
+                id="doc-title"
+                className="input"
+                value={upload.title}
+                onChange={(e) => setUpload((u) => ({ ...u, title: e.target.value }))}
+                placeholder="What this document is"
+              />
+            </div>
+            <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+              <div style={{ flex: "1 1 200px" }}>
+                <label htmlFor="doc-category">Department</label>
+                <select
+                  id="doc-category"
+                  className="input"
+                  value={upload.category}
+                  onChange={(e) => setUpload((u) => ({ ...u, category: e.target.value }))}
+                >
+                  {DOCUMENT_CATEGORIES.map((c) => (
+                    <option key={c.key} value={c.key}>{c.label}</option>
+                  ))}
+                </select>
+              </div>
+              <div style={{ flex: "1 1 200px" }}>
+                <label htmlFor="doc-audience">Who can see it</label>
+                <select
+                  id="doc-audience"
+                  className="input"
+                  value={upload.min_role}
+                  onChange={(e) => setUpload((u) => ({ ...u, min_role: e.target.value }))}
+                >
+                  {DOCUMENT_AUDIENCES.map((a) => (
+                    <option key={a.key} value={a.key}>{a.label}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            <div>
+              <label htmlFor="doc-desc">Description (optional)</label>
+              <textarea
+                id="doc-desc"
+                className="input textarea"
+                rows={2}
+                value={upload.description}
+                onChange={(e) => setUpload((u) => ({ ...u, description: e.target.value }))}
+              />
+            </div>
+            {uploadMsg && <p role="status" style={{ color: "var(--muted)", fontSize: 13 }}>{uploadMsg}</p>}
+            <div>
+              <button className="btn-primary" style={{ padding: "8px 18px" }} disabled={uploading || !uploadFile}>
+                {uploading ? "Uploading…" : "Upload to library"}
+              </button>
+            </div>
+          </form>
         )}
 
         {libraryReady && (
@@ -215,6 +384,16 @@ export default function DocumentsPage() {
                       >
                         Download
                       </button>
+                      {canManage && (
+                        <button
+                          className="btn-ghost"
+                          style={{ padding: "6px 14px", fontSize: 13 }}
+                          disabled={busyId === doc.id}
+                          onClick={() => void deleteDocument(doc)}
+                        >
+                          {confirmDeleteId === doc.id ? "Confirm delete?" : "Delete"}
+                        </button>
+                      )}
                     </div>
                   </div>
                 </article>
