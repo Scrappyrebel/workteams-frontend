@@ -52,6 +52,23 @@ check(existsSync("app/app/[companyId]/temp/SkillsTests.js"), "tests: panel exist
 const panel = readFileSync("app/app/[companyId]/temp/SkillsTests.js", "utf8");
 check(panel.includes("What the client sees"), "tests: client-visible summary is shown for what it is");
 
+// Table wiring (migration 096): temp_test_records is the system of
+// record. The panel writes ONLY there; legacy tag-encoded results in
+// temp_member_skills are still read and merged (latest wins), and the
+// assignment gate evaluates the merged records.
+check(lib.includes("testRecordsFromTableRows"), "tests: table-records parser exists");
+check(lib.includes("mergeTestRecords"), "tests: cross-source merge exists");
+check(
+  panel.includes('.from("temp_test_records")') && panel.includes(".insert("),
+  "tests: panel writes new results to temp_test_records"
+);
+check(
+  !panel.includes('.from("temp_member_skills")'),
+  "tests: panel no longer writes the legacy tag storage"
+);
+check(page.includes("testRecordsFromTableRows"), "tests: dashboard reads table records for the gate");
+check(page.includes("testRecordsFor(app.member_id)"), "tests: assignment gate evaluates merged records");
+
 if (failures > 0) {
   console.error("check-temp-skills-tests: " + failures + " failure(s)");
   process.exit(1);

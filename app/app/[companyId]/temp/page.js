@@ -6,8 +6,15 @@ import { CompanyContext } from "../../../../lib/company-context";
 import Playbook from "./Playbook";
 import { ClientsTab, OffersTab } from "./Intake";
 import StatePricing from "./StatePricing";
-import SkillsTests from "./SkillsTests";
 import Walkthroughs from "./Walkthroughs";
+import SkillsTests from "./SkillsTests";
+import {
+  isTestTag,
+  testRecordsFromSkills,
+  testRecordsFromTableRows,
+  mergeTestRecords,
+  laneGateStatus,
+} from "../../../../lib/temp-tests";
 
 const TABS = [
   { key: "requests", label: "Job Requests" },
@@ -93,6 +100,16 @@ export default function TempDashboard() {
     } catch {
       setSkills([]);
     }
+    // Skills-test records (migration 096): the table is the system of
+    // record; pre-table results ride the skill tags above and are
+    // merged at read time (see testRecordsFor). Tolerant like the
+    // skills read — a failed read must not fake-empty the board.
+    try {
+      const { data: tr, error: trErr } = await sb.from("temp_test_records").select("*").eq("company_id", company.id).order("created_at", { ascending: true }).limit(1000);
+      setTestRows(trErr ? [] : (tr || []));
+    } catch {
+      setTestRows([]);
+    }
     // Assignments for this company's requests (profiles + dispatch view).
     const ids = (rq || []).map((r) => r.id);
     if (ids.length > 0) {
@@ -117,6 +134,8 @@ export default function TempDashboard() {
   const [conversions, setConversions] = useState([]);
   // Batch 1: temp profiles, skill tags, per-assignment pay.
   const [skills, setSkills] = useState([]);
+  // Skills-test records from temp_test_records (migration 096).
+  const [testRows, setTestRows] = useState([]);
   const [newSkill, setNewSkill] = useState({});
   const [assignments, setAssignments] = useState([]);
   const [expandedTemp, setExpandedTemp] = useState(null);
@@ -160,6 +179,17 @@ export default function TempDashboard() {
 
   function skillsFor(memberId) {
     return skills.filter((s) => s.member_id === memberId);
+  }
+
+  // One temp's test records across both storages: legacy tag-encoded
+  // results in temp_member_skills plus the temp_test_records table
+  // (migration 096). Merged with latest created_at winning per test,
+  // so results recorded before the table landed still count.
+  function testRecordsFor(memberId) {
+    return mergeTestRecords(
+      testRecordsFromSkills(skillsFor(memberId)),
+      testRecordsFromTableRows(testRows.filter((r) => r.member_id === memberId))
+    );
   }
 
   async function addSkill(memberId) {
@@ -224,7 +254,7 @@ export default function TempDashboard() {
     // Test-to-place gate (2026-11-07): a temp is assignable to a lane
     // only when that lane's required tests are passed on their file.
     const reqLane = requests.find((r) => r.id === jobId)?.staffing_type || "cleaning";
-    const gate = laneGateStatus(testRecordsFromSkills(skillsFor(app.member_id)), reqLane);
+    const gate = laneGateStatus(testRecordsFor(app.member_id), reqLane);
     if (!gate.assignable) {
       setMsg(`Can't assign ${app.full_name}: missing required tests for ${LANE_LABELS[reqLane] || reqLane} — ${gate.missing.map((t) => t.label).join(", ")}. Record results in the Skills Tests panel on their profile.`);
       return;
@@ -646,7 +676,9 @@ export default function TempDashboard() {
                         memberId={a.member_id}
                         lanes={a.staffing_types || ["cleaning"]}
                         skills={skills}
-                        setSkills={setSkills}
+                        testRows={testRows}
+                        setTestRows={setTestRows}
+                        recordedBy={member?.id || null}
                         onMsg={setMsg}
                       />
                     )}
