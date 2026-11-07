@@ -1,21 +1,33 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useContext, useEffect, useState } from "react";
+import { supabase } from "../../../../lib/supabase";
+import { CompanyContext } from "../../../../lib/company-context";
 import { TEMP_WALKTHROUGH_TEMPLATES } from "../../../../lib/temp-walkthroughs";
 
 // Field-sales walkthroughs for the temp service: one tap-through
 // template per industry line, worked on the tablet at the client's
 // site, ending in a quote worksheet so the client can be quoted on
-// the spot. Progress is kept on this device (same pattern as the
-// Playbook checklists) until a walkthrough-records table lands —
-// DATABASE NEED flagged in the PR.
+// the spot. While a walkthrough is being filled in, the draft is
+// kept on this device (same pattern as the Playbook checklists).
+// COMPLETING a walkthrough saves a temp_walkthroughs row
+// (migration 096) — that table row is the company record, and the
+// saved list below reads from the table. The factory record matters
+// most: its safety section is the agency's OSHA inquire-and-verify
+// record, so it has to live in the company's records, not on one
+// salesperson's tablet.
 export default function Walkthroughs({ lanes }) {
+  const { company, member } = useContext(CompanyContext) || {};
+  const companyId = company?.id || null;
   const [lane, setLane] = useState(lanes?.[0] || "cleaning");
   const template =
     TEMP_WALKTHROUGH_TEMPLATES.find((t) => t.lane === lane) ||
     TEMP_WALKTHROUGH_TEMPLATES[0];
   const storeKey = `temp-walkthrough:${lane}`;
   const [rec, setRec] = useState({ client: "", checked: {}, quote: {} });
+  const [saved, setSaved] = useState([]);
+  const [saving, setSaving] = useState(false);
+  const [saveMsg, setSaveMsg] = useState(null);
 
   useEffect(() => {
     try {
@@ -24,6 +36,22 @@ export default function Walkthroughs({ lanes }) {
       setRec({ client: "", checked: {}, quote: {} });
     }
   }, [storeKey]);
+
+  async function loadSaved() {
+    if (!companyId) return;
+    const { data } = await supabase()
+      .from("temp_walkthroughs")
+      .select("*")
+      .eq("company_id", companyId)
+      .order("created_at", { ascending: false })
+      .limit(50);
+    setSaved(data || []);
+  }
+
+  useEffect(() => {
+    loadSaved();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [companyId]);
 
   function save(next) {
     setRec(next);
@@ -39,6 +67,39 @@ export default function Walkthroughs({ lanes }) {
   const hours = parseFloat(q.hours) || 0;
   const bill = parseFloat(q.billRate) || 0;
   const weekly = positions * hours * bill;
+
+  async function completeWalkthrough() {
+    if (!companyId) {
+      setSaveMsg({ ok: false, text: "Not saved — the company could not be identified, so this walkthrough was not recorded. Reload the page and try again." });
+      return;
+    }
+    setSaving(true);
+    setSaveMsg(null);
+    const { error } = await supabase()
+      .from("temp_walkthroughs")
+      .insert({
+        company_id: companyId,
+        lane,
+        client_name: (rec.client || "").trim() || null,
+        site_address: null,
+        answers: { checked: rec.checked || {} },
+        quote: {
+          positions: q.positions || "",
+          hours: q.hours || "",
+          billRate: q.billRate || "",
+          weekly: Math.round(weekly * 100) / 100,
+        },
+        completed_by: member?.id || null,
+      });
+    setSaving(false);
+    if (error) {
+      setSaveMsg({ ok: false, text: "Not saved — this walkthrough was not recorded: " + error.message + " Your draft is still on this device; try again before clearing it." });
+      return;
+    }
+    setSaveMsg({ ok: true, text: "Saved — this walkthrough is now a company record. The draft on this device has been cleared." });
+    save({ client: "", checked: {}, quote: {} });
+    loadSaved();
+  }
 
   return (
     <section className="panel" style={{ padding: 24, marginTop: 16 }}>
@@ -153,13 +214,62 @@ export default function Walkthroughs({ lanes }) {
         </p>
       </div>
 
-      <button
-        className="btn-ghost"
-        style={{ padding: "8px 14px", marginTop: 14, fontSize: 13 }}
-        onClick={() => save({ client: "", checked: {}, quote: {} })}
-      >
-        Clear this walkthrough
-      </button>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 14, alignItems: "center" }}>
+        <button
+          className="btn-primary"
+          style={{ padding: "8px 14px", fontSize: 13 }}
+          disabled={saving}
+          onClick={completeWalkthrough}
+        >
+          {saving ? "Saving…" : "Save completed walkthrough"}
+        </button>
+        <button
+          className="btn-ghost"
+          style={{ padding: "8px 14px", fontSize: 13 }}
+          onClick={() => save({ client: "", checked: {}, quote: {} })}
+        >
+          Clear this walkthrough
+        </button>
+      </div>
+      {saveMsg && (
+        <p role={saveMsg.ok ? "status" : "alert"} style={{ fontSize: 13, marginTop: 10, color: saveMsg.ok ? "inherit" : "#b3261e" }}>
+          {saveMsg.text}
+        </p>
+      )}
+
+      <div style={{ marginTop: 22, borderTop: "1px solid var(--border, #e5e7eb)", paddingTop: 14 }}>
+        <h3 style={{ margin: "0 0 6px" }}>Saved walkthroughs</h3>
+        {saved.length === 0 && (
+          <p style={{ fontSize: 13, color: "var(--muted)", margin: 0 }}>
+            No saved walkthroughs yet. A walkthrough you complete and save
+            becomes a company record and appears here.
+          </p>
+        )}
+        {saved.map((w) => {
+          const checkedCount = Object.values(w.answers?.checked || {}).filter(Boolean).length;
+          const laneLabel =
+            TEMP_WALKTHROUGH_TEMPLATES.find((t) => t.lane === w.lane)?.label || w.lane;
+          return (
+            <div
+              key={w.id}
+              style={{
+                display: "flex", gap: 10, flexWrap: "wrap", alignItems: "baseline",
+                padding: "8px 0", borderBottom: "1px solid var(--border, #eef1f4)", fontSize: 13,
+              }}
+            >
+              <strong>{w.client_name || "(no client name)"}</strong>
+              <span>{laneLabel}</span>
+              <span style={{ color: "var(--muted)" }}>
+                {w.created_at ? new Date(w.created_at).toLocaleString() : ""}
+              </span>
+              <span style={{ color: "var(--muted)" }}>{checkedCount} item{checkedCount === 1 ? "" : "s"} checked</span>
+              {Number(w.quote?.weekly) > 0 && (
+                <span>Quoted ${Number(w.quote.weekly).toFixed(2)}/week</span>
+              )}
+            </div>
+          );
+        })}
+      </div>
     </section>
   );
 }

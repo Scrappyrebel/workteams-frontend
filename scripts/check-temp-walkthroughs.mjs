@@ -32,6 +32,17 @@ const comp = readFileSync("app/app/[companyId]/temp/Walkthroughs.js", "utf8");
 check(comp.includes("Quote worksheet"), "walkthroughs: on-the-spot quote worksheet present");
 check(comp.includes("OSHA record"), "walkthroughs: safety section is labeled as the OSHA record in the UI");
 
+// Persistence (migration 096): a completed walkthrough is a
+// temp_walkthroughs row — the company record — and the tab lists
+// saved walkthroughs from the table. A failed save must say so
+// plainly and never claim the record exists.
+check(
+  comp.includes('.from("temp_walkthroughs")') && comp.includes(".insert("),
+  "walkthroughs: completing a walkthrough saves a temp_walkthroughs row"
+);
+check(comp.includes("Saved walkthroughs"), "walkthroughs: saved records are listed from the table");
+check(comp.includes("Not saved"), "walkthroughs: a failed save says so plainly");
+
 if (failures > 0) {
   console.error("check-temp-walkthroughs: " + failures + " failure(s)");
   process.exit(1);
