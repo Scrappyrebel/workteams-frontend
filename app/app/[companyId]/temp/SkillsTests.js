@@ -5,12 +5,12 @@ import { supabase } from "../../../../lib/supabase";
 import {
   TEST_LIBRARY,
   testRecordsFromSkills,
+  testRecordsFromTableRows,
+  mergeTestRecords,
   laneGateStatus,
   forkliftStatus,
   FORKLIFT_STATUS_LABELS,
   clientTestSummary,
-  testTag,
-  scoreTag,
 } from "../../../../lib/temp-tests";
 
 const LANE_LABELS = {
@@ -23,60 +23,62 @@ const LANE_LABELS = {
 
 // Skills Tests panel for one temp: the per-department test library,
 // the factory safety gate, the two-state forklift record, and the
-// client-visible summary. Results ride the existing
-// temp_member_skills table in the encoded form lib/temp-tests.js
-// documents; scores are shown to clients, item-level answers never
+// client-visible summary. Results are written to the
+// temp_test_records table (migration 096) — the system of record.
+// Results recorded before the table landed ride temp_member_skills
+// in the encoded tag form lib/temp-tests.js documents; both sources
+// are merged for display, latest record wins, so older results never
+// vanish. Scores are shown to clients, item-level answers never
 // exist here at all.
-export default function SkillsTests({ companyId, memberId, lanes, skills, setSkills, onMsg }) {
+export default function SkillsTests({ companyId, memberId, lanes, skills, testRows, setTestRows, recordedBy, onMsg }) {
   const [scores, setScores] = useState({});
   const [busy, setBusy] = useState("");
-  const records = testRecordsFromSkills((skills || []).filter((s) => s.member_id === memberId));
+  const records = mergeTestRecords(
+    testRecordsFromSkills((skills || []).filter((s) => s.member_id === memberId)),
+    testRecordsFromTableRows((testRows || []).filter((r) => r.member_id === memberId))
+  );
   const workerLanes = lanes && lanes.length ? lanes : ["cleaning"];
   const laneKeys = [...new Set([...workerLanes, ...TEST_LIBRARY.map((t) => t.lane)])]
     .filter((l) => TEST_LIBRARY.some((t) => t.lane === l));
   const fk = forkliftStatus(records);
 
-  async function refresh() {
+  async function refreshTestRows() {
     const { data } = await supabase()
-      .from("temp_member_skills")
+      .from("temp_test_records")
       .select("*")
       .eq("company_id", companyId)
-      .limit(500);
-    setSkills(data || []);
+      .order("created_at", { ascending: true })
+      .limit(1000);
+    setTestRows(data || []);
   }
 
   async function record(test, passed) {
     setBusy(test.key);
-    const rows = [
-      {
-        company_id: companyId,
-        member_id: memberId,
-        skill: testTag(test.key, passed),
-        created_at: new Date().toISOString(),
-      },
-    ];
     const raw = (scores[test.key] || "").trim();
+    let score = null;
     if (raw !== "" && test.scoreKind) {
       const val = parseFloat(raw);
-      if (Number.isFinite(val)) {
-        rows.push({
-          company_id: companyId,
-          member_id: memberId,
-          skill: scoreTag(test.key, val),
-          created_at: new Date().toISOString(),
-        });
-      }
+      if (Number.isFinite(val)) score = val;
     }
     const { error } = await supabase()
-      .from("temp_member_skills")
-      .upsert(rows, { onConflict: "company_id,member_id,skill" });
+      .from("temp_test_records")
+      .insert({
+        company_id: companyId,
+        member_id: memberId,
+        test_key: test.key,
+        lane: test.lane,
+        passed,
+        score,
+        score_kind: test.scoreKind || null,
+        recorded_by: recordedBy || null,
+      });
     setBusy("");
     if (error) {
       onMsg && onMsg("Record failed: " + error.message);
       return;
     }
     onMsg && onMsg(`Recorded ${test.label}: ${passed ? "PASS" : "FAIL"}.`);
-    refresh();
+    refreshTestRows();
   }
 
   return (
