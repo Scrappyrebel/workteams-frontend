@@ -5,6 +5,7 @@ import { supabase } from "../../../../lib/supabase";
 import { CompanyContext } from "../../../../lib/company-context";
 import Playbook from "./Playbook";
 import { ClientsTab, OffersTab } from "./Intake";
+import StatePricing from "./StatePricing";
 
 const TABS = [
   { key: "requests", label: "Job Requests" },
@@ -754,6 +755,7 @@ export default function TempDashboard() {
             </label>
             <button type="submit" className="btn-primary" style={{ padding: 12 }}>Save</button>
           </form>
+          <StatePricing companyId={company.id} />
           <p style={{ fontSize: 13, color: "var(--muted)", marginTop: 12 }}>
             {`Your public links — always share these (they carry your company, so bookings and applications can't land on another agency): /temp/book?agency=${company.id} · /temp/apply?agency=${company.id}`}
           </p>
