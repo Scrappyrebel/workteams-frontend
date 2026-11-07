@@ -5,12 +5,14 @@ import { supabase } from "../../../../lib/supabase";
 import { CompanyContext } from "../../../../lib/company-context";
 import Playbook from "./Playbook";
 import { ClientsTab, OffersTab } from "./Intake";
+import Walkthroughs from "./Walkthroughs";
 
 const TABS = [
   { key: "requests", label: "Job Requests" },
   { key: "temps", label: "Temp Pool" },
   { key: "offers", label: "Shift Offers" },
   { key: "clients", label: "Clients" },
+  { key: "walkthroughs", label: "Sales Walkthroughs" },
   { key: "hire", label: "Temp-to-Hire" },
   { key: "playbook", label: "📖 Playbook" },
   { key: "settings", label: "Agency Settings" },
@@ -119,6 +121,7 @@ export default function TempDashboard() {
   const [payRate, setPayRate] = useState({});
   // Batch 2: backfill picker.
   const [replacing, setReplacing] = useState({});
+  const [poolLane, setPoolLane] = useState("all");
 
   async function loadConversions() {
     const { data } = await supabase()
@@ -547,7 +550,16 @@ export default function TempDashboard() {
           ))}
           <h2 style={{ marginTop: 24 }}>Approved temps ({approvedTemps.length})</h2>
           <p style={{ color: "var(--muted)", fontSize: 13 }}>Tap a temp to see their profile, skill tags, and past assignments.</p>
-          {approvedTemps.map((a) => {
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", margin: "8px 0 12px" }}>
+            {[{ key: "all", label: "All lanes" }, ...STAFFING_LANES].map((l) => (
+              <button key={l.key} onClick={() => setPoolLane(l.key)}
+                className={poolLane === l.key ? "btn-primary" : "btn-ghost"}
+                style={{ padding: "5px 12px", fontSize: 12 }}>
+                {l.label}
+              </button>
+            ))}
+          </div>
+          {approvedTemps.filter((a) => poolLane === "all" || (a.staffing_types || ["cleaning"]).includes(poolLane)).map((a) => {
             const sk = skillsFor(a.member_id);
             const hist = assignmentsFor(a.member_id);
             const open = expandedTemp === a.id;
@@ -682,6 +694,10 @@ export default function TempDashboard() {
       )}
 
       {tab === "playbook" && <Playbook />}
+
+      {tab === "walkthroughs" && (
+        <Walkthroughs lanes={cfg?.staffing_types?.length ? cfg.staffing_types : ["cleaning"]} />
+      )}
 
       {tab === "settings" && cfg && (
         <section className="panel" style={{ padding: 24, marginTop: 16 }}>
