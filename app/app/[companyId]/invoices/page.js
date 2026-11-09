@@ -7,6 +7,7 @@ import { supabase } from "../../../../lib/supabase";
 import { useCompany } from "../../../../lib/company-context";
 import { getUser } from "../../../../lib/session";
 import { chicagoToday } from "../../../../lib/dates";
+import SendToBooksButton from "../../../../components/SendToBooksButton";
 
 const STATUS_LABELS = {
   draft: "Draft",
@@ -272,6 +273,8 @@ export default function InvoicesPage() {
         corrected; once an invoice is issued, fix mistakes by voiding it (with a reason) and
         issuing a new one — issued invoices are never edited or deleted.
       </p>
+
+      <SendToBooksButton companyId={company.id} />
 
       {unavailable ? (
         <section className="panel" style={{ padding: 20, margin: "16px 0" }}>

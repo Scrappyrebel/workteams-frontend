@@ -15,6 +15,10 @@
     {
       "path": "/api/cron/workteams-b2-recovery",
       "schedule": "45 */3 * * *"
+    },
+    {
+      "path": "/api/cron/books-send",
+      "schedule": "20 11 * * *"
     }
   ]
 }
