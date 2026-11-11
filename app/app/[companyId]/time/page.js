@@ -10,6 +10,7 @@ import EndShiftProof from "../../../../components/EndShiftProof";
 import { chooseAssignedShift, shiftBounds } from "../../../../lib/attendance-shifts.mjs";
 import { dateInTz } from "../../../../lib/dates";
 import { proofRequired } from "../../../../lib/proof-policy";
+import { createPunchOutbox, openBrowserPunchStorage } from "../../../../lib/punch-outbox.mjs";
 
 function getPosition() {
   return new Promise((resolve) => {
@@ -118,6 +119,15 @@ export default function TimeClockPage() {
   const [clockInHat, setClockInHat] = useState("");
   const proofRef = useRef(null);
   const clockedOutEntryIdRef = useRef(null);
+  // Clock-punch outbox (lib/punch-outbox.mjs): every Clock In / Clock Out
+  // tap is written to durable on-device storage FIRST and delivered by the
+  // outbox until the server confirms it. punchState mirrors the outbox so
+  // the screen always shows the truth: saved on this phone / sending /
+  // confirmed / blocked with the server's reason.
+  const [punchState, setPunchState] = useState({ records: [], lastDelivered: null });
+  const outboxRef = useRef(null);
+  const outboxInitRef = useRef(null);
+  const punchHandlersRef = useRef(null);
   const [lastShiftLength, setLastShiftLength] = useState(null);
   const [proofEntry, setProofEntry] = useState(null);
   const [proofNotice, setProofNotice] = useState("");
@@ -172,6 +182,23 @@ export default function TimeClockPage() {
     if (!canViewTeam || filter === "mine") q = q.eq("member_id", member.id);
     const { data } = await q;
     setEntries(data || []);
+
+    // Outbox housekeeping: a BLOCKED punch whose effect is already true on
+    // the server (the member is clocked in; the entry is closed) is moot —
+    // clear it so the warning line never cries wolf after reality moved on.
+    try {
+      const ob = outboxRef.current;
+      if (ob) {
+        for (const r of ob.snapshot().records) {
+          if (r.status !== "blocked" || r.companyId !== company.id || r.memberId !== member.id) continue;
+          if (r.type === "in" && openRows && openRows[0]) void ob.drop(r.id);
+          if (r.type === "out") {
+            const e = (data || []).find((x) => x.id === r.entryId);
+            if (e?.clock_out) void ob.drop(r.id);
+          }
+        }
+      }
+    } catch { /* housekeeping only — the list above already rendered */ }
 
     // Overrides for the entries on screen. Tolerant: before migration 052
     // runs, the table is absent — keep the plain entry list, no crash.
@@ -340,18 +367,211 @@ export default function TimeClockPage() {
 
   async function api(path, body) {
     const { data: { session } } = await supabase().auth.getSession();
-    const res = await fetch(path, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${session?.access_token || ""}`,
-      },
-      body: JSON.stringify(body),
-    });
+    // Bounded fetch: a request that never answers must surface as an error,
+    // never as a permanently disabled button (the Nov 8 trap — one hung
+    // request left `busy` set and the tap evaporated without a trace).
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 15000);
+    let res;
+    try {
+      res = await fetch(path, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session?.access_token || ""}`,
+        },
+        body: JSON.stringify(body),
+        signal: controller.signal,
+      });
+    } catch (e) {
+      clearTimeout(timer);
+      if (e?.name === "AbortError") {
+        const err = new Error("The connection timed out.");
+        err.code = "timeout";
+        throw err;
+      }
+      throw e;
+    }
+    clearTimeout(timer);
     const json = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(json.error || "Request failed");
+    if (!res.ok) {
+      const err = new Error(json.error || "Request failed");
+      err.status = res.status;
+      throw err;
+    }
     return json;
   }
+
+  // ---- Punch outbox wiring -------------------------------------------------
+  // The outbox is created once per signed-in member. Its send/confirm/
+  // delivered callbacks always dispatch through punchHandlersRef so they
+  // use the latest render's closures, never a stale page state.
+
+  async function sendPunch(punch) {
+    try {
+      if (punch.type === "out") {
+        // Phase 1: save the clock-out timestamp (idempotent — the route
+        // answers an already-closed entry with its recorded state).
+        // Proof uploads finish after; the timestamp never waits on them.
+        const res1 = await api("/api/time/clock-out", {
+          companyId: punch.companyId,
+          entryId: punch.entryId,
+          lat: punch.lat,
+          lng: punch.lng,
+          punchId: punch.id,
+        });
+        return res1?.entry || null;
+      }
+      const res = await api("/api/time/clock-in", {
+        companyId: punch.companyId,
+        locationId: punch.locationId,
+        lat: punch.lat,
+        lng: punch.lng,
+        clockInRole: punch.clockInRole,
+        punchId: punch.id,
+      });
+      return res?.entry || null;
+    } catch (e) {
+      // Refusals the server will repeat forever must not retry silently;
+      // everything else (401 session blips, 429, 5xx, timeouts, dead
+      // signal) stays queued and keeps trying.
+      if (e?.status === 400 || e?.status === 403 || e?.status === 404) e.permanent = true;
+      // Clock-in 409 = "already clocked in": if read-back finds this
+      // punch's own entry, it landed; if not, it is a real conflict.
+      if (e?.status === 409) e.blockedIfUnconfirmed = true;
+      throw e;
+    }
+  }
+
+  async function confirmPunch(punch) {
+    const sb = supabase();
+    if (punch.type === "out") {
+      const { data } = await sb
+        .from("time_entries")
+        .select("id, clock_in, clock_out, location_id")
+        .eq("id", punch.entryId)
+        .maybeSingle();
+      return data && data.clock_out ? data : null;
+    }
+    const { data } = await sb
+      .from("time_entries")
+      .select("id, clock_in, clock_out, location_id")
+      .eq("company_id", punch.companyId)
+      .eq("member_id", punch.memberId)
+      .is("clock_out", null)
+      .order("clock_in", { ascending: false })
+      .limit(1);
+    const openEntry = data && data[0];
+    if (!openEntry) return null;
+    // Only THIS punch's result counts: an open entry that predates the tap
+    // is an older stuck shift, not a confirmation.
+    const skewMs = 5 * 60 * 1000;
+    return new Date(openEntry.clock_in).getTime() >= punch.tappedAtMs - skewMs ? openEntry : null;
+  }
+
+  async function handlePunchDelivered(punch, entry) {
+    if (punch.type === "in") {
+      await load();
+      return;
+    }
+    // Clock-out delivered AND confirmed against the server's record. Only
+    // now may the screen say the shift is over.
+    clockedOutEntryIdRef.current = punch.entryId;
+    if (entry?.clock_in && entry?.clock_out) {
+      const ms = new Date(entry.clock_out).getTime() - new Date(entry.clock_in).getTime();
+      if (ms > 0) {
+        const h = Math.floor(ms / 3600000);
+        const m = Math.round((ms % 3600000) / 60000);
+        setLastShiftLength(h > 0 ? `${h} hr ${m} min` : `${m} min`);
+      }
+    }
+    // Timestamp saved; never wait on an upload to finish clock-out.
+    // Keep the proof component mounted when there is an in-flight
+    // upload or failed local recording, so the employee can retry it.
+    const awaitingProof = proofRef.current?.hasPendingUploads() ||
+      proofRef.current?.hasUnsavedRecording?.();
+    if (awaitingProof) {
+      setProofNotice("✅ Clocked out — confirmed. The walkthrough is still uploading or needs Retry. Keep this screen open until it says uploaded.");
+    }
+    // Do not clear upload_pending while a video/photo is being uploaded
+    // or retained for retry, even if company proof requirements are off.
+    if (!awaitingProof) {
+      setProofNotice("✅ Clocked out — confirmed. Checking shift proof…");
+      try {
+        await api("/api/time/clock-out/complete", {
+          companyId: punch.companyId,
+          entryId: punch.entryId,
+        });
+        const confirmed = proofRef.current?.hasVerifiedVideo?.();
+        setProofEntry(null);
+        setProofNotice(confirmed
+          ? "Clock-out saved. Walkthrough video uploaded and verified."
+          : "Clock-out saved. No walkthrough video was saved for this shift.");
+      } catch (err) {
+        setProofNotice(`Clocked out successfully. Shift proof is still pending: ${err.message}.`);
+      }
+    }
+    await load();
+  }
+
+  punchHandlersRef.current = { sendPunch, confirmPunch, handlePunchDelivered };
+
+  function ensureOutbox() {
+    if (outboxRef.current) return Promise.resolve(outboxRef.current);
+    if (!outboxInitRef.current) {
+      outboxInitRef.current = (async () => {
+        const storage = await openBrowserPunchStorage();
+        const outbox = createPunchOutbox({
+          storage,
+          canSend: (r) => r.companyId === company?.id && r.memberId === member?.id,
+          send: (punch) => punchHandlersRef.current.sendPunch(punch),
+          confirm: (punch) => punchHandlersRef.current.confirmPunch(punch),
+          onChange: (snap) => setPunchState(snap),
+          onDelivered: (punch, entry) => {
+            void punchHandlersRef.current.handlePunchDelivered(punch, entry);
+          },
+        });
+        outboxRef.current = outbox;
+        return outbox;
+      })();
+    }
+    return outboxInitRef.current;
+  }
+
+  // Open the outbox as soon as the member is known: leftover punches from
+  // a previous session start delivering right away, and reconnect /
+  // back-to-foreground give the sender an extra kick.
+  useEffect(() => {
+    if (loading || !company || !member) return;
+    let stop = () => {};
+    let outbox = null;
+    ensureOutbox()
+      .then((ob) => {
+        outbox = ob;
+        stop = ob.start();
+      })
+      .catch(() => { /* storage unavailable — taps surface the failure */ });
+    const kick = () => outbox?.kick();
+    const onVisible = () => {
+      if (document.visibilityState === "visible") kick();
+    };
+    window.addEventListener("online", kick);
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      stop();
+      window.removeEventListener("online", kick);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, company, member]);
+
+  // Busy self-heal: no single action on this page may disable the buttons
+  // for longer than the slowest bounded step (GPS ≤10s, request ≤15s).
+  useEffect(() => {
+    if (!busy) return;
+    const t = setTimeout(() => setBusy(false), 25000);
+    return () => clearTimeout(t);
+  }, [busy]);
 
   async function clockIn() {
     if (shiftLoading || shiftError || !myShifts.some((s) => s.location_id === locationId)) {
@@ -378,14 +598,22 @@ export default function TimeClockPage() {
           throw new Error(`You must be at ${fence.name} to clock in. You're about ${Math.round(dist)}m away (limit: ${fence.radius}m).`);
         }
       }
-      await api("/api/time/clock-in", {
+      // LOCAL FIRST: the tap is written to the on-device outbox before any
+      // network call. The outbox delivers it (with retries + read-back)
+      // until the server confirms; this screen shows "saved on this phone"
+      // until then. The server still re-checks schedule + geofence at
+      // delivery — queuing never weakens those gates.
+      const outbox = await ensureOutbox();
+      await outbox.enqueue({
+        type: "in",
         companyId: company.id,
+        memberId: member.id,
         locationId,
         lat: pos?.lat ?? null,
         lng: pos?.lng ?? null,
         clockInRole: hats.length > 1 ? clockInHat : null,
+        awaitingGps: false,
       });
-      await load();
     } catch (e) {
       alert("Clock-in failed: " + e.message);
     }
@@ -393,60 +621,39 @@ export default function TimeClockPage() {
   }
 
   async function clockOut() {
+    if (!open) return;
     setBusy(true);
     setLastShiftLength(null);
     try {
-      const pos = await getPosition();
-      // Phase 1: save the clock-out timestamp IMMEDIATELY (idempotent).
-      // Proof uploads finish after — the timestamp never waits on them.
-      const res1 = await api("/api/time/clock-out", {
+      // LOCAL FIRST — the fix for the Nov 8 failure: the tap is written to
+      // the on-device outbox IMMEDIATELY, before GPS and before any network
+      // call. From this instant the clock-out cannot evaporate: the outbox
+      // keeps delivering it (bounded timeout, retries, read-back
+      // confirmation) until the server confirms, even across an app kill.
+      // Delivery + the proof phase run in handlePunchDelivered when the
+      // server's confirmation comes back.
+      const outbox = await ensureOutbox();
+      const punch = await outbox.enqueue({
+        type: "out",
         companyId: company.id,
+        memberId: member.id,
         entryId: open.id,
-        lat: pos?.lat ?? null,
-        lng: pos?.lng ?? null,
+        lat: null,
+        lng: null,
+        awaitingGps: true,
       });
       clockedOutEntryIdRef.current = open.id;
-      // Show how long the shift took, from the saved timestamps.
-      const entry = res1?.entry;
-      if (entry?.clock_in && entry?.clock_out) {
-        const ms = new Date(entry.clock_out).getTime() - new Date(entry.clock_in).getTime();
-        if (ms > 0) {
-          const h = Math.floor(ms / 3600000);
-          const m = Math.round((ms % 3600000) / 60000);
-          setLastShiftLength(h > 0 ? `${h} hr ${m} min` : `${m} min`);
-        }
-      }
-      // Timestamp saved; never wait on an upload to finish clock-out.
-      // Keep the proof component mounted when there is an in-flight
-      // upload or failed local recording, so the employee can retry it.
-      const awaitingProof = proofRef.current?.hasPendingUploads() ||
-        proofRef.current?.hasUnsavedRecording?.();
       setProofEntry(open);
-      if (awaitingProof) {
-        setProofNotice("You are clocked out. The walkthrough is still uploading or needs Retry. Keep this screen open until it says uploaded.");
-      } else {
-        setProofNotice("Clock-out time saved. Checking shift proof…");
-      }
-      // Do not clear upload_pending while a video/photo is being uploaded
-      // or retained for retry, even if company proof requirements are off.
-      if (!awaitingProof) {
-        try {
-          await api("/api/time/clock-out/complete", {
-            companyId: company.id,
-            entryId: open.id,
-          });
-          const confirmed = proofRef.current?.hasVerifiedVideo?.();
-          setProofEntry(null);
-          setProofNotice(confirmed
-            ? "Clock-out saved. Walkthrough video uploaded and verified."
-            : "Clock-out saved. No walkthrough video was saved for this shift.");
-        } catch (err) {
-          setProofNotice(`Clocked out successfully. Shift proof is still pending: ${err.message}.`);
-        }
-      }
-      await load();
+      // GPS captured at tap time rides along with the punch; it enriches
+      // the queued record when it settles and never gates the save (the
+      // server accepts a clock-out without coordinates).
+      getPosition()
+        .then((pos) => {
+          void outbox.attachGps(punch.id, pos);
+        })
+        .catch(() => {});
     } catch (e) {
-      alert("Clock-out failed: " + e.message);
+      alert("Clock-out could not be saved on this phone: " + e.message);
     }
     setBusy(false);
   }
@@ -494,16 +701,27 @@ export default function TimeClockPage() {
     try {
       const { data: { session } } = await supabase().auth.getSession();
       if (!session?.access_token) throw new Error("Sign in as a manager before using overrides.");
-      const res = await fetch("/api/time/manager-clock", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
-        body: JSON.stringify({
-          company_id: company.id,
-          target_member_id: targetMemberId,
-          action,
-          reason: String(reason || "").trim(),
-        }),
-      });
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 15000);
+      let res;
+      try {
+        res = await fetch("/api/time/manager-clock", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
+          body: JSON.stringify({
+            company_id: company.id,
+            target_member_id: targetMemberId,
+            action,
+            reason: String(reason || "").trim(),
+          }),
+          signal: controller.signal,
+        });
+      } catch (e) {
+        clearTimeout(timer);
+        if (e?.name === "AbortError") throw new Error("The connection timed out.");
+        throw e;
+      }
+      clearTimeout(timer);
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed");
       await load();
@@ -514,6 +732,16 @@ export default function TimeClockPage() {
   }
 
   if (loading || !company) return <p>Loading…</p>;
+
+  // This member's own punches, as the outbox currently knows them.
+  const myPunches = punchState.records.filter(
+    (r) => r.companyId === company?.id && r.memberId === member?.id
+  );
+  const activePunches = myPunches.filter((r) => r.status === "queued" || r.status === "sending");
+  const blockedPunches = myPunches.filter((r) => r.status === "blocked");
+  const outPunchPending = open
+    ? activePunches.some((r) => r.type === "out" && r.entryId === open.id)
+    : false;
 
   return (
     <div>
@@ -528,8 +756,8 @@ export default function TimeClockPage() {
               {new Date(open.clock_in).toLocaleTimeString([], { hour: "numeric", minute: "2-digit", hour12: true })}
               {open.clock_in_role ? ` (${open.clock_in_role === "manager" ? "Manager" : "Cleaner"})` : ""}
             </p>
-            <button onClick={clockOut} disabled={busy} style={{ ...bigButton, background: "#28704a" }}>
-              {busy ? "Working…" : "Clock out"}
+            <button onClick={clockOut} disabled={busy || outPunchPending} style={{ ...bigButton, background: "#28704a" }}>
+              {busy ? "Working…" : outPunchPending ? "Clock-out saved ✓" : "Clock out"}
             </button>
           </div>
         ) : (
@@ -598,15 +826,37 @@ export default function TimeClockPage() {
         )}
       </section>
 
+      {activePunches.map((r) => (
+        <p key={r.id} role="status" style={{ fontWeight: 700, padding: 12, border: "1px solid #e0a458", background: "#fff4e5", borderRadius: 8 }}>
+          {r.status === "sending"
+            ? (r.type === "out" ? "Sending your clock-out…" : "Sending your clock-in…")
+            : (r.type === "out"
+              ? "🕓 Clock-out saved on this phone — will send when you have signal. You can leave this screen; it will keep trying."
+              : "🕓 Clock-in saved on this phone — will send when you have signal. You can leave this screen; it will keep trying.")}
+        </p>
+      ))}
+
+      {blockedPunches.map((r) => (
+        <p key={r.id} role="alert" style={{ fontWeight: 700, padding: 12, border: "1px solid #b3261e", background: "#fdecea", borderRadius: 8 }}>
+          ⚠ Your {r.type === "out" ? "clock-out" : "clock-in"} could not be sent: {r.blockedReason}{" "}
+          It is still saved on this phone — please show this to your manager.{" "}
+          <button type="button" onClick={() => void outboxRef.current?.retryBlocked(r.id)}
+            style={{ fontWeight: 700, borderRadius: 999, padding: "4px 12px", cursor: "pointer" }}>
+            Try again
+          </button>
+        </p>
+      ))}
+
       {proofNotice && <p role="status" style={{ fontWeight: 700, padding: 12, border: "1px solid var(--border)", borderRadius: 8 }}>{proofNotice}</p>}
 
       {(open || proofEntry) && (
         <section id="end-shift-proof" className="panel" style={{ padding: 20, margin: "18px 0", scrollMarginTop: 90 }}>
           <h3 style={{ margin: "0 0 4px" }}>📋 End of shift</h3>
           <p style={{ color: "var(--muted)", fontSize: "0.88rem", margin: "0 0 14px" }}>
-            Record your walkthrough and book photo before you clock out — no need to hunt through tabs.
+            Clock out first — your time is saved right away, even with no signal. Then record your
+            walkthrough and book photo here, no need to hunt through tabs; they upload after.
             {(proofRequired(company, "walkthrough") || proofRequired(company, "book")) &&
-              " Required proof must be uploaded — or an override reason saved — before clock-out can finish."}
+              " Your shift is finished once the required proof is uploaded — or an override reason is saved."}
           </p>
           <EndShiftProof
             ref={proofRef}
