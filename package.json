@@ -15,12 +15,12 @@
     "check:punch-outbox": "node scripts/check-punch-outbox.mjs"
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.118.0",
-    "isomorphic-dompurify": "^4.6.0",
-    "next": "16.4.2",
+    "@supabase/supabase-js": "^2.119.0",
+    "isomorphic-dompurify": "^4.7.0",
+    "next": "16.4.6",
     "react": "19.3.1",
     "react-dom": "19.3.1",
-    "stripe": "^23.0.0",
+    "stripe": "^23.1.0",
     "tus-js-client": "^4.3.1",
     "web-push": "^3.6.7"
   },
