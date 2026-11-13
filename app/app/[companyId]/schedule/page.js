@@ -267,6 +267,7 @@ export default function SchedulePage() {
   const [pendingRequests, setPendingRequests] = useState([]);
   const [approvedOff, setApprovedOff] = useState([]);
   const [decisionNotes, setDecisionNotes] = useState({});
+  const [openRequestId, setOpenRequestId] = useState(null);
 
   // The add-shift confirmation summary is only ever live for the exact
   // form it was prepared from: any later edit disarms it, so what a
@@ -1255,6 +1256,18 @@ export default function SchedulePage() {
                         : "hasn't answered yet"}
                   </div>
                 )}
+                <div style={{ marginTop: 8 }}>
+                  <button
+                    type="button"
+                    aria-expanded={openRequestId === r.id}
+                    onClick={() => setOpenRequestId(openRequestId === r.id ? null : r.id)}
+                    style={secondaryButton}
+                  >
+                    {openRequestId === r.id ? "Hide decision" : "Show decision"}
+                  </button>
+                </div>
+                {openRequestId === r.id && (
+                  <>
                 {r.request_type === "swap" && r.swap_status === "accepted" && (
                   <div style={{ fontSize: "0.8rem", color: "var(--muted)", marginTop: 4 }}>
                     Approving moves this shift to {r.swapWithName}. A shift with recorded
@@ -1287,6 +1300,8 @@ export default function SchedulePage() {
                       ? `${r.swapWithName} declined — deny to close this out.`
                       : `Waiting on ${r.swapWithName} to accept before this can be approved.`}
                   </div>
+                )}
+                  </>
                 )}
               </div>
             ))}
