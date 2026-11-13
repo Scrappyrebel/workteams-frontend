@@ -113,6 +113,27 @@ function buildOccurrences(startISO, pattern, untilISO) {
     }
     return out;
   }
+  if (pattern === "fri_weekend" || pattern === "fri_weekend_24") {
+    // A weekend counts from its Friday: the shift's weekday is anchored to
+    // the 1st & 3rd (or 2nd & 4th) Friday of the month, so in a month that
+    // starts on a Saturday or Sunday the weekend shifts land a week later
+    // than the plain nth-weekday rule. The cursor starts one month early
+    // because a weekend whose Friday falls in the previous month can still
+    // hold this month's first days; push() drops anything before start.
+    const weekday = start.getDay();
+    const ordinals = pattern === "fri_weekend" ? [1, 3] : [2, 4];
+    const offset = (weekday - 5 + 7) % 7;
+    let cursor = new Date(start.getFullYear(), start.getMonth() - 1, 1, 12);
+    const lastMonth = new Date(until.getFullYear(), until.getMonth(), 1, 12);
+    while (cursor <= lastMonth && out.length < 520) {
+      for (const n of ordinals) {
+        const friday = nthWeekdayOfMonth(cursor.getFullYear(), cursor.getMonth(), 5, n);
+        push(new Date(friday.getFullYear(), friday.getMonth(), friday.getDate() + offset, 12));
+      }
+      cursor = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1, 12);
+    }
+    return out;
+  }
   return out;
 }
 
@@ -130,6 +151,11 @@ function recurrenceLabel(pattern, startISO) {
     const d = parseDay(startISO);
     const ord = pattern === "nth_weekday" ? "1st & 3rd" : "2nd & 4th";
     return `${ord} ${WEEKDAY_NAMES[d.getDay()]}`;
+  }
+  if (pattern === "fri_weekend" || pattern === "fri_weekend_24") {
+    const d = parseDay(startISO);
+    const ord = pattern === "fri_weekend" ? "1st & 3rd" : "2nd & 4th";
+    return `${ord} ${WEEKDAY_NAMES[d.getDay()]} (Fri weekend)`;
   }
   return null;
 }
@@ -861,6 +887,12 @@ export default function SchedulePage() {
   const nthOptionLabel24 = previewShiftDate
     ? `2nd & 4th ${WEEKDAY_NAMES[parseDay(previewShiftDate).getDay()]} of each month`
     : "2nd & 4th weekday of each month";
+  const nthFriOptionLabel = previewShiftDate
+    ? `1st & 3rd ${WEEKDAY_NAMES[parseDay(previewShiftDate).getDay()]} of each month — weekend counted from Friday`
+    : "1st & 3rd weekend of each month — counted from Friday";
+  const nthFriOptionLabel24 = previewShiftDate
+    ? `2nd & 4th ${WEEKDAY_NAMES[parseDay(previewShiftDate).getDay()]} of each month — weekend counted from Friday`
+    : "2nd & 4th weekend of each month — counted from Friday";
 
   // Confirmation summary for a prepared add: derived from the prepared
   // rows themselves, so it always describes exactly what Create inserts.
@@ -1306,6 +1338,8 @@ export default function SchedulePage() {
                 <option value="monthly">Every month</option>
                 <option value="nth_weekday">{nthOptionLabel}</option>
                 <option value="nth_weekday_24">{nthOptionLabel24}</option>
+                <option value="fri_weekend">{nthFriOptionLabel}</option>
+                <option value="fri_weekend_24">{nthFriOptionLabel24}</option>
               </select>
             </label>
             {form.repeat !== "once" && (
