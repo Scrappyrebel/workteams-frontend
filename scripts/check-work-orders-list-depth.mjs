@@ -46,6 +46,9 @@ test("existing load, create form, clock-in gate and notify path are unchanged", 
     "Create work order",
     'fetch("/api/work-orders/notify", {',
     'event: "assigned"',
+    // Audit §3 (2026-11-15): the notify call carries the caller's
+    // sign-in; the endpoint derives who acted from it.
+    'Authorization: `Bearer ${session.access_token}`',
     "Showing work orders assigned to you.",
     '{o.source === "portal" ? " • 📩 CLIENT REQUEST" : ""}',
     '{o.due_date ? ` • due ${o.due_date}` : ""}',
