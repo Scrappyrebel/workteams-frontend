@@ -5,7 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { clearLastPath } from "../lib/last-path";
 import { signOut } from "../lib/session";
-import { canUse, tierLabel } from "../lib/tiers";
+import { canUseWithRole, tierLabel } from "../lib/tiers";
 import { isProductOwner } from "../lib/product";
 import { roleRank } from "../lib/roles";
 import { ensurePush, enablePush } from "../lib/push-client";
@@ -192,9 +192,11 @@ export default function AppShell({ company, member, children }) {
     });
   }
   const linksMapped = links.map((item) => {
-    // Managers and owners always have full access — tier locks apply
-    // only to cleaners (employees/supervisors).
-    const allowed = roleAtLeast(role, "manager") || canUse(tier, item.key);
+    // Tier locks apply to everyone alike (audit §6, 2026-11-15):
+    // the menu uses the same gate as the pages, so a feature the
+    // company's tier does not include shows as locked here instead
+    // of opening an empty page the database will not serve.
+    const allowed = canUseWithRole(tier, item.key, role);
     return {
       ...item,
       allowed,
