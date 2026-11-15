@@ -16,6 +16,10 @@ function isoDate(d) {
 export default function PayrollPage() {
   const { company, member, loading } = useCompany();
   const [rows, setRows] = useState([]);
+  // True only when the payroll_reviewed column (migration 098) was
+  // actually served — before that update runs, held entries still
+  // show, but there is no review button to offer.
+  const [reviewReady, setReviewReady] = useState(false);
   const [locationNames, setLocationNames] = useState({});
   const [range, setRange] = useState(() => {
     const end = new Date();
@@ -56,10 +60,15 @@ export default function PayrollPage() {
     const locById = {};
     for (const l of locs || []) locById[l.id] = l.name;
     setLocationNames(locById);
-    const runEntries = (withFlag) => {
+    const runEntries = (level) => {
+      // Level 2 also asks for payroll_reviewed (migration 098) — the
+      // same tolerant ladder as proof_override_used: if the API
+      // cannot serve a column yet, retry without it rather than
+      // blanking the payroll report.
+      const extra = level >= 2 ? ", proof_override_used, payroll_reviewed" : level === 1 ? ", proof_override_used" : "";
       let q = sb
         .from("time_entries")
-        .select("id, member_id, location_id, clock_in, clock_out, clock_in_role, pay_rate_applied" + (withFlag ? ", proof_override_used" : ""))
+        .select("id, member_id, location_id, clock_in, clock_out, clock_in_role, pay_rate_applied" + extra)
         .eq("company_id", company.id)
         .gte("clock_in", range.start + "T00:00:00")
         .lte("clock_in", range.end + "T23:59:59")
@@ -67,8 +76,10 @@ export default function PayrollPage() {
       if (!isManager) q = q.eq("member_id", member.id);
       return q;
     };
-    let entryResult = await runEntries(true);
-    if (entryResult.error) entryResult = await runEntries(false);
+    let entryResult = await runEntries(2);
+    setReviewReady(!entryResult.error);
+    if (entryResult.error) entryResult = await runEntries(1);
+    if (entryResult.error) entryResult = await runEntries(0);
     const entries = entryResult.data;
 
     // Managers get pay rates to build per-hat estimates (member_pay is manager-only).
@@ -82,13 +93,11 @@ export default function PayrollPage() {
     }
 
     const totals = {};
-    for (const m of members || []) totals[m.id] = { member: m, hours: 0, shifts: 0, cleanerHours: 0, managerHours: 0, estPay: 0, overrideShifts: 0, details: [] };
+    for (const m of members || []) totals[m.id] = { member: m, hours: 0, shifts: 0, cleanerHours: 0, managerHours: 0, estPay: 0, overrideShifts: 0, details: [], heldHours: 0, heldCount: 0, heldDetails: [] };
     for (const e of entries || []) {
       const t = totals[e.member_id];
       if (!t) continue;
       const hrs = (new Date(e.clock_out) - new Date(e.clock_in)) / 3600000;
-      t.hours += hrs;
-      t.shifts += 1;
       if (e.proof_override_used) t.overrideShifts += 1;
       // Per-shift detail behind the total (the same entries the totals
       // above are summed from — nothing new is calculated here beyond
@@ -103,6 +112,21 @@ export default function PayrollPage() {
         override: !!e.proof_override_used,
         estPay: 0,
       };
+      // Audit fix, 2026-11-15 (Sebastian §2): a single closed shift
+      // longer than 16 hours is almost always a missed clock-out —
+      // the watchdog's own auto-close cap is 16 hours. Such an
+      // entry is NEVER counted in the pay totals silently: it is
+      // held out and listed below as NEEDS REVIEW until a manager
+      // corrects the entry or marks it reviewed (payroll_reviewed,
+      // migration 098). The entry itself is never changed here.
+      if (hrs > 16 && !e.payroll_reviewed) {
+        t.heldHours += hrs;
+        t.heldCount += 1;
+        t.heldDetails.push(detail);
+        continue;
+      }
+      t.hours += hrs;
+      t.shifts += 1;
       if (isManager) {
         const hat = detail.hat;
         // Shared chain (lib/pay-rate) — Profitability resolves identically.
@@ -115,6 +139,7 @@ export default function PayrollPage() {
     }
     for (const t of Object.values(totals)) {
       t.details.sort((a, b) => new Date(a.clockIn) - new Date(b.clockIn));
+      t.heldDetails.sort((a, b) => new Date(a.clockIn) - new Date(b.clockIn));
     }
     let list = Object.values(totals);
     if (!isManager) {
@@ -131,6 +156,18 @@ export default function PayrollPage() {
     if (!loading && company && member) load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loading, company, member, range]);
+
+  // Manager review of a held entry: the hours are real, count them.
+  // Writes only the review flag — the entry's times never change.
+  async function markReviewed(entryId) {
+    const sb = supabase();
+    const { error } = await sb.from("time_entries").update({ payroll_reviewed: true }).eq("id", entryId);
+    if (error) {
+      alert("Could not mark that entry reviewed: " + error.message);
+      return;
+    }
+    load();
+  }
 
   function exportCsv() {
     const lines = isManager
@@ -196,9 +233,12 @@ export default function PayrollPage() {
       </p>
       <p style={{ color: "var(--muted)" }}>
         Every closed shift behind a total is listed under that person below, and the
-        shift-detail CSV lists one row per shift. This report has no overtime split,
-        no break deduction — breaks are not recorded on a shift — and no approval
-        step. Your payroll provider works out overtime and final pay from these hours.
+        shift-detail CSV lists one row per shift. This report has no overtime split
+        and no break deduction — breaks are not recorded on a shift. One check does
+        happen: a single shift longer than 16 hours is held out of every total as
+        NEEDS REVIEW until a manager corrects the entry or marks it reviewed,
+        because a shift that long is almost always a missed clock-out. Your payroll
+        provider works out overtime and final pay from these hours.
       </p>
 
       <section className="panel" style={{ padding: 20, margin: "16px 0" }}>
@@ -241,6 +281,36 @@ export default function PayrollPage() {
                 ⚠ {r.overrideShifts} shift{r.overrideShifts === 1 ? "" : "s"} used a proof override (required proof not uploaded) — see Time entries for the reason{r.overrideShifts === 1 ? "" : "s"}
               </div>
             )}
+            {r.heldCount > 0 && (
+              <div style={{ marginTop: 8, padding: "10px 12px", background: "#fdecea", border: "1px solid #d66", borderRadius: 10 }}>
+                <div style={{ fontWeight: 800, color: "#9b2d15", fontSize: "0.9rem" }}>
+                  ⚠ NEEDS REVIEW — {r.heldCount} shift{r.heldCount === 1 ? "" : "s"} over 16 hours ({r.heldHours.toFixed(2)} h) held out of the totals above
+                </div>
+                {r.heldDetails.map((d) => (
+                  <div key={d.id} style={{ fontSize: "0.85rem", marginTop: 6, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                    <span>
+                      {new Date(d.clockIn).toLocaleDateString()}{" "}
+                      {new Date(d.clockIn).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })} –{" "}
+                      {new Date(d.clockOut).toLocaleString([], { month: "numeric", day: "numeric", hour: "numeric", minute: "2-digit" })}
+                    </span>
+                    <span style={{ fontWeight: 700 }}>{d.hours.toFixed(2)} h</span>
+                    {locationNames[d.locationId] && <span>{locationNames[d.locationId]}</span>}
+                    {isManager && reviewReady && (
+                      <button onClick={() => markReviewed(d.id)} style={{ padding: "4px 10px", borderRadius: 999, border: "1px solid #9b2d15", background: "#fff", color: "#9b2d15", fontWeight: 700, cursor: "pointer" }}>
+                        Mark reviewed — count these hours
+                      </button>
+                    )}
+                  </div>
+                ))}
+                <p style={{ fontSize: "0.82rem", color: "var(--muted)", margin: "6px 0 0" }}>
+                  {isManager
+                    ? reviewReady
+                      ? "Correct the entry in Time entries if the times are wrong. If the hours are real, mark it reviewed and it will count."
+                      : "Correct the entry in Time entries if the times are wrong."
+                    : "These hours are not counted yet. Ask a manager to review this shift."}
+                </p>
+              </div>
+            )}
             {r.details && r.details.length > 0 && (
               <details style={{ marginTop: 8 }}>
                 <summary style={{ cursor: "pointer", fontSize: "0.88rem", fontWeight: 700, color: "var(--brand-deep)" }}>
@@ -272,6 +342,9 @@ export default function PayrollPage() {
         <p style={{ fontWeight: 800, marginTop: 14 }}>
           Team total: {totalHours.toFixed(2)} hours
           {rows.some((r) => r.estPay > 0) && <> • est. ${rows.reduce((s, r) => s + r.estPay, 0).toFixed(2)}</>}
+          {rows.some((r) => r.heldCount > 0) && (
+            <> • ⚠ {rows.reduce((s, r) => s + r.heldHours, 0).toFixed(2)} h held for review (not counted)</>
+          )}
         </p>
       )}
 
