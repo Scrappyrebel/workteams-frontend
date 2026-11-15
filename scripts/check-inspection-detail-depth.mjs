@@ -113,7 +113,10 @@ test("follow-up creation rides the existing work-order write path, manager-initi
     'source: "inspection"',
     'status: "open"',
     "location_id: inspection.location_id || null",
-    'body: JSON.stringify({ work_order_id: created.id, event: "assigned", actor_member_id: member.id })',
+    // Audit §3 (2026-11-15): the notify call now sends the sign-in,
+    // not a claimed member id — the endpoint derives who acted.
+    'body: JSON.stringify({ work_order_id: created.id, event: "assigned" })',
+    'Authorization: `Bearer ${session.access_token}`',
     "It is not published to the customer portal",
     "Inspection record: ${inspectionId}",
   ]) {
