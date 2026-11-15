@@ -111,10 +111,11 @@ export default function WorkOrdersPage() {
     // Notify the assignee (best effort).
     if (created?.id && form.assigned_to) {
       try {
+        const { data: { session } } = await supabase().auth.getSession();
         await fetch("/api/work-orders/notify", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ work_order_id: created.id, event: "assigned", actor_member_id: member.id }),
+          headers: { "Content-Type": "application/json", ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}) },
+          body: JSON.stringify({ work_order_id: created.id, event: "assigned" }),
         });
       } catch {}
     }
