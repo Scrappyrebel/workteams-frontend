@@ -43,13 +43,47 @@ export async function POST(req) {
     if (bid.valid_until && bid.valid_until < chicagoToday(bidCompany?.timezone)) {
       return NextResponse.json({ error: "This proposal has expired." }, { status: 410 });
     }
-    if (bid.status === "accepted" || bid.status === "declined") {
+    if (bid.status === "declined" || (bid.status === "accepted" && decision === "declined")) {
       return NextResponse.json({ error: `This bid is already ${bid.status}.` }, { status: 409 });
     }
 
-    await client.from("bids").update({ status: decision }).eq("id", bid.id);
-
-    if (decision === "declined") return NextResponse.json({ ok: true, decision });
+    // Audit fix, 2026-11-15 (Sebastian §9): the decision update used
+    // to be fired unchecked, so a failed update still ran the rest;
+    // two decisions racing could both land; and a failed contract
+    // left the bid marked accepted with no contract while every
+    // retry was refused as "already accepted" — stuck forever, and
+    // the client saw a success message with no signing link. Now:
+    //  - the update is guarded on the bid still being undecided and
+    //    its result is checked; only the first decision lands;
+    //  - if the contract cannot be created, a decision marked here
+    //    is rolled back so the client can simply try again;
+    //  - an accepted bid with NO contract (an earlier attempt died
+    //    in between) heals itself: a repeat accept finishes the
+    //    contract instead of refusing.
+    let markedHere = false;
+    if (bid.status === "accepted") {
+      const { data: existing } = await client.from("contracts").select("id").eq("bid_id", bid.id).limit(1);
+      if (existing && existing.length) {
+        return NextResponse.json({ error: "This bid is already accepted." }, { status: 409 });
+      }
+      // No contract yet — fall through and build it now.
+    } else {
+      const { data: updated, error: upErr } = await client
+        .from("bids")
+        .update({ status: decision })
+        .eq("id", bid.id)
+        .not("status", "in", "(accepted,declined)")
+        .select("id");
+      if (upErr) {
+        console.error("bid decide update failed", upErr);
+        return NextResponse.json({ error: "Could not process the decision." }, { status: 500 });
+      }
+      if (!updated || !updated.length) {
+        return NextResponse.json({ error: "This bid was just decided by someone else." }, { status: 409 });
+      }
+      markedHere = true;
+      if (decision === "declined") return NextResponse.json({ ok: true, decision });
+    }
 
     // Accepted: build the contract from the bid.
     const { data: items } = await client
@@ -97,7 +131,14 @@ export async function POST(req) {
       .single();
     if (cErr) {
       console.error("auto-contract failed", cErr.message);
-      return NextResponse.json({ ok: true, decision, contractError: true });
+      if (markedHere) {
+        // Roll the decision back so the client can retry — an
+        // accepted bid with no contract must never be the end state.
+        const { error: backErr } = await client.from("bids").update({ status: bid.status }).eq("id", bid.id).eq("status", decision);
+        if (backErr) console.error("bid decide rollback failed", backErr);
+        return NextResponse.json({ error: "The contract could not be created, so the acceptance was not saved. Please try again." }, { status: 500 });
+      }
+      return NextResponse.json({ error: "The contract could not be created. Please try again." }, { status: 500 });
     }
     return NextResponse.json({ ok: true, decision, signToken, contractId: contract.id });
   } catch (e) {
