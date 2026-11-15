@@ -145,20 +145,23 @@ export default function WorkOrderDetailPage() {
         setCancelReason("");
       }
     }
-    // Fire notifications (best effort).
+    // Fire notifications (best effort). The notify endpoint derives
+    // who acted from the sign-in, so the session goes with the call.
     try {
+      const { data: { session } } = await supabase().auth.getSession();
+      const notifyHeaders = { "Content-Type": "application/json", ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}) };
       if (patch.status === "completed") {
         await fetch("/api/work-orders/notify", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ work_order_id: orderId, event: "completed", actor_member_id: member.id }),
+          headers: notifyHeaders,
+          body: JSON.stringify({ work_order_id: orderId, event: "completed" }),
         });
       }
       if (patch.assigned_to) {
         await fetch("/api/work-orders/notify", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ work_order_id: orderId, event: "assigned", actor_member_id: member.id }),
+          headers: notifyHeaders,
+          body: JSON.stringify({ work_order_id: orderId, event: "assigned" }),
         });
       }
     } catch {}
