@@ -8,11 +8,26 @@ import { getUser, linkMemberOnSignIn } from "../../lib/session";
 import { getLastPath } from "../../lib/last-path";
 import { chicagoToday } from "../../lib/dates";
 
+// Same zone list and labels as Settings, so a company sees one set of
+// choices everywhere. Setup asks for the zone up front (Wendy's ruling,
+// 2026-11-15): a company created without one silently ran on Chicago
+// time, which is wrong for any company outside Central.
+const TIMEZONES = [
+  { value: "America/New_York", label: "Eastern — New York" },
+  { value: "America/Chicago", label: "Central — Chicago" },
+  { value: "America/Denver", label: "Mountain — Denver" },
+  { value: "America/Phoenix", label: "Arizona — Phoenix (no DST)" },
+  { value: "America/Los_Angeles", label: "Pacific — Los Angeles" },
+  { value: "America/Anchorage", label: "Alaska — Anchorage" },
+  { value: "Pacific/Honolulu", label: "Hawaii — Honolulu" },
+];
+
 export default function CompaniesPage() {
   const router = useRouter();
   const [user, setUser] = useState(null);
   const [memberships, setMemberships] = useState([]);
   const [name, setName] = useState("");
+  const [tz, setTz] = useState("");
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
   const [justJoined, setJustJoined] = useState(0);
@@ -26,6 +41,15 @@ export default function CompaniesPage() {
   // Company ids (subset of memberships) where this person has a shift
   // today — see the badge lookup in the load effect below.
   const [shiftToday, setShiftToday] = useState(() => new Set());
+
+  // Start the picker on the time zone this device is in; the person
+  // creating the company confirms or changes it before creating.
+  useEffect(() => {
+    try {
+      const z = Intl.DateTimeFormat().resolvedOptions().timeZone;
+      if (z) setTz(z);
+    } catch {}
+  }, []);
 
   useEffect(() => {
     (async () => {
@@ -100,13 +124,17 @@ export default function CompaniesPage() {
   async function createCompany(e) {
     e.preventDefault();
     if (!name.trim()) return;
+    if (!tz) {
+      alert("Pick your company's time zone — schedules, clock-ins, and alerts all run on it.");
+      return;
+    }
     setCreating(true);
     const sb = supabase();
     const email = user.email.toLowerCase();
     const displayName = email.split("@")[0];
     const { data: company, error } = await sb
       .from("companies")
-      .insert({ name: name.trim(), tier: "starter", created_by: user.id })
+      .insert({ name: name.trim(), tier: "starter", created_by: user.id, timezone: tz })
       // Explicit safe columns: Stripe IDs are hidden from browser-role
       // reads by column-level grants, so SELECT * would be denied.
       .select("id,name,tier,subscription_status,is_complimentary,created_at")
@@ -233,6 +261,40 @@ export default function CompaniesPage() {
               {creating ? "Creating…" : "Create"}
             </button>
           </div>
+          <label style={{ display: "block", fontWeight: 700, margin: "14px 0 8px" }}>
+            Company time zone
+          </label>
+          <select
+            value={tz}
+            onChange={(e) => setTz(e.target.value)}
+            required
+            style={{
+              width: "100%",
+              padding: "12px 14px",
+              borderRadius: 12,
+              border: "1px solid var(--line)",
+              fontSize: "1rem",
+              background: "#fff",
+            }}
+          >
+            <option value="" disabled>
+              Pick your time zone…
+            </option>
+            {TIMEZONES.map((z) => (
+              <option key={z.value} value={z.value}>
+                {z.label}
+              </option>
+            ))}
+            {tz && !TIMEZONES.some((z) => z.value === tz) && (
+              <option value={tz}>{tz.replaceAll("_", " ")}</option>
+            )}
+          </select>
+          <p style={{ color: "var(--muted)", fontSize: "0.85rem", marginTop: 8 }}>
+            We start on the time zone this device is in — change it if the
+            company runs somewhere else. Schedules, clock-ins, and alerts
+            all run on this zone, and the owner can change it later in
+            Settings.
+          </p>
           <p style={{ color: "var(--muted)", fontSize: "0.85rem", marginTop: 8 }}>
             New companies start on the Starter tier. You'll be the owner.
           </p>
