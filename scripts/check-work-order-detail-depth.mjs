@@ -44,8 +44,13 @@ test("protected gates and existing behaviour are byte-preserved", () => {
     'if (!requireClockedIn(clockedIn, "post an update")) return;',
     "completed_at: s === \"completed\" ? new Date().toISOString() : null,",
     "{Object.keys(STATUS_LABELS).map((s) => (",
-    'body: JSON.stringify({ work_order_id: orderId, event: "completed", actor_member_id: member.id }),',
-    'body: JSON.stringify({ work_order_id: orderId, event: "assigned", actor_member_id: member.id }),',
+    // Audit §3 (2026-11-15): the notify endpoint stopped trusting a
+    // member id typed into the request — the pages now send their
+    // sign-in and the endpoint derives who acted. These needles pin
+    // the new contract: session header sent, no claimed member id.
+    'body: JSON.stringify({ work_order_id: orderId, event: "completed" }),',
+    'body: JSON.stringify({ work_order_id: orderId, event: "assigned" }),',
+    'Authorization: `Bearer ${session.access_token}`',
     'placeholder="Add an update — e.g. lobby done, moving to restrooms…"',
     '{c.company_members?.name || "Someone"}',
     '{isManager&&<WorkOrderCustomerPublication',
