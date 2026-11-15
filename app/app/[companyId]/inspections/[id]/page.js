@@ -254,10 +254,11 @@ export default function InspectionDetailPage() {
     // Orders page makes after creating an assigned order).
     if (created?.id && woAssignedTo) {
       try {
+        const { data: { session } } = await supabase().auth.getSession();
         await fetch("/api/work-orders/notify", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ work_order_id: created.id, event: "assigned", actor_member_id: member.id }),
+          headers: { "Content-Type": "application/json", ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}) },
+          body: JSON.stringify({ work_order_id: created.id, event: "assigned" }),
         });
       } catch {}
     }
