@@ -44,10 +44,13 @@ export async function GET(req) {
   const sb = admin();
   const now = new Date();
   const nowMs = now.getTime();
-  // The cap is 16 h after clock-in, so any entry older than 7 days that is
-  // somehow still open is legacy residue; the bounded window keeps the
-  // sweep cheap while still catching everything the cap can act on.
-  const windowStart = new Date(nowMs - 7 * 24 * 3600000).toISOString();
+  // Audit fix, 2026-11-15 (Sebastian §5): the sweep used to look
+  // back only 7 days and call anything older "legacy residue" —
+  // but a still-open entry is unfinished business however old it
+  // is, and one that aged past the window (from before the
+  // watchdog existed, or a stretch it was down) would never be
+  // watched again. The sweep now covers every open entry; the
+  // paging below keeps it bounded, oldest first.
 
   const entries = [];
   const PAGE_SIZE = 500;
@@ -56,7 +59,6 @@ export async function GET(req) {
       .from("time_entries")
       .select("id, company_id, member_id, location_id, shift_id, clock_in, clock_out, notes")
       .is("clock_out", null)
-      .gte("clock_in", windowStart)
       .lte("clock_in", now.toISOString())
       .order("clock_in", { ascending: true })
       .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1);
