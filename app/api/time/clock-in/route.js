@@ -35,10 +35,17 @@ function haversineMeters(lat1, lon1, lat2, lon2) {
   return 2 * R * Math.asin(Math.sqrt(a));
 }
 
-function chicagoDate(value) {
-  // Match the work site's calendar day, not the employee device time zone.
+function zonedDate(value, timeZone) {
+  // Match the work site's calendar day, in the COMPANY's timezone —
+  // not the employee device's zone, and not a hardcoded one.
+  // (Audit §8, 2026-11-15: this used to be fixed to America/Chicago,
+  // so for a company in another timezone the "today" whose shifts
+  // were fetched could be the wrong day near local midnight, while
+  // the shift choice below already used the company's own zone.
+  // America/Chicago remains only the fallback when a company has
+  // no timezone set, matching the rest of the app.)
   const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone: "America/Chicago", year: "numeric", month: "2-digit", day: "2-digit",
+    timeZone: timeZone || "America/Chicago", year: "numeric", month: "2-digit", day: "2-digit",
   }).formatToParts(value);
   const p = (part) => parts.find((x) => x.type === part)?.value;
   return `${p("year")}-${p("month")}-${p("day")}`;
@@ -106,8 +113,12 @@ export async function POST(req) {
     // schedule BEFORE inserting any time entry. Management exceptions use the
     // separately authenticated manager-clock endpoint and audit notes.
     const now = new Date();
-    const todayStr = chicagoDate(now);
-    const yesterdayStr = chicagoDate(new Date(now.getTime() - 24 * 60 * 60 * 1000));
+    const todayStr = zonedDate(now, company?.timezone);
+    // Yesterday as a calendar day in the company's zone (exact
+    // across daylight-saving changes, where "24 hours ago" can
+    // land on the wrong date).
+    const [ty, tm, td] = todayStr.split("-").map(Number);
+    const yesterdayStr = new Date(Date.UTC(ty, tm - 1, td) - 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
     const { data: memberShifts, error: shiftError } = await sb
       .from("shifts")
       .select("id, shift_date, start_time, end_time")
