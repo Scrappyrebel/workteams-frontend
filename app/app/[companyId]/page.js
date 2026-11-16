@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { supabase } from "../../../lib/supabase";
 import { useCompany } from "../../../lib/company-context";
-import { tierLabel } from "../../../lib/tiers";
+import { planDisplayName } from "../../../lib/tiers";
 import { roleLabel } from "../../../lib/roles";
 import { chicagoToday, formatTime12h } from "../../../lib/dates";
 import EmergencyButton from "../../../components/EmergencyButton";
@@ -19,7 +19,6 @@ export default function CompanyDashboard() {
   const [countsLoading, setCountsLoading] = useState(true);
 
   const isManager = member && (member.role === "owner" || member.role === "admin");
-  const tier = company?.tier || "starter";
 
   useEffect(() => {
     if (loading || !company) return;
@@ -153,7 +152,7 @@ export default function CompanyDashboard() {
           <p className="eyebrow">DASHBOARD</p>
           <h2 style={{ fontSize: "1.8rem", margin: "4px 0" }}>{company.name}</h2>
           <p style={{ color: "var(--muted)" }}>
-            {tierLabel(tier)} tier • You are {roleLabel(member.role)}.{" "}
+            {planDisplayName(company)} tier • You are {roleLabel(member.role)}.{" "}
             {isManager && <Link href={`/app/${company.id}/plans`} style={{ color: "var(--brand-deep)", fontWeight: 700 }}>Plans →</Link>}
           </p>
         </div>
