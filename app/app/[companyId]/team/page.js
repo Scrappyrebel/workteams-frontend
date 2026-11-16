@@ -403,7 +403,7 @@ export default function TeamPage() {
       </section>
 
       {isManager && (
-        <section className="panel" style={{ padding: 22, margin: "18px 0" }}>
+        <section id="invite-team-member" className="panel" style={{ padding: 22, margin: "18px 0" }}>
           <h3 style={{ marginTop: 0 }}>Invite a team member</h3>
           <form onSubmit={addMember} style={{ display: "grid", gap: 10, maxWidth: 520 }}>
             <input value={form.display_name} onChange={(e) => setForm({ ...form, display_name: e.target.value })} placeholder="Name" required style={input} />
@@ -422,7 +422,8 @@ export default function TeamPage() {
         </section>
       )}
 
-      {members.length > 1 && (
+      <div id="team-roster" />
+      {members.length > 0 && (
         <input
           value={rosterQuery}
           onChange={(e) => setRosterQuery(e.target.value)}
