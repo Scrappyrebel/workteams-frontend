@@ -1,0 +1,102 @@
+.tabs {
+  display: flex;
+  gap: 8px;
+  max-inline-size: 100%;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  padding: 4px 2px 10px;
+  margin-block-start: 12px;
+}
+
+.tabs .control {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.control {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-block-size: 44px;
+  padding: 8px 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fff;
+  color: var(--brand-deep, #233d94);
+  font: inherit;
+  font-weight: 650;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.control[aria-pressed="true"] {
+  background: var(--brand-deep, #233d94);
+  color: #fff;
+}
+
+.control:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.control:focus-visible,
+.tabs:focus-visible {
+  outline: 2px solid var(--brand-deep, #233d94);
+  outline-offset: 2px;
+}
+
+.workerActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-block: 10px;
+}
+
+.help {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.search {
+  display: grid;
+  gap: 6px;
+  max-inline-size: 30rem;
+  margin-block: 16px;
+  font-weight: 650;
+}
+
+.search input {
+  width: 100%;
+  min-inline-size: 0;
+  min-block-size: 44px;
+  padding: 8px 12px;
+  font: inherit;
+  font-size: 1rem;
+  font-weight: 400;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+
+.profileToggle {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-block-size: 44px;
+  padding: 4px 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+
+.companyScope {
+  align-self: center;
+  min-inline-size: 0;
+  overflow-wrap: anywhere;
+  font-weight: 650;
+}

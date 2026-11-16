@@ -1,8 +1,11 @@
 "use client";
 
 import { useContext, useEffect, useState } from "react";
+import Link from "next/link";
+import styles from "./agency.module.css";
 import { supabase } from "../../../../lib/supabase";
 import { CompanyContext } from "../../../../lib/company-context";
+import { clearLastPath } from "../../../../lib/last-path";
 import Playbook from "./Playbook";
 import { ClientsTab, OffersTab } from "./Intake";
 import StatePricing from "./StatePricing";
@@ -53,6 +56,8 @@ export default function TempDashboard() {
   const [isAgency, setIsAgency] = useState(null);
   const [requests, setRequests] = useState([]);
   const [apps, setApps] = useState([]);
+  const [appQuery, setAppQuery] = useState("");
+  const [savingApplication, setSavingApplication] = useState(false);
   const [cfg, setCfg] = useState(null);
   const [msg, setMsg] = useState("");
   // Load-failure state (D-WT-54): the dashboard reads used to
@@ -298,29 +303,53 @@ export default function TempDashboard() {
     }
   }
 
-  async function setAppStatus(id, status, bgStatus) {
-    const app = apps.find((a) => a.id === id);
-    const patch = { status };
-    if (bgStatus) patch.bg_check_status = bgStatus;
-    // On approval, auto-create the pending team invite so the temp can sign
-    // up with their email and clock in. claim_invite() links them on signup.
-    if (status === "approved" && app && !app.member_id) {
-      const { data: mem, error: memErr } = await supabase()
-        .from("company_members")
-        .insert({
-          company_id: company.id,
-          user_id: null,
-          email: app.email,
-          display_name: app.full_name,
-          role: "employee",
-        })
-        .select("id")
-        .single();
-      if (!memErr && mem) patch.member_id = mem.id;
+  async function setAppStatus(app, status) {
+    if (savingApplication || loadError || app.company_id !== company.id) return;
+    setSavingApplication(true);
+    setMsg("");
+    const sb = supabase();
+
+    try {
+      const patch = { status };
+      // Wendy's D1 ruling (2026-11-16): approving an application also
+      // records the background check as "clear" — the two stay coupled.
+      if (status === "approved") patch.bg_check_status = "clear";
+      if (status === "approved" && !app.member_id) {
+        const email = app.email.trim().toLowerCase();
+        const existing = await sb.from("company_members").select("id, role")
+          .eq("company_id", company.id).eq("email", email).maybeSingle();
+        if (existing.error) throw existing.error;
+        if (existing.data && existing.data.role !== "employee") {
+          throw new Error("This email is already used by a non-employee account in this company.");
+        }
+
+        if (existing.data) {
+          patch.member_id = existing.data.id;
+        } else {
+          const { data, error } = await sb.from("company_members").insert({
+            company_id: company.id,
+            user_id: null,
+            email,
+            display_name: app.full_name,
+            role: "employee",
+          }).select("id").single();
+          if (error) throw error;
+          patch.member_id = data.id;
+        }
+      }
+      const { data, error } = await sb.from("temp_applications").update(patch)
+        .eq("company_id", company.id).eq("id", app.id).eq("status", "applied").select("id").single();
+      if (error) throw error;
+      if (!data) throw new Error("The application changed. Reload and review its current status.");
+      setMsg(status === "approved"
+        ? "Approved and linked to the employee roster. Share the WorkTeams sign-in instructions with the worker."
+        : "Application rejected.");
+      await loadAll();
+    } catch (error) {
+      setMsg("Could not complete the application update: " + error.message);
+    } finally {
+      setSavingApplication(false);
     }
-    const { error } = await supabase().from("temp_applications").update(patch).eq("id", id);
-    setMsg(error ? "Update failed: " + error.message : status === "approved" ? "Approved — invite sent. Temp signs up with their email to join." : "Updated.");
-    if (!error) loadAll();
   }
 
   async function saveCfg(e) {
@@ -379,25 +408,37 @@ export default function TempDashboard() {
 
   const pendingApps = apps.filter((a) => a.status === "applied");
   const approvedTemps = apps.filter((a) => a.status === "approved");
+  const query = appQuery.trim().toLowerCase();
+  const matchesWorker = (worker) => !query || [worker.full_name, worker.email, worker.phone]
+    .some((value) => value?.toLowerCase().includes(query));
+  const visiblePending = pendingApps.filter(matchesWorker);
+  const visibleTemps = approvedTemps.filter((worker) => matchesWorker(worker)
+    && (poolLane === "all" || (worker.staffing_types || ["cleaning"]).includes(poolLane)));
+  const teamHref = `/app/${company.id}/team`;
 
   return (
     <main className="site-shell">
       <section className="panel" style={{ padding: 24 }}>
         <p className="kicker">Temp Staffing</p>
         <h1 style={{ marginTop: 4 }}>Agency dashboard</h1>
+        <div className={styles.workerActions}>
+          <span className={styles.companyScope}>Company: {company.name}</span>
+          <Link className={styles.control} href="/app" onClick={clearLastPath}>Switch company</Link>
+        </div>
         <p style={{ marginTop: 8, fontSize: 14 }}>
           <a href="temp-pay" style={{ color: "var(--brand-deep)", fontWeight: 700 }}>
             💵 Temp pay owed →
           </a>{" "}
           <span style={{ color: "var(--muted)" }}>what each temp is owed on completed jobs</span>
         </p>
-        <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+        <nav className={styles.tabs} aria-label="Agency sections" tabIndex={0}>
           {TABS.map((t) => (
             <button
               key={t.key}
               onClick={() => setTab(t.key)}
-              className={tab === t.key ? "btn-primary" : "btn-ghost"}
-              style={{ padding: "8px 16px" }}
+              type="button"
+              className={styles.control}
+              aria-pressed={tab === t.key}
             >
               {t.label}
               {t.key === "requests" && requests.filter((r) => r.status === "pending").length > 0 && (
@@ -406,8 +447,16 @@ export default function TempDashboard() {
               {t.key === "temps" && pendingApps.length > 0 && <span> ({pendingApps.length})</span>}
             </button>
           ))}
+        </nav>
+        <div className={styles.workerActions}>
+          <button type="button" className={styles.control} onClick={() => setTab("temps")}>
+            Find workers
+          </button>
+          {["owner", "admin"].includes(member.role) && (
+            <Link className={styles.control} href={`${teamHref}#invite-team-member`}>Invite an employee</Link>
+          )}
         </div>
-        {msg && <p style={{ color: "var(--muted)", fontSize: 14 }}>{msg}</p>}
+        {msg && <p role="status" style={{ color: "var(--muted)", fontSize: 14 }}>{msg}</p>}
         {loadError && (
           <p role="alert" style={{ color: "#b3261e", fontWeight: 600, fontSize: 14, marginTop: 8 }}>{loadError}</p>
         )}
@@ -572,8 +621,27 @@ export default function TempDashboard() {
 
       {tab === "temps" && (
         <section className="panel" style={{ padding: 24, marginTop: 16 }}>
-          <h2 style={{ marginTop: 0 }}>Applications ({pendingApps.length} pending)</h2>
-          {pendingApps.map((a) => (
+          <h2 style={{ marginTop: 0 }}>Recruit and find workers</h2>
+          <div className={styles.workerActions}>
+            <a className={styles.control} href={`/temp/apply?agency=${encodeURIComponent(company.id)}`}>
+              Open worker application
+            </a>
+            <Link className={styles.control} href={`${teamHref}#team-roster`}>Open employee roster</Link>
+          </div>
+          <p className={styles.help}>Share the worker application link with a candidate to bring them into this agency’s Temp Pool.</p>
+          <label className={styles.search}>
+            Search applicants and approved temps
+            <input type="search" value={appQuery} onChange={(e) => setAppQuery(e.target.value)}
+              placeholder="Name, email or phone" />
+          </label>
+          {!loadError && apps.length >= 200 && (
+            <p className={styles.help}>Search covers the 200 most recently submitted applications.</p>
+          )}
+          <h3>Applications ({pendingApps.length} pending)</h3>
+          {!loadError && !visiblePending.length && (
+            <p className={styles.help}>{query ? "No pending applicants match your search." : "No pending applications."}</p>
+          )}
+          {visiblePending.map((a) => (
             <div key={a.id} className="card" style={{ padding: 16, marginBottom: 12 }}>
               <strong>{a.full_name}</strong>
               <div style={{ fontSize: 14, color: "var(--muted)" }}>
@@ -584,15 +652,15 @@ export default function TempDashboard() {
                 {a.experience ? <><br />Experience: {a.experience.slice(0, 200)}</> : null}
                 {a.availability ? <><br />Availability: {a.availability.slice(0, 200)}</> : null}
               </div>
-              <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-                <button className="btn-primary" style={{ padding: "6px 14px" }}
-                  onClick={() => setAppStatus(a.id, "approved", "clear")}>Approve</button>
-                <button className="btn-ghost" style={{ padding: "6px 14px" }}
-                  onClick={() => setAppStatus(a.id, "rejected")}>Reject</button>
+              <div className={styles.workerActions}>
+                <button type="button" className={styles.control} disabled={savingApplication || !!loadError}
+                  onClick={() => setAppStatus(a, "approved")}>Approve and add to roster</button>
+                <button type="button" className={styles.control} disabled={savingApplication || !!loadError}
+                  onClick={() => setAppStatus(a, "rejected")}>Reject</button>
               </div>
             </div>
           ))}
-          <h2 style={{ marginTop: 24 }}>Approved temps ({approvedTemps.length})</h2>
+          <h3 style={{ marginTop: 24 }}>Approved temps ({approvedTemps.length})</h3>
           <p style={{ color: "var(--muted)", fontSize: 13 }}>Tap a temp to see their profile, skill tags, and past assignments.</p>
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap", margin: "8px 0 12px" }}>
             {[{ key: "all", label: "All lanes" }, ...STAFFING_LANES].map((l) => (
@@ -603,15 +671,17 @@ export default function TempDashboard() {
               </button>
             ))}
           </div>
-          {approvedTemps.filter((a) => poolLane === "all" || (a.staffing_types || ["cleaning"]).includes(poolLane)).map((a) => {
+          {!loadError && !visibleTemps.length && (
+            <p className={styles.help}>{query || poolLane !== "all" ? "No approved temps match these filters." : "No approved temps yet."}</p>
+          )}
+          {visibleTemps.map((a) => {
             const sk = skillsFor(a.member_id).filter((s) => !isTestTag(s.skill));
             const hist = assignmentsFor(a.member_id);
             const open = expandedTemp === a.id;
             return (
               <div key={a.id} className="card" style={{ padding: 12, marginBottom: 8, fontSize: 14 }}>
-                <div
+                <button type="button" className={styles.profileToggle} aria-expanded={open}
                   onClick={() => setExpandedTemp(open ? null : a.id)}
-                  style={{ cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}
                 >
                   <span>
                     <strong>{a.full_name}</strong> · {a.email} {a.phone ? `· ${a.phone}` : ""}
@@ -619,8 +689,8 @@ export default function TempDashboard() {
                       <span style={{ color: "var(--muted)" }}> · {sk.map((s) => s.skill).join(", ")}</span>
                     )}
                   </span>
-                  <span style={{ color: "var(--muted)" }}>{open ? "▾" : "▸"}</span>
-                </div>
+                  <span aria-hidden="true" style={{ color: "var(--muted)" }}>{open ? "▾" : "▸"}</span>
+                </button>
                 {open && (
                   <div style={{ marginTop: 10, borderTop: "1px solid var(--border, #e5e7eb)", paddingTop: 10 }}>
                     <div style={{ fontSize: 13, marginBottom: 6 }}>
