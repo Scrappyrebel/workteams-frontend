@@ -5,7 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { clearLastPath } from "../lib/last-path";
 import { signOut } from "../lib/session";
-import { canUseWithRole, tierLabel } from "../lib/tiers";
+import { canUseWithRole, planDisplayName } from "../lib/tiers";
 import { isProductOwner } from "../lib/product";
 import { roleRank } from "../lib/roles";
 import { ensurePush, enablePush } from "../lib/push-client";
@@ -16,6 +16,9 @@ const NAV = [
   { key: "scheduling", label: "Schedule", href: (c) => `/app/${c}/schedule`, minRole: null },
   { key: "myschedule", label: "My Schedule", href: (c) => `/app/${c}/my-schedule`, minRole: null },
   { key: "dashboard", label: "Dashboard", href: (c) => `/app/${c}`, minRole: null },
+  // Emergency Alerts rides up front, right behind the pinned core
+  // (Wendy, 2026-11-16): alerts should not sit at the end of the strip.
+  { key: "emergency", label: "🚨 Emergency Alerts", href: (c) => `/app/${c}/emergency`, minRole: null },
   { key: "payroll", label: "My Hours / Payroll", href: (c) => `/app/${c}/payroll`, minRole: null },
   { key: "locations", label: "Locations", href: (c) => `/app/${c}/locations`, minRole: "supervisor" },
   { key: "team", label: "Team", href: (c) => `/app/${c}/team`, minRole: null },
@@ -49,7 +52,6 @@ const NAV = [
   { key: "training", label: "Training", href: (c) => `/app/${c}/training`, minRole: null },
   { key: "connections", label: "Connections", href: (c) => `/app/${c}/connections`, minRole: null },
   { key: "notifications", label: "🔔 Notifications", href: (c) => `/app/${c}/notifications`, minRole: null },
-  { key: "emergency", label: "🚨 Emergency Alerts", href: (c) => `/app/${c}/emergency`, minRole: null },
 ];
 
 // Word-tolerant menu search matching (Wendy, 2026-11-03): the plain
@@ -184,12 +186,17 @@ export default function AppShell({ company, member, children }) {
   });
   // Temp staffing tab: managers and up, for enabled companies — plus the
   // product owner always, so the per-company enable button is reachable.
+  // It rides up front with Emergency Alerts (Wendy, 2026-11-16), right
+  // behind the pinned core — not appended at the end of the strip.
   if ((isTempAgency || isOwner) && roleAtLeast(role, "manager")) {
-    links.push({
+    const tempItem = {
       key: "tempstaffing",
       label: "🧹 Temp Staffing",
       href: (c) => `/app/${c}/temp`,
-    });
+    };
+    const alertIdx = links.findIndex((l) => l.key === "emergency");
+    if (alertIdx >= 0) links.splice(alertIdx + 1, 0, tempItem);
+    else links.push(tempItem);
   }
   const linksMapped = links.map((item) => {
     // Tier locks apply to everyone alike (audit §6, 2026-11-15):
@@ -439,7 +446,7 @@ export default function AppShell({ company, member, children }) {
                 }}
               >
                 {isTempAgency ? "🧹 " : ""}
-                {tierLabel(tier)} • {company.name}
+                {planDisplayName(company)} • {company.name}
               </span>
             </>
           )}
