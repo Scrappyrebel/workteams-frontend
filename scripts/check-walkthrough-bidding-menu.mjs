@@ -47,6 +47,21 @@ test("the chain sits together in NAV, in chain order, anchored at Walkthroughs",
   assert.equal(keys[w + 3], "workorders", "Work Orders still directly follows the chain");
 });
 
+test("Emergency Alerts and Temp Staffing ride up front (Wendy, 2026-11-16)", () => {
+  const shell = read(SHELL);
+  const keys = navKeys(shell);
+  // Right behind the pinned core (Time Clock / Schedule / My Schedule /
+  // Dashboard, asserted above): Emergency Alerts is the fifth item,
+  // and Temp Staffing is inserted directly after it in the built list
+  // instead of being appended at the end of the strip.
+  assert.equal(keys[4], "emergency", "Emergency Alerts directly follows Dashboard");
+  assert.equal(keys.filter((k) => k === "emergency").length, 1, "emergency appears exactly once in NAV");
+  assert.ok(
+    shell.includes("links.splice(alertIdx + 1, 0, tempItem)"),
+    "Temp Staffing is inserted directly after Emergency Alerts, not appended last"
+  );
+});
+
 test("the three chain items keep their exact labels, hrefs and role gates", () => {
   const shell = read(SHELL);
   for (const needle of [

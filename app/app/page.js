@@ -7,6 +7,7 @@ import { supabase } from "../../lib/supabase";
 import { getUser, linkMemberOnSignIn } from "../../lib/session";
 import { getLastPath } from "../../lib/last-path";
 import { chicagoToday } from "../../lib/dates";
+import { planDisplayName } from "../../lib/tiers";
 
 // Same zone list and labels as Settings, so a company sees one set of
 // choices everywhere. Setup asks for the zone up front (Wendy's ruling,
@@ -194,7 +195,7 @@ export default function CompaniesPage() {
               className="portal-card"
               style={{ minHeight: 0, padding: "16px 20px" }}
             >
-              <span className="card-kicker">{m.role} • {m.companies.tier}</span>
+              <span className="card-kicker">{m.role} • {planDisplayName(m.companies)}</span>
               <h2 style={{ fontSize: "1.2rem", margin: "6px 0" }}>{m.companies.name}</h2>
               {shiftToday.has(m.companies.id) && (
                 <span
@@ -212,7 +213,7 @@ export default function CompaniesPage() {
                   🕐 Shift today
                 </span>
               )}
-              {m.companies?.subscription_status && m.companies.subscription_status !== "active" && (
+              {m.companies?.subscription_status && m.companies.subscription_status !== "active" && m.role !== "owner" && !m.companies?.is_complimentary && (
                 <span style={{ display: "block", color: "#92400e", fontWeight: 700, fontSize: "0.85rem", margin: "0 0 4px" }}>
                   ⚠ Subscription {m.companies.subscription_status} — check with the owner before relying on this company.
                 </span>

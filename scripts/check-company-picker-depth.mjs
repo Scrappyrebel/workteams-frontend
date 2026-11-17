@@ -43,6 +43,19 @@ check(
 );
 check(page.includes("Complimentary company"), "picker: complimentary marker renders");
 
+// Owner display (Wendy, 2026-11-16): the subscription warning never
+// tells a company's owner to "check with the owner", and an
+// owner-exempt (complimentary) company carries no such warning for
+// anyone; her companies are named "Pro Plus" on the card.
+check(
+  page.includes('m.role !== "owner"') && page.includes("!m.companies?.is_complimentary"),
+  "picker: subscription warning is suppressed for owners and owner-exempt companies"
+);
+check(
+  page.includes("planDisplayName(m.companies)"),
+  "picker: card names the plan via planDisplayName (Pro Plus for owner-exempt companies)"
+);
+
 // Verified behavior pinned unchanged.
 check(page.includes('.eq("user_id", u.id)'), "picker: read stays scoped to the signed-in user");
 check(page.includes("linkMemberOnSignIn"), "picker: invite-claim on sign-in intact");
