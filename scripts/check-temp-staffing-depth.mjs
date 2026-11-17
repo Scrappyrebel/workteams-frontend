@@ -6,11 +6,6 @@
 // clock on assignment, approve auto-creating the team invite,
 // consent state displayed prominently). The fake-empty class
 // reached this board too: loadAll's reads ignored errors.
-// The pass binds them. One behavior is pinned AS-IS on
-// purpose: Approve also records the background check as
-// "clear" in the same click — flagged as decision D1 for
-// Wendy (a screening-workflow change is hers to rule), and
-// pinned here so any change to it is a reviewed event.
 import { readFileSync } from "node:fs";
 
 let failures = 0;
@@ -39,13 +34,36 @@ check(page.includes("ns?.pay_rate_cents ?? null"), "temp: backfill preserves the
 check(page.includes("Temp needs an approved team invite first."), "temp: assignment requires an approved invite");
 check(page.includes("they carry your company, so bookings and applications can't land on another agency"), "temp: public links carry the company id, stated plainly");
 
-// Pinned as-is pending decision D1 (see PR body): the Approve
-// action and its background-check argument travel together.
+const agencyCss = readFileSync("app/app/[companyId]/temp/agency.module.css", "utf8");
+const teamPage = readFileSync("app/app/[companyId]/team/page.js", "utf8");
+check(page.includes('className={styles.tabs}') && agencyCss.includes("overflow-x: auto") &&
+  agencyCss.includes("max-inline-size: 100%") && agencyCss.includes("flex: 0 0 auto"),
+  "temp: scrolling is constrained to the agency tab row");
+check(page.includes('encodeURIComponent(company.id)') &&
+  page.includes('#invite-team-member') && page.includes('#team-roster') &&
+  teamPage.includes('id="invite-team-member"') && teamPage.includes('id="team-roster"'),
+  "temp: application, employee invite and roster are accessible for this company");
+check(page.includes('Company: {company.name}') &&
+  page.includes('href="/app" onClick={clearLastPath}>Switch company'),
+  "temp: identifies the active company and returns to the picker without reopening the saved workspace");
+check(page.includes('pendingApps.filter(matchesWorker)') &&
+  page.includes('approvedTemps.filter((worker) => matchesWorker(worker)'),
+  "temp: lookup covers both pending and approved workers");
+const approval = page.slice(page.indexOf('async function setAppStatus'), page.indexOf('async function saveCfg'));
+check(approval.includes('if (error) throw error;') &&
+  approval.includes('if (existing.error) throw existing.error;') &&
+  approval.includes('existing.data.role !== "employee"') &&
+  approval.includes('.eq("status", "applied")') &&
+  !approval.includes('invite sent'),
+  "temp: approval requires a worker account and handles errors");
+// Pinned per Wendy's D1 ruling (2026-11-16 — "do not out the
+// background check part"): the Approve action and its
+// background-check "clear" travel together. Changing this
+// coupling is a reviewed event that needs her fresh ruling.
 check(
-  page.includes('onClick={() => setAppStatus(a.id, "approved", "clear")}'),
-  "temp: Approve + bg-clear coupling is AS FOUND — changing it requires Wendy's D1 ruling"
+  approval.includes('if (status === "approved") patch.bg_check_status = "clear";'),
+  "temp: Approve + bg-clear coupling stays — Wendy's D1 ruling 2026-11-16"
 );
-
 if (failures > 0) {
   console.error("check-temp-staffing-depth: " + failures + " failure(s)");
   process.exit(1);
