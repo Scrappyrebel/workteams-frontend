@@ -181,6 +181,8 @@ export default function ContractSignPage() {
             </button>
           </div>
           <section className="panel" style={{ padding: 24, margin: "18px 0" }}>
+            <h3 style={{ marginTop: 0 }}>Cleaning Service Agreement terms</h3>
+            <p style={{ color: "var(--muted)", marginTop: 0 }}>Please read the full terms below before signing.</p>
             <div style={{ whiteSpace: "pre-wrap", fontSize: "0.95rem", lineHeight: 1.7 }}>{contract.terms_text}</div>
           </section>
           {contract.status === "signed" || done ? (

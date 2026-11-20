@@ -330,7 +330,7 @@ export default function LocationMoneyPage() {
         <section className="panel" style={{ padding: 20, margin: "16px 0" }}>
           <div style={{ display: "flex", gap: 14, flexWrap: "wrap", alignItems: "end" }}>
             <label style={{ display: "grid", gap: 6, fontSize: "0.88rem", fontWeight: 700 }}>
-              Period
+              Dates to show
               <select
                 value={periodKey}
                 onChange={(e) => choosePeriod(e.target.value)}

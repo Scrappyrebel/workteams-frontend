@@ -262,7 +262,7 @@ export default function CompanyDashboard() {
       </p>
 
       {isManager && <CompanyShiftProofSettings companyId={company.id} />}
-      {isManager && <CompanyFeatureToggles companyId={company.id} />}
+      {isManager && <CompanyFeatureToggles companyId={company.id} initialFlags={{ videos: company.enable_shift_videos !== false, book: company.enable_comm_book !== false }} />}
     </div>
   );
 }
