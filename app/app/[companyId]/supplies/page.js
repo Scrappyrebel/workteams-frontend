@@ -74,7 +74,7 @@ export default function SuppliesPage() {
   const [returnCondition, setReturnCondition] = useState("good");
   const [replaceFor, setReplaceFor] = useState(null);
   const [replaceForm, setReplaceForm] = useState({ replacementId: "", note: "" });
-  const [requestForm, setRequestForm] = useState({ supplyId: "", quantity: "1", neededBy: "", note: "" });
+  const [requestForm, setRequestForm] = useState({ supplyId: "", quantity: "1", neededBy: "", note: "", urgency: "low" });
   const [requestSaving, setRequestSaving] = useState(false);
 
   const isManager = member && (member.role === "owner" || member.role === "admin");
@@ -515,7 +515,7 @@ export default function SuppliesPage() {
       return;
     }
     setRequestSaving(true);
-    const { error } = await supabase().from("supply_restock_requests").insert({
+    const payload = {
       company_id: company.id,
       supply_id: item.id,
       supply_name: item.name,
@@ -523,11 +523,24 @@ export default function SuppliesPage() {
       quantity: qty,
       needed_by: requestForm.neededBy || null,
       note: requestForm.note.trim() || null,
-    });
+      // Urgency level (Wendy, walkthrough 2026-11-19, #33; migration 099).
+      urgency: requestForm.urgency || "low",
+    };
+    let { error } = await supabase().from("supply_restock_requests").insert(payload);
+    let sentWithoutUrgency = false;
+    if (error && /urgency/.test(error.message || "")) {
+      // Migration 099 has not run yet on this database: send the
+      // request without the level rather than blocking the request,
+      // and say so — the level turns on with the latest update.
+      const { urgency: _omit, ...rest } = payload;
+      ({ error } = await supabase().from("supply_restock_requests").insert(rest));
+      sentWithoutUrgency = !error;
+    }
     setRequestSaving(false);
     if (error) alert("Could not send the request: " + error.message);
     else {
-      setRequestForm({ supplyId: "", quantity: "1", neededBy: "", note: "" });
+      if (sentWithoutUrgency) alert("Request sent. The urgency level turns on with the latest WorkTeams update.");
+      setRequestForm({ supplyId: "", quantity: "1", neededBy: "", note: "", urgency: "low" });
       loadInventory();
     }
   }
@@ -567,7 +580,13 @@ export default function SuppliesPage() {
         </section>
       );
     }
-    const open = requests.filter((r) => r.status === "open");
+    // Open requests sort urgent first (Wendy, walkthrough 2026-11-19,
+    // #33); requests are loaded newest-first and the sort is stable,
+    // so requests at the same level stay newest-first.
+    const URGENCY_RANK = { urgent: 0, running_low: 1, low: 2 };
+    const open = requests
+      .filter((r) => r.status === "open")
+      .sort((a, b) => (URGENCY_RANK[a.urgency] ?? 2) - (URGENCY_RANK[b.urgency] ?? 2));
     const closed = requests.filter((r) => r.status !== "open");
     const ordered = [...open, ...closed];
     return (
@@ -609,6 +628,23 @@ export default function SuppliesPage() {
               />
             </label>
           </div>
+          <label style={{ fontSize: "0.9rem", color: "var(--muted)" }}>
+            How urgent
+            <select
+              value={requestForm.urgency}
+              onChange={(e) => setRequestForm({ ...requestForm, urgency: e.target.value })}
+              style={{ ...input, marginTop: 6 }}
+            >
+              <option value="urgent">🔴 Urgent — we're OUT, need it ASAP</option>
+              <option value="running_low">🟠 Running low — needed in the next couple of days</option>
+              <option value="low">⚪ Low — at least a week left</option>
+            </select>
+          </label>
+          <p style={{ margin: 0, fontSize: "0.82rem", color: "var(--muted)" }}>
+            Urgent means someone gets it there that evening. Running low means it's
+            needed within the next couple of days. Low means there's at least a week
+            of runway.
+          </p>
           <input
             value={requestForm.note}
             onChange={(e) => setRequestForm({ ...requestForm, note: e.target.value })}
@@ -626,6 +662,8 @@ export default function SuppliesPage() {
             return (
               <div key={r.id} style={{ fontSize: "0.92rem" }}>
                 <strong>{r.supply_name}</strong> × {Number(r.quantity)}
+                {r.urgency === "urgent" && <span style={{ color: "#b3261e", fontWeight: 800 }}> • 🔴 URGENT — out of it</span>}
+                {r.urgency === "running_low" && <span style={{ color: "#9a6a00", fontWeight: 800 }}> • 🟠 running low</span>}
                 {r.needed_by ? ` • needed by ${fmtDate(r.needed_by)}` : ""}
                 {overdue && <span style={{ color: "#b3261e", fontWeight: 800 }}> • overdue</span>}
                 <span style={{ color: "var(--muted)" }}>
