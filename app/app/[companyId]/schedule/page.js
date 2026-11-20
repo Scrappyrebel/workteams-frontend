@@ -249,9 +249,10 @@ export default function SchedulePage() {
   // When editing a repeat-series shift: "one" = just this shift,
   // "series" = this and all future shifts in the series.
   const [editScope, setEditScope] = useState("one");
-  // Default schedule: Sunday–Saturday weekly calendar. Optional list for deeper review.
+  // Default schedule: Monday–Sunday weekly calendar (Wendy's work
+  // week, WorkTeams walkthrough 2026-11-19). Optional list for deeper review.
   const [view, setView] = useState("week");
-  // Sunday (ISO) of the selected Sunday-through-Saturday workweek.
+  // Monday of the selected Monday-through-Sunday workweek.
   const [weekStart, setWeekStart] = useState(() => startOfWeekISO(chicagoToday()));
   const [weekShifts, setWeekShifts] = useState([]);
   // Month calendar view: which month is shown, its shifts, and the tapped day.
@@ -274,10 +275,13 @@ export default function SchedulePage() {
   // manager confirms is always what the form currently says.
   useEffect(() => { setConfirmAdd(null); }, [form]);
 
-  // Sunday of the week containing the selected date (Sun–Sat).
+  // Monday of the week containing the selected date (Mon–Sun) —
+  // Wendy's work week starts on Monday (walkthrough, 2026-11-19).
+  // Display navigation only: this feeds the week view's start day and
+  // its "This week" button, never shift creation or recurrence.
   function startOfWeekISO(iso) {
     const d = parseDay(iso);
-    d.setDate(d.getDate() - d.getDay());
+    d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
     return toISODate(d);
   }
   function addDaysISO(iso, n) {
@@ -1080,7 +1084,7 @@ export default function SchedulePage() {
       </div>
     );
   }
-  // Week view: 7 day blocks (Sun–Sat) so the whole week can be checked at
+  // Week view: 7 day blocks (Mon–Sun) so the whole week can be checked at
   // a glance — empty days say so, making gaps obvious.
   function weekView() {
     const today = chicagoToday(company?.timezone);
@@ -1140,7 +1144,9 @@ export default function SchedulePage() {
   function monthView() {
     const y = monthCursor.getFullYear();
     const m = monthCursor.getMonth();
-    const firstDow = new Date(y, m, 1, 12).getDay();
+    // Monday-first grid (Wendy's work week, walkthrough 2026-11-19):
+    // the blank cells before the 1st count from Monday, not Sunday.
+    const firstDow = (new Date(y, m, 1, 12).getDay() + 6) % 7;
     const daysInMonth = new Date(y, m + 1, 0, 12).getDate();
     const today = chicagoToday(company?.timezone);
     const cells = [];
@@ -1187,11 +1193,11 @@ export default function SchedulePage() {
           <button type="button" onClick={() => changeMonth(1)} style={ghostBtn}>Next ›</button>
         </div>
         <p style={{ fontSize: "0.88rem", color: "var(--muted)", margin: "0 0 10px" }}>
-          Tap a date to see everyone assigned, their shifts and locations. Workweek: Sunday–Saturday.
+          Tap a date to see everyone assigned, their shifts and locations. Workweek: Monday–Sunday.
         </p>
         <div style={monthGrid}>
-          {WEEKDAY_SHORT.map((w) => (
-            <div key={w} style={monthHeader}>{w}</div>
+          {[1, 2, 3, 4, 5, 6, 0].map((i) => (
+            <div key={WEEKDAY_SHORT[i]} style={monthHeader}>{WEEKDAY_SHORT[i]}</div>
           ))}
           {cells}
         </div>
