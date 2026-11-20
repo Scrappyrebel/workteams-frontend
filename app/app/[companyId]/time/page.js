@@ -108,6 +108,7 @@ export default function TimeClockPage() {
   const [shiftNotice, setShiftNotice] = useState("");
   const [locationId, setLocationId] = useState("");
   const [filter, setFilter] = useState("everyone");
+  const [openEntryDays, setOpenEntryDays] = useState(() => new Set());
   const [onClock, setOnClock] = useState([]);
   // Roster "Working as" labels by time entry id (079, display only).
   const [workingAsByEntry, setWorkingAsByEntry] = useState({});
@@ -256,7 +257,15 @@ export default function TimeClockPage() {
         ? "Your scheduled shift's 30-minute clock-in window has passed. Ask management to authorize clock-in."
         : "");
       setMyShifts(valid);
-      setLocationId((id) => valid.some((shift) => shift.location_id === id) ? id : "");
+      // Wendy's rule (walkthrough, 2026-11-19): when the person's valid
+      // shifts point at exactly one location, that scheduled location is
+      // simply there, ready — no hunting through the picker. A current
+      // pick that is still valid is kept; several locations still ask.
+      setLocationId((id) => {
+        if (valid.some((shift) => shift.location_id === id)) return id;
+        const distinct = [...new Set(valid.map((shift) => shift.location_id).filter(Boolean))];
+        return distinct.length === 1 ? distinct[0] : "";
+      });
     }
     setShiftLoading(false);
 
@@ -743,6 +752,21 @@ export default function TimeClockPage() {
     ? activePunches.some((r) => r.type === "out" && r.entryId === open.id)
     : false;
 
+  // Recent entries roll-up (Wendy, WorkTeams walkthrough, 2026-11-19):
+  // today's entries stay open; each older day rolls up behind a tap so
+  // the list stops taking up the page, and any past day can be opened
+  // from its header. Days follow the same viewer-local date each card
+  // already prints.
+  const entryDayKey = (e) => new Date(e.clock_in).toLocaleDateString();
+  const todayEntryKey = new Date().toLocaleDateString();
+  const entryGroups = [];
+  for (const e of entries) {
+    const k = entryDayKey(e);
+    let g = entryGroups.find((x) => x.key === k);
+    if (!g) { g = { key: k, items: [] }; entryGroups.push(g); }
+    g.items.push(e);
+  }
+
   return (
     <div>
       <p className="eyebrow">TIME CLOCK</p>
@@ -918,7 +942,10 @@ export default function TimeClockPage() {
                 {teamOffClock.map((m) => (
                   <div key={m.id} style={{ display: "flex", alignItems: "center", gap: 10 }}>
                     <span style={{ color: "var(--muted)", fontSize: "1.2rem" }}>⚪</span>
-                    <div style={{ flex: 1 }}><strong>{m.display_name || "Unknown"}</strong></div>
+                    <div style={{ flex: 1 }}>
+                      <strong>{m.display_name || "Unknown"}</strong>
+                      <span style={{ marginLeft: 8, fontSize: "0.72rem", fontWeight: 800, letterSpacing: "0.04em", background: "#eef1f4", color: "#5f6b7a", border: "1px solid var(--line)", borderRadius: 999, padding: "2px 8px", verticalAlign: "middle" }}>OFF THE CLOCK</span>
+                    </div>
                     <button onClick={() => managerClock(m.id, "in")}
                       disabled={busy}
                       style={{ border: "1px solid #a8dab5", background: "#e6f4ea", color: "#137333", borderRadius: 999, padding: "6px 14px", fontWeight: 700, cursor: "pointer", fontSize: "0.85rem" }}>
@@ -944,7 +971,20 @@ export default function TimeClockPage() {
 
       <div style={{ display: "grid", gap: 8 }}>
         {entries.length === 0 && <p style={{ color: "var(--muted)" }}>No entries yet.</p>}
-        {entries.map((e) => {
+        {entryGroups.map((g) => {
+          const isToday = g.key === todayEntryKey;
+          const open = isToday || openEntryDays.has(g.key);
+          const dayLabel = new Date(g.items[0].clock_in).toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" });
+          return (
+            <div key={g.key} style={{ display: "grid", gap: 8 }}>
+              {!isToday && (
+                <button type="button"
+                  onClick={() => setOpenEntryDays((prev) => { const next = new Set(prev); if (next.has(g.key)) next.delete(g.key); else next.add(g.key); return next; })}
+                  style={{ border: "1px solid var(--line)", background: "#fff", borderRadius: 12, padding: "10px 14px", fontWeight: 700, cursor: "pointer", textAlign: "left", fontSize: "0.92rem" }}>
+                  {open ? "▾" : "▸"} {dayLabel} — {g.items.length} {g.items.length === 1 ? "entry" : "entries"}
+                </button>
+              )}
+              {open && g.items.map((e) => {
           const hrs = e.clock_out
             ? ((new Date(e.clock_out) - new Date(e.clock_in)) / 3600000).toFixed(2)
             : null;
@@ -977,6 +1017,9 @@ export default function TimeClockPage() {
                   )}
                 </div>
               )}
+            </div>
+          );
+        })}
             </div>
           );
         })}

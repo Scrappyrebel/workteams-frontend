@@ -34,6 +34,7 @@ function daysLeft(expiresAt) {
 export default function ShiftVideosPage() {
   const { company, member, loading } = useCompany();
   const [videos, setVideos] = useState([]);
+  const [openVideoDays, setOpenVideoDays] = useState(() => new Set());
   const [locations, setLocations] = useState([]);
   const [uploading, setUploading] = useState(null); // { file, progress, upload, paused }
   const [form, setForm] = useState({ location_id: "", notes: "" });
@@ -404,6 +405,20 @@ export default function ShiftVideosPage() {
 
   if (loading) return <main className="site-shell"><p>Loading…</p></main>;
 
+  // Recent videos roll-up (Wendy, WorkTeams walkthrough, 2026-11-19):
+  // today's videos stay open; each older day rolls up behind a tap.
+  // Display only — grouping follows the viewer-local day each row
+  // already prints. The record/upload flow above is untouched.
+  const videoDayKey = (v) => new Date(v.created_at).toLocaleDateString();
+  const todayVideoKey = new Date().toLocaleDateString();
+  const videoGroups = [];
+  for (const v of videos) {
+    const k = videoDayKey(v);
+    let g = videoGroups.find((x) => x.key === k);
+    if (!g) { g = { key: k, items: [] }; videoGroups.push(g); }
+    g.items.push(v);
+  }
+
   return (
     <main className="site-shell">
       <h1>🎬 Shift Videos</h1>
@@ -527,7 +542,20 @@ export default function ShiftVideosPage() {
         {!listLoading && !listError && videos.length === 0 && (
           <p style={{ color: "var(--muted)" }}>No saved walkthrough videos were found for this company.</p>
         )}
-        {videos.map((v) => (
+        {videoGroups.map((g) => {
+          const isToday = g.key === todayVideoKey;
+          const open = isToday || openVideoDays.has(g.key);
+          const dayLabel = new Date(g.items[0].created_at).toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" });
+          return (
+            <div key={g.key}>
+              {!isToday && (
+                <button type="button"
+                  onClick={() => setOpenVideoDays((prev) => { const next = new Set(prev); if (next.has(g.key)) next.delete(g.key); else next.add(g.key); return next; })}
+                  style={{ border: "1px solid var(--line)", background: "#fff", borderRadius: 12, padding: "10px 14px", fontWeight: 700, cursor: "pointer", textAlign: "left", fontSize: "0.92rem", width: "100%", margin: "8px 0" }}>
+                  {open ? "▾" : "▸"} {dayLabel} — {g.items.length} {g.items.length === 1 ? "video" : "videos"}
+                </button>
+              )}
+              {open && g.items.map((v) => (
           <div key={v.id} style={{ borderBottom: "1px solid var(--border)", padding: "12px 0" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "start", gap: 8 }}>
               <div>
@@ -608,6 +636,9 @@ export default function ShiftVideosPage() {
             )}
           </div>
         ))}
+            </div>
+          );
+        })}
       </section>
     </main>
   );

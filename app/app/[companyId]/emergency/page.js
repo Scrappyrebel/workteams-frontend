@@ -40,6 +40,7 @@ export default function EmergencyPage() {
   const [categoryFilter, setCategoryFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
   const [whenFilter, setWhenFilter] = useState("all");
+  const [openAlertDays, setOpenAlertDays] = useState(() => new Set());
   // Assignment/resolution record (migration 086). Loaded fail-soft:
   // before 086 runs, eventsOk stays false and none of the record
   // layer renders — the page is exactly as it was.
@@ -178,6 +179,22 @@ export default function EmergencyPage() {
   const filtersActive =
     categoryFilter !== "all" || statusFilter !== "all" || whenFilter !== "all";
 
+  // Alert log roll-up (Wendy, WorkTeams walkthrough, 2026-11-19): the
+  // page was very busy — today's alerts stay open and each older day
+  // rolls up behind a tap. Display only: the same filtered alerts,
+  // grouped by the viewer-local day each card already prints. The
+  // "needing a response" counters above still count every unanswered
+  // alert, rolled up or not.
+  const alertDayKey = (a) => new Date(a.created_at).toLocaleDateString();
+  const todayAlertKey = new Date().toLocaleDateString();
+  const alertGroups = [];
+  for (const a of visibleAlerts) {
+    const k = alertDayKey(a);
+    let g = alertGroups.find((x) => x.key === k);
+    if (!g) { g = { key: k, items: [] }; alertGroups.push(g); }
+    g.items.push(a);
+  }
+
   return (
     <div>
       <p className="eyebrow">EMERGENCY</p>
@@ -244,7 +261,20 @@ export default function EmergencyPage() {
         {filtersActive && alerts.length > 0 && visibleAlerts.length === 0 && (
           <p style={{ color: "var(--muted)" }}>No alerts match those filters.</p>
         )}
-        {visibleAlerts.map((a) => {
+        {alertGroups.map((g) => {
+          const isToday = g.key === todayAlertKey;
+          const open = isToday || openAlertDays.has(g.key);
+          const dayLabel = new Date(g.items[0].created_at).toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" });
+          return (
+            <div key={g.key} style={{ display: "grid", gap: 10 }}>
+              {!isToday && (
+                <button type="button"
+                  onClick={() => setOpenAlertDays((prev) => { const next = new Set(prev); if (next.has(g.key)) next.delete(g.key); else next.add(g.key); return next; })}
+                  style={{ border: "1px solid var(--line)", background: "#fff", borderRadius: 12, padding: "10px 14px", fontWeight: 700, cursor: "pointer", textAlign: "left", fontSize: "0.92rem" }}>
+                  {open ? "▾" : "▸"} {dayLabel} — {g.items.length} {g.items.length === 1 ? "alert" : "alerts"}
+                </button>
+              )}
+              {open && g.items.map((a) => {
           const resolvedEvent = resolvedByAlert.get(a.id) || null;
           const assignedEvent = assignedByAlert.get(a.id) || null;
           return (
@@ -406,6 +436,9 @@ export default function EmergencyPage() {
               </div>
             )}
           </div>
+          );
+        })}
+            </div>
           );
         })}
       </div>

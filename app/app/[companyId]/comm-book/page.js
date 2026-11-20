@@ -111,6 +111,7 @@ function CommBookPhoto({ path, canExport, label }) {
 export default function CommBookPage() {
   const { company, member, loading } = useCompany();
   const [entries, setEntries] = useState([]);
+  const [openBookDays, setOpenBookDays] = useState(() => new Set());
   const [bookOverrides, setBookOverrides] = useState([]);
   const [locations, setLocations] = useState([]);
   const [form, setForm] = useState({ category: "note", location_id: "", message: "" });
@@ -231,6 +232,20 @@ export default function CommBookPage() {
 
   if (loading) return <main className="site-shell"><p>Loading…</p></main>;
 
+  // Log roll-up (Wendy, WorkTeams walkthrough, 2026-11-19): today's
+  // entries stay open; each older day rolls up behind a tap so the
+  // screen stays clear (the book still keeps its 7 days). Display
+  // only — grouping follows the viewer-local day each entry prints.
+  const bookDayKey = (e) => new Date(e.created_at).toLocaleDateString();
+  const todayBookKey = new Date().toLocaleDateString();
+  const bookGroups = [];
+  for (const e of entries) {
+    const k = bookDayKey(e);
+    let g = bookGroups.find((x) => x.key === k);
+    if (!g) { g = { key: k, items: [] }; bookGroups.push(g); }
+    g.items.push(e);
+  }
+
   return (
     <main className="site-shell">
       <h1>📖 Communication Book</h1>
@@ -333,7 +348,20 @@ export default function CommBookPage() {
       <section className="panel">
         <h2>Log</h2>
         {entries.length === 0 && <p style={{ color: "var(--muted)" }}>Nothing logged yet.</p>}
-        {entries.map((e) => (
+        {bookGroups.map((g) => {
+          const isToday = g.key === todayBookKey;
+          const open = isToday || openBookDays.has(g.key);
+          const dayLabel = new Date(g.items[0].created_at).toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" });
+          return (
+            <div key={g.key}>
+              {!isToday && (
+                <button type="button"
+                  onClick={() => setOpenBookDays((prev) => { const next = new Set(prev); if (next.has(g.key)) next.delete(g.key); else next.add(g.key); return next; })}
+                  style={{ border: "1px solid var(--line)", background: "#fff", borderRadius: 12, padding: "10px 14px", fontWeight: 700, cursor: "pointer", textAlign: "left", fontSize: "0.92rem", width: "100%", margin: "8px 0" }}>
+                  {open ? "▾" : "▸"} {dayLabel} — {g.items.length} {g.items.length === 1 ? "entry" : "entries"}
+                </button>
+              )}
+              {open && g.items.map((e) => (
           <div key={e.id} style={{ borderBottom: "1px solid var(--border)", padding: "12px 0" }}>
             <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
               <div style={{ flex: 1 }}>
@@ -396,6 +424,9 @@ export default function CommBookPage() {
             </div>
           </div>
         ))}
+            </div>
+          );
+        })}
       </section>
     </main>
   );
