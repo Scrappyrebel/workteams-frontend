@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { supabase } from "../../../../lib/supabase";
 import { useCompany } from "../../../../lib/company-context";
 import { useClockedIn, requireClockedIn } from "../../../../lib/use-clocked-in";
@@ -75,6 +75,19 @@ export default function SuppliesPage() {
   const [replaceFor, setReplaceFor] = useState(null);
   const [replaceForm, setReplaceForm] = useState({ replacementId: "", note: "" });
   const [requestForm, setRequestForm] = useState({ supplyId: "", quantity: "1", neededBy: "", note: "", urgency: "low" });
+  const [scanOpen, setScanOpen] = useState(false);
+  const [scanCode, setScanCode] = useState("");
+  const [scanMsg, setScanMsg] = useState("");
+  const [scanItem, setScanItem] = useState(null);
+  const [scanMiss, setScanMiss] = useState("");
+  const videoRef = useRef(null);
+  const scanStreamRef = useRef(null);
+  const scanTimerRef = useRef(null);
+
+  useEffect(() => () => {
+    if (scanTimerRef.current) clearInterval(scanTimerRef.current);
+    if (scanStreamRef.current) scanStreamRef.current.getTracks().forEach((t) => t.stop());
+  }, []);
   const [requestSaving, setRequestSaving] = useState(false);
 
   const isManager = member && (member.role === "owner" || member.role === "admin");
@@ -555,6 +568,138 @@ export default function SuppliesPage() {
     else loadInventory();
   }
 
+  // Barcode scan (Wendy, walkthrough 2026-11-19, #17): scan a
+  // chemical's barcode and the supply it belongs to comes up — the
+  // code is matched against each item's SKU (migration 087). Phones
+  // whose browsers can read barcodes from the camera (BarcodeDetector
+  // — Chrome on Android) scan live; everywhere else the same lookup
+  // works by typing the numbers printed under the barcode.
+  function stopScanCamera() {
+    if (scanTimerRef.current) { clearInterval(scanTimerRef.current); scanTimerRef.current = null; }
+    if (scanStreamRef.current) { scanStreamRef.current.getTracks().forEach((t) => t.stop()); scanStreamRef.current = null; }
+  }
+
+  function handleScanCode(raw) {
+    const code = String(raw || "").trim();
+    if (!code) return;
+    setScanCode(code);
+    // UPC scans sometimes gain or lose a leading zero against the
+    // stored SKU (UPC-A vs EAN-13), so compare with leading zeros off
+    // as well as exactly.
+    const strip = (s) => String(s || "").replace(/^0+/, "");
+    const found = items.find((i) => {
+      const sku = String(i.sku || "").trim();
+      return sku && (sku === code || strip(sku) === strip(code));
+    });
+    if (found) {
+      setScanItem(found);
+      setScanMiss("");
+      setScanMsg("");
+      setSearch(code);
+    } else {
+      setScanItem(null);
+      setScanMiss(code);
+      setScanMsg("");
+    }
+  }
+
+  async function startScan() {
+    setScanOpen(true);
+    setScanMsg("");
+    setScanItem(null);
+    setScanMiss("");
+    if (!("BarcodeDetector" in window) || !navigator.mediaDevices?.getUserMedia) {
+      setScanMsg("This phone's browser can't read barcodes from the camera — type the numbers printed under the barcode below instead.");
+      return;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+      scanStreamRef.current = stream;
+      // The video element renders with the open panel; give it a tick.
+      setTimeout(async () => {
+        const video = videoRef.current;
+        if (!video) return;
+        video.srcObject = stream;
+        await video.play().catch(() => {});
+        const detector = new window.BarcodeDetector({ formats: ["ean_13", "ean_8", "upc_a", "upc_e", "code_128", "code_39", "qr_code"] });
+        scanTimerRef.current = setInterval(async () => {
+          try {
+            const codes = await detector.detect(video);
+            if (codes && codes.length && codes[0].rawValue) {
+              const value = String(codes[0].rawValue).trim();
+              stopScanCamera();
+              handleScanCode(value);
+            }
+          } catch { /* keep trying until the panel closes */ }
+        }, 400);
+      }, 50);
+    } catch {
+      setScanMsg("The camera didn't open — check the camera permission, or type the barcode numbers below instead.");
+    }
+  }
+
+  function scanSection() {
+    const canCamera = typeof window !== "undefined" && "BarcodeDetector" in window;
+    return (
+      <section className="panel" style={{ padding: 22, margin: "18px 0" }}>
+        <h3 style={{ marginTop: 0 }}>📷 Scan a barcode</h3>
+        <p style={{ color: "var(--muted)", marginTop: 0 }}>
+          Scan the barcode on a chemical or supply and what it is comes right up.
+        </p>
+        {!scanOpen ? (
+          <button type="button" onClick={() => void startScan()} style={button}>Scan a barcode</button>
+        ) : (
+          <div style={{ display: "grid", gap: 10, maxWidth: 520 }}>
+            {canCamera && <video ref={videoRef} playsInline muted style={{ width: "100%", borderRadius: 14, background: "#000" }} />}
+            {scanMsg && <p style={{ margin: 0, fontSize: "0.9rem", color: "var(--muted)" }}>{scanMsg}</p>}
+            <div style={{ display: "flex", gap: 8 }}>
+              <input
+                value={scanCode}
+                onChange={(e) => setScanCode(e.target.value)}
+                placeholder="Barcode numbers"
+                inputMode="numeric"
+                style={{ ...input, flex: 1, minWidth: 0 }}
+              />
+              <button type="button" onClick={() => handleScanCode(scanCode)} style={button}>Look it up</button>
+            </div>
+            {scanItem && (
+              <div style={{ border: "1px solid var(--line)", borderRadius: 14, padding: 14 }}>
+                <strong>{scanItem.name}</strong>
+                <p style={{ margin: "6px 0 0", fontSize: "0.92rem" }}>
+                  {Number(scanItem.quantity_on_hand)} {scanItem.unit} on hand
+                  {scanItem.vendor ? ` • ${scanItem.vendor}` : ""}
+                  {scanItem.category ? ` • ${scanItem.category}` : ""}
+                  {locationNameOf(scanItem) ? ` • kept at ${locationNameOf(scanItem)}` : ""}
+                </p>
+                <p style={{ margin: "6px 0 0", fontSize: "0.85rem", color: "var(--muted)" }}>
+                  It's in the list below too — the search box now shows its code.
+                </p>
+              </div>
+            )}
+            {scanMiss && (
+              <div style={{ border: "1px dashed var(--line)", borderRadius: 14, padding: 14 }}>
+                <p style={{ margin: 0, fontSize: "0.92rem" }}>
+                  No supply in your inventory carries the code <strong>{scanMiss}</strong> yet. Put the
+                  code on the supply's SKU when you add or edit it, and scans will find it.
+                </p>
+                {isManager && (
+                  <button
+                    type="button"
+                    onClick={() => { setEditing(null); setForm({ ...emptyForm, sku: scanMiss }); stopScanCamera(); setScanOpen(false); window.scrollTo({ top: 0, behavior: "smooth" }); }}
+                    style={{ ...button, marginTop: 10 }}
+                  >
+                    Add it as a new supply with this code
+                  </button>
+                )}
+              </div>
+            )}
+            <button type="button" onClick={() => { stopScanCamera(); setScanOpen(false); }} style={ghostButton}>Close scanner</button>
+          </div>
+        )}
+      </section>
+    );
+  }
+
   function openAssignmentsFor(itemId) {
     return assignments.filter((a) => a.supply_id === itemId && !a.returned_at);
   }
@@ -735,6 +880,7 @@ export default function SuppliesPage() {
             })}
           </section>
         )}
+        {scanSection()}
         <input
           value={search}
           onChange={(e) => setSearch(e.target.value)}
@@ -940,6 +1086,7 @@ export default function SuppliesPage() {
         </form>
       </section>
 
+      {scanSection()}
       <input
         value={search}
         onChange={(e) => setSearch(e.target.value)}
