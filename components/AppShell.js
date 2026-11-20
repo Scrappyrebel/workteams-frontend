@@ -119,6 +119,51 @@ export default function AppShell({ company, member, children }) {
     return () => { stop = true; };
   }, [company?.id]);
 
+  // Temp-agency entry warning (Wendy, 2026-11-19): people who belong to
+  // more than one company kept opening the temp agency company by mistake
+  // and clocking in there. Entering the temp agency now stops them with a
+  // full-screen acknowledgment — nothing works until they tap that they
+  // understand this is the temp agency. Only the temp agency company shows
+  // it (never a regular company), and only for people with 2+ companies:
+  // a temp-only person has nothing to mix it up with and never sees it.
+  const [myCompanyCount, setMyCompanyCount] = useState(null);
+  const [tempAckedFor, setTempAckedFor] = useState(null);
+
+  useEffect(() => {
+    let stop = false;
+    (async () => {
+      try {
+        const { data: session } = await supabase().auth.getSession();
+        const uid = session?.session?.user?.id;
+        if (!uid) return;
+        const { data } = await supabase()
+          .from("company_members")
+          .select("company_id")
+          .not("user_id", "is", null)
+          .eq("user_id", uid);
+        if (!stop && data) {
+          setMyCompanyCount(new Set(data.map((r) => r.company_id)).size);
+        }
+      } catch {
+        // Count unknown: the warning simply doesn't arm. Never block
+        // anyone out of their own app over a failed count.
+      }
+    })();
+    return () => { stop = true; };
+  }, []);
+
+  // Leaving the temp agency re-arms the warning, so coming back in —
+  // or reopening the app while it sits in the temp agency — shows it again.
+  useEffect(() => {
+    setTempAckedFor((prev) => (prev === company?.id ? prev : null));
+  }, [company?.id]);
+
+  const showTempWarning =
+    isTempAgency &&
+    myCompanyCount !== null &&
+    myCompanyCount >= 2 &&
+    tempAckedFor !== company?.id;
+
   // Set up push notifications for emergency alerts (once per session).
   useEffect(() => {
     if (!company?.id || !member?.id) return;
@@ -570,6 +615,66 @@ export default function AppShell({ company, member, children }) {
         </Link>
       )}
       <main className="site-shell">{children}</main>
+      {showTempWarning && (
+        <div
+          role="alertdialog"
+          aria-modal="true"
+          aria-label="You are entering the temp agency company"
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 1000,
+            background: "rgba(24,34,53,0.72)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 16,
+          }}
+        >
+          <div
+            style={{
+              background: "#fffbeb",
+              border: "2px solid #f59e0b",
+              borderRadius: 20,
+              maxWidth: 440,
+              width: "100%",
+              padding: "28px 24px",
+              textAlign: "center",
+              boxShadow: "0 24px 60px rgba(24,34,53,0.4)",
+            }}
+          >
+            <div style={{ fontSize: "2.4rem", lineHeight: 1 }} aria-hidden="true">⚠️</div>
+            <h2 style={{ margin: "12px 0 8px", fontSize: "1.35rem", color: "#92400e" }}>
+              You&rsquo;re entering the TEMP AGENCY
+            </h2>
+            <p style={{ margin: "0 0 6px", fontWeight: 800, fontSize: "1.05rem" }}>
+              {company?.name}
+            </p>
+            <p style={{ margin: "0 0 20px", color: "var(--ink)", lineHeight: 1.5 }}>
+              This is the temp agency company — <strong>not</strong> your regular
+              company. Clock-ins and work done here go to the temp agency.
+            </p>
+            <button
+              type="button"
+              onClick={() => setTempAckedFor(company.id)}
+              style={{
+                width: "100%",
+                minHeight: 52,
+                border: "none",
+                borderRadius: 999,
+                background: "#f59e0b",
+                color: "#451a03",
+                fontWeight: 800,
+                fontSize: "1rem",
+                cursor: "pointer",
+                padding: "12px 20px",
+              }}
+            >
+              I understand — this is the temp agency
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
