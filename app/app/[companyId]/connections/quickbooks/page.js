@@ -305,8 +305,8 @@ export default function QuickBooksSyncPage() {
       ) : connection === "setup" ? (
         <section className="panel" style={{ padding: 22 }}>
           <p style={{ margin: 0 }}>
-            🛠 Setup pending -- the QuickBooks database step hasn't been run yet. Nothing is
-            connected and nothing is synced.
+            ⚪ QuickBooks isn't connected for this company yet, and connecting isn't
+            available yet. Nothing is connected and nothing is synced.
           </p>
         </section>
       ) : connection === "none" || connection.status === "disconnected" ? (

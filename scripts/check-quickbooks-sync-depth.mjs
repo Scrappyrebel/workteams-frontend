@@ -32,7 +32,9 @@ check(
 );
 
 // Verified honest states pinned.
-check(page.includes("Setup pending -- the QuickBooks database step hasn't been run yet"), "qb page: setup-pending state honest");
+// Wendy (walkthrough 2026-11-19, #27): the "Setup pending" wording is
+// gone — the not-yet-available state reads as a plain not-connected.
+check(page.includes("QuickBooks isn't connected for this company yet, and connecting isn't"), "qb page: not-yet-available state honest, no setup-pending wording");
 check(page.includes("QuickBooks isn't connected for this company yet"), "qb page: not-connected state honest");
 check(page.includes("Showing the last fetched copy from"), "qb page: cached copy labeled with its fetch time");
 check(page.includes("it is never"), "qb page: unmapped items never posted to a guess");
