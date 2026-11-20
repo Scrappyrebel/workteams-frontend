@@ -70,6 +70,10 @@ export default function WalkthroughsPage() {
   const [locations, setLocations] = useState([]);
   const [draftBids, setDraftBids] = useState([]);
   const [form, setForm] = useState(emptyForm);
+  const [newLocOpen, setNewLocOpen] = useState(false);
+  const [newLoc, setNewLoc] = useState({ name: "", address: "" });
+  const [newLocBusy, setNewLocBusy] = useState(false);
+  const [newLocError, setNewLocError] = useState("");
   const [saving, setSaving] = useState(false);
   // Question-set state. qReady is null until the first load probes for the
   // migration-067 columns; false means the migration has not been run yet
@@ -140,6 +144,33 @@ export default function WalkthroughsPage() {
       entry_notes: appt.entry_notes.trim() || null,
       intake: pruneAnswers(intake),
     };
+  }
+
+  // Walkthrough fix (Wendy, walkthrough 2026-11-19, #12): a brand-new
+  // prospect's location could not be created here — the picker only
+  // listed locations that already exist, so no walkthrough could
+  // start and no bid could attach. This adds the location to the
+  // company (the same insert the Locations page makes) and links
+  // this walkthrough to it.
+  async function createLocation() {
+    const name = newLoc.name.trim();
+    if (!name) return;
+    setNewLocBusy(true);
+    setNewLocError("");
+    const { data, error } = await supabase()
+      .from("locations")
+      .insert({ company_id: company.id, name, address: newLoc.address.trim() || null, geofence_radius_m: 100 })
+      .select("id, name")
+      .single();
+    setNewLocBusy(false);
+    if (error || !data) {
+      setNewLocError("Could not add the location: " + (error?.message || "please try again"));
+      return;
+    }
+    setLocations((prev) => [...prev, data].sort((a, b) => a.name.localeCompare(b.name)));
+    setForm((f) => ({ ...f, location_id: data.id }));
+    setNewLoc({ name: "", address: "" });
+    setNewLocOpen(false);
   }
 
   async function save(e) {
@@ -223,6 +254,34 @@ export default function WalkthroughsPage() {
               <option key={l.id} value={l.id}>{l.name}</option>
             ))}
           </select>
+          {!newLocOpen ? (
+            <button type="button" onClick={() => setNewLocOpen(true)}
+              style={{ alignSelf: "flex-start", background: "none", border: "none", color: "var(--brand-deep)", fontWeight: 700, cursor: "pointer", padding: 0, fontSize: "0.92rem" }}>
+              ➕ New prospect not listed? Add their location here
+            </button>
+          ) : (
+            <div style={{ border: "1px dashed var(--line)", borderRadius: 14, padding: 12, display: "flex", flexDirection: "column", gap: 8 }}>
+              <strong style={{ fontSize: "0.92rem" }}>Add a new location</strong>
+              <input value={newLoc.name} onChange={(e) => setNewLoc({ ...newLoc, name: e.target.value })}
+                placeholder="Location name (e.g. Smith Dental Office)" maxLength={120} style={input} />
+              <input value={newLoc.address} onChange={(e) => setNewLoc({ ...newLoc, address: e.target.value })}
+                placeholder="Address (optional)" maxLength={200} style={input} />
+              {newLocError && <p role="alert" style={{ color: "var(--danger)", margin: 0, fontSize: "0.88rem" }}>{newLocError}</p>}
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                <button type="button" disabled={newLocBusy || !newLoc.name.trim()} onClick={() => void createLocation()}
+                  style={{ padding: "10px 16px", borderRadius: 999, border: "none", background: "var(--brand)", color: "#fff", fontWeight: 700, cursor: "pointer" }}>
+                  {newLocBusy ? "Adding…" : "Add & use this location"}
+                </button>
+                <button type="button" onClick={() => setNewLocOpen(false)}
+                  style={{ padding: "10px 16px", borderRadius: 999, border: "1px solid var(--line)", background: "#fff", fontWeight: 700, cursor: "pointer" }}>
+                  Cancel
+                </button>
+              </div>
+              <p style={{ margin: 0, fontSize: "0.82rem", color: "var(--muted)" }}>
+                This creates the location in your company — the same as adding it on the Locations page — and links this walkthrough to it.
+              </p>
+            </div>
+          )}
           <select value={form.bid_id} onChange={(e) => setForm({ ...form, bid_id: e.target.value })} style={input}>
             <option value="">No linked bid (optional)</option>
             {draftBids.map((b) => (

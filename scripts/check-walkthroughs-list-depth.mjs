@@ -32,6 +32,13 @@ const read = (p) => readFileSync(p, "utf8");
 //   no photo/storage code before or after.
 // * No migration ships with this build: every displayed fact was
 //   already stored and already selected by the page.
+// * SUPERSEDED IN PART (Wendy, WorkTeams walkthrough 2026-11-19,
+//   item #12): the new-walkthrough form may now create a brand-new
+//   prospect's location inline — ONE added insert, into the
+//   locations table only, the same insert the Locations page
+//   makes — because the picker listed only existing locations and
+//   no walkthrough could start for a new prospect. The walkthrough
+//   writes below are unchanged; the counts encode the new rule.
 
 const PAGE = "app/app/[companyId]/walkthroughs/page.js";
 const NOW = Date.parse("2026-11-03T12:00:00Z");
@@ -73,10 +80,13 @@ test("existing load, gates, create payload shapes, fallback and delete are uncha
   ]) {
     assert.ok(page.includes(needle), `walkthroughs page keeps: ${needle}`);
   }
-  // Exactly the writes that existed before: the two save() inserts
-  // (full payload + pre-067 fallback) and the one delete. No update,
-  // no upsert, and no stage/status write of any kind is added.
-  assert.equal(page.split(".insert(").length - 1, 2, "only the two pre-existing inserts remain");
+  // The walkthrough writes that existed before: the two save()
+  // inserts (full payload + pre-067 fallback) and the one delete.
+  // Plus, since the 2026-11-19 walkthrough fix (#12), ONE added
+  // insert into the locations table (the inline add-a-location).
+  // No update, no upsert, and no stage/status write of any kind.
+  assert.equal(page.split(".insert(").length - 1, 3, "the two walkthrough inserts + the directed locations insert only");
+  assert.equal(page.split('.from("locations")').length - 1, 2, "locations load read + the directed locations insert — no other locations access");
   assert.equal(page.split(".delete(").length - 1, 1, "only the pre-existing delete remains");
   for (const banned of [".update(", ".upsert(", "walkthrough_photos", "storage.from", "status:"]) {
     assert.ok(!page.includes(banned), `page does not introduce ${banned}`);
