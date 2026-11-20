@@ -579,7 +579,8 @@ export default function ClientPortalPage() {
       </section>}
       <section className="panel" id="portal-identity-pilot"
         style={{padding:22,margin:"18px 0",border:"1px solid var(--line)"}}>
-        <h3 style={{marginTop:0}}>{tr("Authenticated Customer Portal pilot","Prueba del portal autenticado")}</h3>
+        <h3 style={{marginTop:0}}>{tr("Customer logins — TEST (pilot)","Acceso de clientes — PRUEBA (piloto)")}</h3>
+        <p style={{fontSize:"0.9rem"}}>{tr("This is a test version of giving customers their own login. It is not live for your customers unless you turn it on here — the private location links on this page are what your customers use today.","Esto es una versión de prueba para dar a los clientes su propio acceso. No está activo para sus clientes a menos que usted lo active aquí; los enlaces privados de esta página son lo que sus clientes usan hoy.")}</p>
         <p style={{fontSize:"0.9rem",color:"var(--muted)"}}>{tr("Private location links remain independent from verified customer accounts. Requesting a pilot does not create logins, invite customers, allow downloads, expose invoices or change existing link permissions.","Los enlaces privados de ubicación son independientes de las cuentas verificadas. Solicitar una prueba no crea accesos, invita clientes, permite descargas, expone facturas ni modifica permisos de enlaces.")}</p>
         <p role="status"><strong>{tr("Authenticated customer login","Acceso autenticado del cliente")}:
          {pilotEnabled===true?tr(" enabled"," activado"):pilotEnabled===false?

@@ -343,9 +343,9 @@ export default function ContractsPage() {
               )}
             </div>
             {c.terms_text && (
-              <details style={{ marginTop: 10 }}>
-                <summary style={{ cursor: "pointer", fontWeight: 700, fontSize: "0.85rem", color: "var(--brand-deep)" }}>
-                  View contract terms
+              <details style={{ marginTop: 12, border: "2px solid var(--brand)", borderRadius: 12, padding: "10px 14px", background: "var(--brand-soft)" }}>
+                <summary style={{ cursor: "pointer", fontWeight: 800, fontSize: "1rem", color: "var(--brand-deep)" }}>
+                  📄 Cleaning Service Agreement terms — tap to read the full terms before signing
                 </summary>
                 <div style={{ whiteSpace: "pre-line", fontSize: "0.85rem", lineHeight: 1.6, marginTop: 8, padding: 14, background: "var(--bg-soft)", borderRadius: 8 }}>
                   {c.terms_text}

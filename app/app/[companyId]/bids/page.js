@@ -281,7 +281,7 @@ export default function BidsPage() {
   };
 
   return (
-    <div>
+    <div style={{ overflowX: "clip", maxWidth: "100%" }}>
       <p className="eyebrow">BIDS</p>
       <h2 style={{ fontSize: "1.8rem" }}>Bids & proposals</h2>
 
@@ -320,14 +320,14 @@ export default function BidsPage() {
             <select
               value={form.location_id}
               onChange={(e) => onLocationChange(e.target.value)}
-              style={{ ...input, flex: 1 }}
+              style={{ ...input, flex: 1, minWidth: 0 }}
             >
               <option value="">No linked location</option>
               {locations.map((l) => (
                 <option key={l.id} value={l.id}>{l.name}</option>
               ))}
             </select>
-            <label style={{ flex: 1, fontSize: "0.9rem", color: "var(--muted)" }}>
+            <label style={{ flex: 1, minWidth: 0, fontSize: "0.9rem", color: "var(--muted)" }}>
               Valid until
               <input
                 type="date"
@@ -500,7 +500,7 @@ export default function BidsPage() {
         <div style={{ display: "grid", gap: 8, marginBottom: 14 }}>
           {rateAreas.map((r) => (
             <div key={r.id} className="portal-card" style={{ minHeight: 0, padding: "12px 16px", display: "flex", alignItems: "center", gap: 10 }}>
-              <div style={{ flex: 1 }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
                 <strong>{r.name}</strong>
                 <div style={{ fontSize: "0.85rem", color: "var(--muted)" }}>
                   {r.rate_per_sqft != null ? `$${Number(r.rate_per_sqft).toFixed(2)}/sq ft` : "—"}
