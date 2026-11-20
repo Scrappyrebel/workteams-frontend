@@ -36,6 +36,13 @@ const read = (p) => readFileSync(p, "utf8");
 //   area), 1 update (rate area), 1 delete (rate area), 0 fetch.
 // * The bid DETAIL page (D-WT-26, locked-after-send) is out of
 //   scope: it must not import this lib or change in this build.
+// * SUPERSEDED IN PART (Wendy, WorkTeams walkthrough 2026-11-19,
+//   item #14): the new-bid form may now create a brand-new client's
+//   location inline — ONE added insert, into the locations table
+//   only, the same insert the Locations page makes — because the
+//   picker listed only existing locations and a new client could
+//   not be bid at all. The bid/rate-area writes are unchanged; the
+//   counts below encode the new rule.
 // * Pipeline values are summed split by price basis — per-visit
 //   totals are never silently added to one-time totals.
 
@@ -93,9 +100,13 @@ test("existing load selects, create payload, filters and wording are unchanged",
   assert.ok(!insertBlock.includes("total"), "create payload still stores no total (totals are derived)");
 });
 
-test("no writes, sends, or queries added; protected areas absent; detail page untouched by this build", () => {
+test("only the directed writes exist; protected areas absent; detail page untouched by this build", () => {
   const page = read(PAGE);
-  assert.equal(page.split(".insert(").length - 1, 2, "only the pre-existing bid + rate-area inserts remain");
+  // 3 inserts since the 2026-11-19 walkthrough fix (#14): the
+  // pre-existing bid + rate-area inserts, plus the inline
+  // add-a-location insert (locations table only).
+  assert.equal(page.split(".insert(").length - 1, 3, "bid + rate-area + the directed locations insert only");
+  assert.equal(page.split('.from("locations")').length - 1, 2, "locations load read + the directed locations insert — no other locations access");
   assert.equal(page.split(".update(").length - 1, 1, "only the pre-existing rate-area update remains");
   assert.equal(page.split(".delete(").length - 1, 1, "only the pre-existing rate-area delete remains");
   assert.equal(page.split("fetch(").length - 1, 0, "the page still performs no fetch");

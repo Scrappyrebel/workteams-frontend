@@ -75,6 +75,10 @@ export default function BidsPage() {
   const [bids, setBids] = useState([]);
   const [locations, setLocations] = useState([]);
   const [form, setForm] = useState(emptyForm);
+  const [newLocOpen, setNewLocOpen] = useState(false);
+  const [newLoc, setNewLoc] = useState({ name: "", address: "" });
+  const [newLocBusy, setNewLocBusy] = useState(false);
+  const [newLocError, setNewLocError] = useState("");
   const [saving, setSaving] = useState(false);
   const [filter, setFilter] = useState("all");
   const [query, setQuery] = useState("");
@@ -122,6 +126,35 @@ export default function BidsPage() {
     if (!loading && company && allowed && isManager) load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loading, company, allowed]);
+
+  // Bid fix (Wendy, walkthrough 2026-11-19, #14): the same wall as
+  // Walkthroughs — the location picker only listed locations that
+  // already exist, so a brand-new client's location could not be
+  // created here. This adds the location to the company (the same
+  // insert the Locations page makes, carrying the client name typed
+  // above) and links this bid to it. The new location has no rate
+  // area, so no rate prefill applies — the same as picking a
+  // location with no area in onLocationChange.
+  async function createLocation() {
+    const name = newLoc.name.trim();
+    if (!name) return;
+    setNewLocBusy(true);
+    setNewLocError("");
+    const { data, error } = await supabase()
+      .from("locations")
+      .insert({ company_id: company.id, name, address: newLoc.address.trim() || null, client_name: form.client_name.trim() || null, geofence_radius_m: 100 })
+      .select("id, name, address, rate_area_id")
+      .single();
+    setNewLocBusy(false);
+    if (error || !data) {
+      setNewLocError("Could not add the location: " + (error?.message || "please try again"));
+      return;
+    }
+    setLocations((prev) => [...prev, data].sort((a, b) => a.name.localeCompare(b.name)));
+    setForm((f) => ({ ...f, location_id: data.id }));
+    setNewLoc({ name: "", address: "" });
+    setNewLocOpen(false);
+  }
 
   async function save(e) {
     e.preventDefault();
@@ -337,6 +370,34 @@ export default function BidsPage() {
               />
             </label>
           </div>
+          {!newLocOpen ? (
+            <button type="button" onClick={() => setNewLocOpen(true)}
+              style={{ alignSelf: "flex-start", background: "none", border: "none", color: "var(--brand-deep)", fontWeight: 700, cursor: "pointer", padding: 0, fontSize: "0.92rem", textAlign: "left" }}>
+              ➕ New client not listed? Add their location here
+            </button>
+          ) : (
+            <div style={{ border: "1px dashed var(--line)", borderRadius: 14, padding: 12, display: "grid", gap: 8 }}>
+              <strong style={{ fontSize: "0.92rem" }}>Add a new location</strong>
+              <input value={newLoc.name} onChange={(e) => setNewLoc({ ...newLoc, name: e.target.value })}
+                placeholder="Location name (e.g. Smith Dental Office)" maxLength={120} style={input} />
+              <input value={newLoc.address} onChange={(e) => setNewLoc({ ...newLoc, address: e.target.value })}
+                placeholder="Address (optional)" maxLength={200} style={input} />
+              {newLocError && <p role="alert" style={{ color: "var(--danger)", margin: 0, fontSize: "0.88rem" }}>{newLocError}</p>}
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                <button type="button" disabled={newLocBusy || !newLoc.name.trim()} onClick={() => void createLocation()}
+                  style={{ padding: "10px 16px", borderRadius: 999, border: "none", background: "var(--brand)", color: "#fff", fontWeight: 700, cursor: "pointer" }}>
+                  {newLocBusy ? "Adding…" : "Add & use this location"}
+                </button>
+                <button type="button" onClick={() => setNewLocOpen(false)}
+                  style={{ padding: "10px 16px", borderRadius: 999, border: "1px solid var(--line)", background: "#fff", fontWeight: 700, cursor: "pointer" }}>
+                  Cancel
+                </button>
+              </div>
+              <p style={{ margin: 0, fontSize: "0.82rem", color: "var(--muted)" }}>
+                This creates the location in your company — the same as adding it on the Locations page — and links this bid to it.
+              </p>
+            </div>
+          )}
           {selectedRateArea && (
             <p style={{ margin: 0, fontSize: "0.9rem", background: "#f4f6fb", border: "1px solid var(--line)", borderRadius: 10, padding: "8px 12px" }}>
               💲 Going rate in <strong>{selectedRateArea.name}</strong>:{" "}
