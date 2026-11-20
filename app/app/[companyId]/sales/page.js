@@ -41,7 +41,7 @@ export default function SalesPage() {
   return (
     <div>
       <p className="eyebrow">PRODUCT OWNER</p>
-      <h2 style={{ fontSize: "1.8rem" }}>Sales dashboard</h2>
+      <h2 style={{ fontSize: "1.8rem" }}>App Sales dashboard</h2>
       <p style={{ color: "var(--muted)" }}>
         Subscriptions sold and monthly recurring revenue. Customer identities stay in Stripe — this page shows totals only.
       </p>

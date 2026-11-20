@@ -13,9 +13,12 @@ import { supabase } from "../lib/supabase";
 
 const NAV = [
   { key: "timeclock", label: "Time Clock", href: (c) => `/app/${c}/time`, minRole: null },
-  { key: "scheduling", label: "Schedule", href: (c) => `/app/${c}/schedule`, minRole: null },
   { key: "myschedule", label: "My Schedule", href: (c) => `/app/${c}/my-schedule`, minRole: null },
+  // Dashboard is the THIRD tab and Schedule sits on the other side of
+  // it (Wendy, WorkTeams walkthrough, 2026-11-19) — this supersedes the
+  // earlier Time Clock / Schedule / My Schedule / Dashboard front order.
   { key: "dashboard", label: "Dashboard", href: (c) => `/app/${c}`, minRole: null },
+  { key: "scheduling", label: "Schedule", href: (c) => `/app/${c}/schedule`, minRole: null },
   // Emergency Alerts rides up front, right behind the pinned core
   // (Wendy, 2026-11-16): alerts should not sit at the end of the strip.
   { key: "emergency", label: "🚨 Emergency Alerts", href: (c) => `/app/${c}/emergency`, minRole: null },
@@ -26,16 +29,20 @@ const NAV = [
   { key: "shiftvideos", label: "🎬 Shift Videos", href: (c) => `/app/${c}/shift-videos`, minRole: "manager", featureFlag: "enable_shift_videos" },
   { key: "commbook", label: "📖 Comm Book", href: (c) => `/app/${c}/comm-book`, minRole: null, featureFlag: "enable_comm_book" },
   { key: "messaging", label: "Messages", href: (c) => `/app/${c}/messages`, minRole: null },
-  // Walkthrough and Bidding (owner, 2026-11-03): the whole chain --
-  // Walkthroughs, Bids, Contracts -- sits together under one heading
-  // in the menu panel, anchored where Walkthroughs already was. The
-  // three items keep their labels, hrefs and role gates; only their
-  // position in this list (and the panel heading) is new.
+  // Sales department (Wendy, WorkTeams walkthrough, 2026-11-19): the
+  // whole selling chain -- Walkthroughs, Bids, Contracts -- sits
+  // together under one "Sales Department" heading in the menu panel,
+  // anchored where Walkthroughs already was (the 2026-11-03 grouping,
+  // renamed to a real department at the walkthrough). The three items
+  // keep their labels, hrefs and role gates.
   { key: "walkthroughs", label: "Walkthroughs", href: (c) => `/app/${c}/walkthroughs`, minRole: "manager" },
   { key: "bidding", label: "Bids", href: (c) => `/app/${c}/bids`, minRole: "manager" },
   { key: "contracts", label: "Contracts", href: (c) => `/app/${c}/contracts`, minRole: "manager" },
   { key: "workorders", label: "Work Orders", href: (c) => `/app/${c}/work-orders`, minRole: null },
-  { key: "supplies", label: "Supplies", href: (c) => `/app/${c}/supplies`, minRole: null },
+  // Renamed "Inventory" (Wendy, WorkTeams walkthrough, 2026-11-19):
+  // the supplies-inventory page stands on its own under this name.
+  // Key, href and role gate unchanged.
+  { key: "supplies", label: "Inventory", href: (c) => `/app/${c}/supplies`, minRole: null },
   // Documents & Forms (D-WT-58, decided 2026-11-06): the company
   // document library + built-in starter forms. Additive entry — no
   // existing item moved or renamed. The section itself applies the
@@ -45,13 +52,19 @@ const NAV = [
   { key: "profitability", label: "Profitability", href: (c) => `/app/${c}/profitability`, minRole: "manager" },
   { key: "invoices", label: "Invoices", href: (c) => `/app/${c}/invoices`, minRole: "manager" },
   { key: "locationmoney", label: "Money by Location", href: (c) => `/app/${c}/location-money`, minRole: "manager" },
-  { key: "plans", label: "Plans", href: (c) => `/app/${c}/plans`, minRole: null },
-  { key: "settings", label: "Settings", href: (c) => `/app/${c}/settings`, minRole: "owner" },
-  { key: "tierprices", label: "Tier Prices", href: (c) => `/app/${c}/tier-prices`, minRole: null, productOwnerOnly: true },
-  { key: "sales", label: "Sales", href: (c) => `/app/${c}/sales`, minRole: null, productOwnerOnly: true },
   { key: "training", label: "Training", href: (c) => `/app/${c}/training`, minRole: null },
   { key: "connections", label: "Connections", href: (c) => `/app/${c}/connections`, minRole: null },
   { key: "notifications", label: "🔔 Notifications", href: (c) => `/app/${c}/notifications`, minRole: null },
+  // End-of-strip group (Wendy, WorkTeams walkthrough, 2026-11-19):
+  // Temp Staffing (inserted at runtime, below) -> Settings -> App Sales
+  // -> Tier Prices -> Plans, with Plans LAST of all. "Sales" is renamed
+  // "App Sales" because this dashboard is the app's subscription
+  // revenue, not the cleaning business's selling (that is the Sales
+  // department: Walkthroughs, Bids, Contracts).
+  { key: "settings", label: "Settings", href: (c) => `/app/${c}/settings`, minRole: "owner" },
+  { key: "sales", label: "App Sales", href: (c) => `/app/${c}/sales`, minRole: null, productOwnerOnly: true },
+  { key: "tierprices", label: "Tier Prices", href: (c) => `/app/${c}/tier-prices`, minRole: null, productOwnerOnly: true },
+  { key: "plans", label: "Plans", href: (c) => `/app/${c}/plans`, minRole: null },
 ];
 
 // Word-tolerant menu search matching (Wendy, 2026-11-03): the plain
@@ -231,16 +244,20 @@ export default function AppShell({ company, member, children }) {
   });
   // Temp staffing tab: managers and up, for enabled companies — plus the
   // product owner always, so the per-company enable button is reachable.
-  // It rides up front with Emergency Alerts (Wendy, 2026-11-16), right
-  // behind the pinned core — not appended at the end of the strip.
+  // It leads the end-of-strip group (Wendy, WorkTeams walkthrough,
+  // 2026-11-19 — reversing its 2026-11-16 front placement): Temp
+  // Staffing -> Settings -> App Sales -> Tier Prices -> Plans, so it
+  // never sits mixed in with a regular company's own pages.
   if ((isTempAgency || isOwner) && roleAtLeast(role, "manager")) {
     const tempItem = {
       key: "tempstaffing",
       label: "🧹 Temp Staffing",
       href: (c) => `/app/${c}/temp`,
     };
-    const alertIdx = links.findIndex((l) => l.key === "emergency");
-    if (alertIdx >= 0) links.splice(alertIdx + 1, 0, tempItem);
+    const endIdx = links.findIndex((l) =>
+      ["settings", "sales", "tierprices", "plans"].includes(l.key)
+    );
+    if (endIdx >= 0) links.splice(endIdx, 0, tempItem);
     else links.push(tempItem);
   }
   const linksMapped = links.map((item) => {
@@ -435,16 +452,23 @@ export default function AppShell({ company, member, children }) {
                         {item.label}
                       </Link>
                     );
-                    // Walkthrough and Bidding heading (owner, 2026-11-03):
-                    // presentational only -- it is not a link and never a
-                    // search result, so it renders only over the full
-                    // (unsearched) panel, directly above Walkthroughs.
-                    // All three chain items are manager-gated, so the
-                    // heading appears exactly when they do.
+                    // Department headings (Wendy, WorkTeams walkthrough,
+                    // 2026-11-19): presentational only -- a heading is not
+                    // a link and never a search result, so headings render
+                    // only over the full (unsearched) panel. "SALES
+                    // DEPARTMENT" sits directly above Walkthroughs (the
+                    // selling chain -- Walkthroughs, Bids, Contracts --
+                    // all manager-gated, so the heading appears exactly
+                    // when they do; this renames the 2026-11-03
+                    // "Walkthrough and Bidding" grouping into the Sales
+                    // department Wendy asked for). "CUSTOMER SERVICE
+                    // DEPARTMENT" sits directly above Client Portal --
+                    // that page carries the customer service inbox too,
+                    // so the portal item is the department's door.
                     if (navResults === null && item.key === "walkthroughs") {
                       return [
                         <p
-                          key="walkthrough-bidding-heading"
+                          key="sales-department-heading"
                           aria-hidden="true"
                           style={{
                             margin: "10px 12px 2px",
@@ -454,7 +478,25 @@ export default function AppShell({ company, member, children }) {
                             color: "var(--muted)",
                           }}
                         >
-                          WALKTHROUGH AND BIDDING
+                          SALES DEPARTMENT
+                        </p>,
+                        link,
+                      ];
+                    }
+                    if (navResults === null && item.key === "portal") {
+                      return [
+                        <p
+                          key="customer-service-department-heading"
+                          aria-hidden="true"
+                          style={{
+                            margin: "10px 12px 2px",
+                            fontSize: "0.75rem",
+                            fontWeight: 800,
+                            letterSpacing: "0.08em",
+                            color: "var(--muted)",
+                          }}
+                        >
+                          CUSTOMER SERVICE DEPARTMENT
                         </p>,
                         link,
                       ];

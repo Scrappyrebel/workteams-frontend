@@ -653,7 +653,7 @@ export default function SuppliesPage() {
     return (
       <div>
         <p className="eyebrow">SUPPLIES</p>
-        <h2 style={{ fontSize: "1.8rem" }}>🔒 Supplies</h2>
+        <h2 style={{ fontSize: "1.8rem" }}>🔒 Inventory</h2>
         <section className="panel" style={{ padding: 22, marginTop: 18 }}>
           <p>Supply tracking is a <strong>Pro</strong> feature.</p>
           <Link href={`/app/${company.id}/plans`} style={{ color: "var(--brand-deep)", fontWeight: 700 }}>
@@ -676,7 +676,7 @@ export default function SuppliesPage() {
     return (
       <div>
         <p className="eyebrow">SUPPLIES</p>
-        <h2 style={{ fontSize: "1.8rem" }}>Supply inventory</h2>
+        <h2 style={{ fontSize: "1.8rem" }}>Inventory</h2>
         {lowStock.length > 0 && (
           <p style={{ color: "#b3261e", fontWeight: 700 }}>
             ⚠️ {lowStock.length} item{lowStock.length === 1 ? "" : "s"} at or below reorder level
@@ -755,7 +755,7 @@ export default function SuppliesPage() {
   return (
     <div>
       <p className="eyebrow">SUPPLIES</p>
-      <h2 style={{ fontSize: "1.8rem" }}>Supply inventory</h2>
+      <h2 style={{ fontSize: "1.8rem" }}>Inventory</h2>
       {lowStock.length > 0 && (
         <p style={{ color: "#b3261e", fontWeight: 700 }}>
           ⚠️ {lowStock.length} item{lowStock.length === 1 ? "" : "s"} at or below reorder level

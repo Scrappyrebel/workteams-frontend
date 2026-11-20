@@ -121,8 +121,11 @@ test("supplies page records movements and wires all four pieces, fail-soft", () 
 
 test("supplies nav is reachable by members (the page still gates by tier and role)", () => {
   const shell = read(SHELL);
+  // Label renamed "Supplies" -> "Inventory" at the 2026-11-19
+  // walkthrough (Wendy): the inventory page stands on its own under
+  // that name. Key, href and role gate are unchanged.
   assert.ok(
-    shell.includes('{ key: "supplies", label: "Supplies", href: (c) => `/app/${c}/supplies`, minRole: null }'),
+    shell.includes('{ key: "supplies", label: "Inventory", href: (c) => `/app/${c}/supplies`, minRole: null }'),
     "supplies nav entry is member-visible"
   );
 });
