@@ -32,6 +32,17 @@ const PAYROLL_PROVIDERS = [
   { name: "QuickBooks Payroll", url: "https://quickbooks.intuit.com/payroll/", blurb: "Intuit's payroll service, run in your own QuickBooks account, outside WorkTeams. It is separate from the QuickBooks Online accounting connection below -- connecting accounting does not connect payroll." },
 ];
 
+// Other accounting programs (Wendy, walkthrough 2026-11-19, #28):
+// listed honestly as NOT connected, with a link out to each
+// program's own site — the same pattern as the payroll cards above.
+const ACCOUNTING_PROGRAMS = [
+  { name: "FreshBooks", url: "https://www.freshbooks.com", blurb: "Bookkeeping and invoicing you run in your own FreshBooks account, outside WorkTeams." },
+  { name: "Xero", url: "https://www.xero.com", blurb: "Bookkeeping you run in your own Xero account, outside WorkTeams." },
+  { name: "Sage", url: "https://www.sage.com", blurb: "Bookkeeping you run in your own Sage account, outside WorkTeams." },
+  { name: "Wave", url: "https://www.waveapps.com", blurb: "Bookkeeping and invoicing you run in your own Wave account, outside WorkTeams." },
+  { name: "Zoho Books", url: "https://www.zoho.com/books/", blurb: "Bookkeeping you run in your own Zoho Books account, outside WorkTeams." },
+];
+
 export default function ConnectionsPage() {
   const { company, member, loading } = useCompany();
   const isManager = member && (member.role === "owner" || member.role === "admin");
@@ -205,7 +216,13 @@ export default function ConnectionsPage() {
         ))}
       </div>
 
-      <h3 style={{ marginTop: 30 }}>QuickBooks</h3>
+      <h3 style={{ marginTop: 30 }}>Accounting</h3>
+      <p style={{ color: "var(--muted)" }}>
+        Your books live in an accounting program. QuickBooks Online can connect to
+        WorkTeams below; Ridgefront Accounting — made by the same team as WorkTeams —
+        is a real choice too; and the other well-known programs are listed under it,
+        honestly marked as not connected.
+      </p>
       <section className="panel" style={{ padding: 24 }}>
         <p className="eyebrow">QUICKBOOKS ONLINE</p>
         {!isManager ? (
@@ -216,10 +233,11 @@ export default function ConnectionsPage() {
           <p style={{ marginBottom: 0 }}>Checking the QuickBooks connection…</p>
         ) : qbo === "setup" ? (
           <>
-            <p style={{ ...statusBadge }}>🛠 Setup pending</p>
+            <p style={{ ...statusBadge }}>⚪ Not connected</p>
             <p>
-              The QuickBooks connection isn't switched on yet -- a setup step still has to
-              run first. Nothing is connected and nothing is synced.
+              This company isn't connected to QuickBooks, and connecting isn't
+              available yet. Nothing is connected and nothing is synced. When
+              connecting opens, you'll link your own QuickBooks right here.
             </p>
           </>
         ) : qboConnected || qboAttention ? (
@@ -279,6 +297,79 @@ export default function ConnectionsPage() {
           </>
         )}
       </section>
+
+      <section className="panel" style={{ padding: 24, marginTop: 20 }}>
+        <p className="eyebrow">RIDGEFRONT ACCOUNTING</p>
+        <p style={{ ...statusBadge }}>🟢 Available — from the makers of WorkTeams</p>
+        <p>
+          Ridgefront Accounting is our own bookkeeping app, made by the same team
+          as WorkTeams. Your books live there — income, expenses, reports, and
+          year-end numbers, in plain words — and WorkTeams invoices you send from
+          the Invoices page can go straight into it.
+        </p>
+        <p>
+          New to Ridgefront Accounting? It is a separate monthly subscription from
+          WorkTeams. Sign up on its own site:
+        </p>
+        <a href="https://ridgefront-accounting.pages.dev" target="_blank" rel="noopener noreferrer" style={primaryLink}>
+          Open Ridgefront Accounting ↗
+        </a>
+      </section>
+
+      <h3 style={{ marginTop: 30 }}>Other accounting programs — not connected</h3>
+      <p style={{ color: "var(--muted)" }}>
+        None of the programs in this section is connected to WorkTeams, and nothing
+        syncs to or from any of them yet. Their buttons open each program's own site.
+      </p>
+      <div className="portal-grid" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))" }}>
+        {ACCOUNTING_PROGRAMS.map((p) => (
+          <div className="portal-card" key={p.name} style={{ minHeight: 0, padding: 22 }}>
+            <span className="card-kicker">{p.name}</span>
+            <p style={{ ...statusBadge }}>⚪ Not connected — external link</p>
+            <p style={{ marginTop: 8 }}>{p.blurb}</p>
+            <p style={{ fontSize: "0.85rem", color: "var(--muted)" }}>
+              There is no connection between WorkTeams and {p.name}: no sign-in is saved
+              here, no credentials are entered here, and no data syncs either way. The
+              button below just opens {p.name}'s own website.
+            </p>
+            <a
+              href={p.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{
+                display: "inline-block",
+                marginTop: 10,
+                padding: "10px 20px",
+                borderRadius: 999,
+                border: "1px solid var(--line)",
+                background: "#fff",
+                fontWeight: 800,
+                color: "var(--ink)",
+                textDecoration: "none",
+              }}
+            >
+              Go to {p.name}'s site ↗
+            </a>
+          </div>
+        ))}
+      </div>
+
+      <h3 style={{ marginTop: 30 }}>Also from Ridgefront</h3>
+      <div className="portal-grid" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))" }}>
+        <div className="portal-card" style={{ minHeight: 0, padding: 22 }}>
+          <span className="card-kicker">Ridgefront Office</span>
+          <p style={{ ...statusBadge }}>🔜 Coming soon</p>
+          <p style={{ marginTop: 8 }}>
+            Documents, spreadsheets, slides, business email on your own domain,
+            calendar, and file storage under one sign-in — in plain words, with
+            only the features a small business actually uses.
+          </p>
+          <p style={{ fontSize: "0.85rem", color: "var(--muted)" }}>
+            Ridgefront Office is still being finished, so there's no sign-up yet.
+            It will be offered here when it's ready.
+          </p>
+        </div>
+      </div>
     </div>
   );
 }
