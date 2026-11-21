@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import CommercialConstructionNotice from "../../../../components/CommercialConstructionNotice";
+import BillingCardForm from "../../../../components/BillingCardForm";
 import { supabase } from "../../../../lib/supabase";
 import { useCompany } from "../../../../lib/company-context";
 import { TIERS } from "../../../../lib/tiers";
@@ -21,6 +22,12 @@ export default function PlansPage() {
   // { cancelAtPeriodEnd, currentPeriodEnd }.
   const [cancelInfo, setCancelInfo] = useState(null);
   const [cancelArmed, setCancelArmed] = useState(false);
+  // In-app billing (Wendy, 2026-11-06): plan changes and card updates
+  // happen on this page — the owner is never sent off-site to Stripe.
+  const [billingSummary, setBillingSummary] = useState(null);
+  const [switchKey, setSwitchKey] = useState(null);
+  const [cardFormOpen, setCardFormOpen] = useState(false);
+  const [billingNotice, setBillingNotice] = useState("");
 
   async function apiGet(path) {
     const { data: { session } } = await supabase().auth.getSession();
@@ -61,6 +68,15 @@ export default function PlansPage() {
       .catch(() => setCancelInfo(null));
   }, [company?.id, isOwner, hasSubscription]);
 
+  // Load the billing summary (card on file + next charge) in-app.
+  useEffect(() => {
+    if (!company?.id || !isOwner || !hasSubscription) return;
+    apiGet(`/api/stripe/billing?companyId=${company.id}`)
+      .then(setBillingSummary)
+      .catch(() => setBillingSummary(null));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [company?.id, isOwner, hasSubscription]);
+
   async function api(path, body) {
     const { data: { session } } = await supabase().auth.getSession();
     const res = await fetch(path, {
@@ -97,15 +113,34 @@ export default function PlansPage() {
     }
   }
 
-  async function manageBilling() {
-    setBusy(true);
-    try {
-      const { url } = await api("/api/stripe/portal", { companyId: company.id });
-      window.location.href = url;
-    } catch (e) {
-      alert("Could not open billing: " + e.message);
-      setBusy(false);
+  // Switch plans in-app: two-tap confirm (same pattern as subscribe
+  // and cancel), then the API moves the subscription to the new
+  // tier's price. No portal, no leaving the app.
+  async function changePlan(key) {
+    if (!isOwner || key === tier) return;
+    if (switchKey !== key) {
+      setSwitchKey(key);
+      return;
     }
+    setSwitchKey(null);
+    setBusy(true);
+    setBillingNotice("");
+    try {
+      const res = await api("/api/stripe/change-plan", { companyId: company.id, tier: key });
+      setBilling((b) => ({ ...(b || {}), tier: key, subscription_status: res.status || b?.subscription_status }));
+      setBillingNotice(res.alreadyOnPlan ? "You are already on that plan." : `Plan changed to ${TIERS[key].name}.`);
+      const summary = await apiGet(`/api/stripe/billing?companyId=${company.id}`).catch(() => null);
+      if (summary) setBillingSummary(summary);
+    } catch (e) {
+      alert("Could not change plan: " + e.message);
+    }
+    setBusy(false);
+  }
+
+  function cardSaved(card) {
+    setCardFormOpen(false);
+    setBillingSummary((s) => (s ? { ...s, card } : s));
+    setBillingNotice(card ? `Card updated — ${card.brand} ending in ${card.last4}.` : "Card updated.");
   }
 
   // In-app cancellation: schedules the Stripe subscription to end at the
@@ -141,7 +176,7 @@ export default function PlansPage() {
       <h2 style={{ fontSize: "1.8rem" }}>Choose your tier</h2>
       <p style={{ color: "var(--muted)" }}>
         {hasSubscription
-          ? `Subscription status: ${status}. Manage or change your plan through billing.`
+          ? `Subscription status: ${status}. Your plan and card are managed right here on this page.`
           : "Pick a tier to subscribe. You'll check out securely with Stripe."}
       </p>
       {!hasSubscription && (
@@ -159,9 +194,45 @@ export default function PlansPage() {
         </p>
       )}
       {isOwner && hasSubscription && (
-        <button onClick={manageBilling} disabled={busy} style={{ ...button, width: "auto", padding: "12px 28px", marginTop: 8 }}>
-          {busy ? "Opening…" : "Manage billing"}
-        </button>
+        <section className="panel" style={{ padding: 20, marginTop: 16, textAlign: "center" }}>
+          <h3 style={{ margin: "0 0 8px" }}>Billing</h3>
+          {billingNotice && <p role="status" style={{ fontWeight: 700 }}>{billingNotice}</p>}
+          {billingSummary ? (
+            <>
+              <p style={{ margin: "6px 0" }}>
+                {billingSummary.card
+                  ? <>💳 Card on file: <strong>{billingSummary.card.brand} ending in {billingSummary.card.last4}</strong>
+                      {billingSummary.card.expMonth ? ` (expires ${billingSummary.card.expMonth}/${billingSummary.card.expYear})` : ""}</>
+                  : "No card on file yet."}
+              </p>
+              {billingSummary.nextCharge && billingSummary.nextCharge.amountCents != null && (
+                <p style={{ margin: "6px 0", color: "var(--muted)" }}>
+                  Next charge: <strong>${(billingSummary.nextCharge.amountCents / 100).toFixed(2)}</strong>
+                  {billingSummary.nextCharge.date
+                    ? ` on ${new Date(billingSummary.nextCharge.date * 1000).toLocaleDateString()}`
+                    : ""}
+                </p>
+              )}
+            </>
+          ) : (
+            <p style={{ color: "var(--muted)", margin: "6px 0" }}>Loading your billing details…</p>
+          )}
+          {cardFormOpen ? (
+            <BillingCardForm
+              companyId={company.id}
+              onSaved={cardSaved}
+              onCancel={() => setCardFormOpen(false)}
+            />
+          ) : (
+            <button
+              onClick={() => setCardFormOpen(true)}
+              disabled={busy}
+              style={{ ...button, width: "auto", padding: "12px 28px", marginTop: 8 }}
+            >
+              {billingSummary?.card ? "Update card" : "Add a card"}
+            </button>
+          )}
+        </section>
       )}
       {isOwner && hasSubscription && status === "active" && (
         cancelInfo?.cancelAtPeriodEnd ? (
@@ -214,9 +285,13 @@ export default function PlansPage() {
               </ul>
               {isOwner ? (
                 hasSubscription ? (
-                  <p style={{ color: "var(--muted)", fontSize: "0.88rem" }}>
-                    {isCurrent ? "This is your current plan." : "Change plans through Manage billing."}
-                  </p>
+                  isCurrent ? (
+                    <p style={{ color: "var(--muted)", fontSize: "0.88rem" }}>This is your current plan.</p>
+                  ) : (
+                    <button onClick={() => changePlan(key)} disabled={busy} style={button}>
+                      {switchKey === key ? "Tap again to confirm switch" : `Switch to ${t.name}`}
+                    </button>
+                  )
                 ) : (
                   <button
                     onClick={() => subscribe(key)}

@@ -66,7 +66,7 @@ export async function POST(req) {
         const existing = await stripe.subscriptions.retrieve(company.stripe_subscription_id);
         if (existing.status === "active" || existing.status === "trialing") {
           return NextResponse.json(
-            { error: "This company already has an active subscription. Use “Manage billing” to change plans.", portal: true },
+            { error: "This company already has an active subscription. Change plans on the Plans page.", portal: true },
             { status: 409 }
           );
         }
