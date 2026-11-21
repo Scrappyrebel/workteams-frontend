@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import TempAgencyConstructionNotice from "../../components/TempAgencyConstructionNotice";
 
 /* Public sales page for Lilly B's Temp Cleaning Staffing (/temp) — restyled
    2026-10-20 to the same layout language as the WorkTeams landing (dark
@@ -595,6 +596,7 @@ export default function TempLanding() {
 
   return (
     <main className="wt2-t-site">
+      <TempAgencyConstructionNotice />
       {/* NAV */}
       <header className="wt2-t-nav">
         <span className="wt2-t-nav-brand">
