@@ -12,6 +12,7 @@ import { dateInTz } from "../../../../lib/dates";
 import { proofRequired } from "../../../../lib/proof-policy";
 import { createPunchOutbox, openBrowserPunchStorage } from "../../../../lib/punch-outbox.mjs";
 import { browserOfflineStorage, loadOfflineContext, saveOfflineContext, clockInSnapshot, openEntrySnapshot } from "../../../../lib/offline-context.mjs";
+import { vaultCountFor } from "../../../../lib/media-vault.mjs";
 
 function getPosition() {
   return new Promise((resolve) => {
@@ -100,7 +101,23 @@ function chooseRosterShift(entry, candidates, timeZone) {
 
 export default function TimeClockPage() {
   const { company, member, loading, offline: shellOffline } = useCompany();
+
+  // Saved-offline proof (media vault): keep the waiting count current
+  // so the banner below is never stale.
+  useEffect(() => {
+    if (!company?.id || !member?.id) return;
+    let cancelled = false;
+    const recount = () => {
+      vaultCountFor({ companyId: company.id, memberId: member.id })
+        .then((n) => { if (!cancelled) setVaultCount(n); })
+        .catch(() => {});
+    };
+    recount();
+    window.addEventListener("online", recount);
+    return () => { cancelled = true; window.removeEventListener("online", recount); };
+  }, [company?.id, member?.id, open?.id]);
   const [open, setOpen] = useState(null);
+  const [vaultCount, setVaultCount] = useState(0);
   const [entries, setEntries] = useState([]);
   const [locations, setLocations] = useState([]);
   const [myShifts, setMyShifts] = useState([]);
@@ -877,6 +894,12 @@ export default function TimeClockPage() {
     <div>
       <p className="eyebrow">TIME CLOCK</p>
       <h2 style={{ fontSize: "1.8rem" }}>Clock in / out</h2>
+
+      {vaultCount > 0 && (
+        <p role="status" style={{ fontWeight: 700, padding: 12, border: "2px solid #d9a400", background: "#fff7e0", borderRadius: 8 }}>
+          📴 {vaultCount} proof item{vaultCount === 1 ? "" : "s"} saved on this phone, waiting to upload. They send themselves when the shift's proof section opens with signal.
+        </p>
+      )}
 
       {offlineMode && (
         <p role="status" style={{ fontWeight: 800, padding: 12, border: "2px solid #b3261e", background: "#fdecea", borderRadius: 8 }}>
