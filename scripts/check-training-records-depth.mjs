@@ -16,6 +16,15 @@ const read = (p) => readFileSync(p, "utf8");
 //   are plain words for stored statuses. Nothing is backfilled or
 //   restated, and the page performs NO writes of any kind — training
 //   records are compliance evidence.
+// * SUPERSEDED IN PART (Wendy, walkthrough 2026-11-19, item #24):
+//   managers now ASSIGN courses from this page. The no-writes rule
+//   survives as no DIRECT writes — the page contains no insert /
+//   update / delete / upsert call of its own; the single write path
+//   is the assignment, which goes through lib/training enroll()
+//   (the same path a self-start takes) with the assigning manager
+//   recorded in assigned_by_member_id (migration 100). The
+//   enrollments read tolerates a pre-100 database by falling back
+//   to the select without that column.
 // * Scope is unchanged: managers see the company's rows, everyone
 //   else only their own member rows, for the new reads exactly as for
 //   the certification read. The 075 alerts block and the certification
@@ -57,9 +66,15 @@ test("records page scope is unchanged for every read (manager vs own)", () => {
   );
 });
 
-test("records page is read-only and keeps the 075 alerts + certification rendering", () => {
+test("records page has no direct writes (assignment goes through lib enroll) and keeps the 075 alerts + certification rendering", () => {
   const page = read(PAGE);
-  assert.ok(!/\.insert\(|\.update\(|\.delete\(|\.upsert\(/.test(page), "no writes on the records page");
+  assert.ok(!/\.insert\(|\.update\(|\.delete\(|\.upsert\(/.test(page), "no direct writes on the records page");
+  for (const needle of [
+    'import { enroll } from "../../../../../lib/training";',
+    ">Assign a course<",
+    "assigned_by_member_id",
+    "Assigned by",
+  ]) assert.ok(page.includes(needle), `records page contains: ${needle}`);
   for (const needle of [
     'sb.rpc("refresh_training_certification_alerts"',
     '.from("training_certifications")',

@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { supabase } from "../../../../../lib/supabase";
 import { useCompany } from "../../../../../lib/company-context";
+import { enroll } from "../../../../../lib/training";
 
 // Stored enrollment status -> the words this page shows for it. The
 // status itself is the stored value from training_enrollments (021);
@@ -31,6 +32,12 @@ export default function TrainingRecordsPage() {
   const [attempts, setAttempts] = useState([]);
   const [stepCounts, setStepCounts] = useState({});
   const [query, setQuery] = useState("");
+  const [roster, setRoster] = useState([]);
+  const [courses, setCourses] = useState([]);
+  const [assignForm, setAssignForm] = useState({ memberId: "", courseId: "" });
+  const [assignMsg, setAssignMsg] = useState("");
+  const [assignBusy, setAssignBusy] = useState(false);
+  const [refresh, setRefresh] = useState(0);
 
   const isManager = member && (member.role === "owner" || member.role === "admin");
 
@@ -71,6 +78,27 @@ export default function TrainingRecordsPage() {
           (alertRows || []).filter((a) => certById[a.certification_id])
         );
       }
+      // Roster (names for the assign panel and for the "Assigned by"
+      // labels) comes from team_directory — the roster view every
+      // company member can read. Courses load for managers only:
+      // they are the assign panel's choices. Both fail soft — an
+      // error here leaves the lists empty and the rest of the page
+      // renders exactly as before.
+      const { data: rosterRows } = await sb
+        .from("team_directory")
+        .select("id, display_name")
+        .eq("company_id", companyId)
+        .order("display_name", { ascending: true });
+      if (rosterRows) setRoster(rosterRows);
+      if (isManager) {
+        const { data: courseRows } = await sb
+          .from("training_courses")
+          .select("id, title, slug")
+          .eq("is_active", true)
+          .order("category", { ascending: true })
+          .order("sort_order", { ascending: true });
+        if (courseRows) setCourses(courseRows);
+      }
       // Course progress + exam attempts (migration 021 tables, stored
       // since the academy launched — this page simply never read them).
       // Same scope as the certifications above: managers see the
@@ -78,17 +106,27 @@ export default function TrainingRecordsPage() {
       // policies enforce the same split in the database. Fail-soft on
       // purpose: if any of these reads error, the certifications and
       // alerts above still render exactly as they did before.
-      let eq = sb
-        .from("training_enrollments")
-        .select(`
-          id, status, current_step, started_at, completed_at,
+      // assigned_by_member_id arrives with migration 100; until it
+      // is run, a select naming the column errors. Try the full
+      // select first and fall back to the pre-100 shape — the page
+      // then renders exactly as it did before (the assignment write
+      // fails soft the same way inside lib/training enroll()).
+      const enrSelect = (withAssign) => `
+          id, status, current_step, started_at, completed_at,${withAssign ? " assigned_by_member_id," : ""}
           training_courses!inner(title, slug),
           company_members!training_enrollments_member_id_fkey(id, display_name)
-        `)
-        .eq("company_id", companyId)
-        .order("started_at", { ascending: false });
-      if (!isManager) eq = eq.eq("member_id", member.id);
-      const { data: enrRows, error: enrError } = await eq;
+        `;
+      const buildEnr = (withAssign) => {
+        let eq = sb
+          .from("training_enrollments")
+          .select(enrSelect(withAssign))
+          .eq("company_id", companyId)
+          .order("started_at", { ascending: false });
+        if (!isManager) eq = eq.eq("member_id", member.id);
+        return eq;
+      };
+      let { data: enrRows, error: enrError } = await buildEnr(true);
+      if (enrError) ({ data: enrRows, error: enrError } = await buildEnr(false));
       if (!enrError) {
         const enrollments = enrRows || [];
         setProgress(enrollments);
@@ -116,7 +154,7 @@ export default function TrainingRecordsPage() {
         }
       }
     })();
-  }, [loading, member, companyId, isManager]);
+  }, [loading, member, companyId, isManager, refresh]);
 
   if (loading) return <p>Loading…</p>;
 
@@ -212,6 +250,72 @@ export default function TrainingRecordsPage() {
     URL.revokeObjectURL(url);
   }
 
+  // Who assigned this enrollment, for the progress list. A course
+  // the person started themselves (no assigner recorded, or the
+  // assigner is the trainee) gets no label — the label exists so a
+  // manager's assignment shows as one.
+  function assignerName(e) {
+    if (!e.assigned_by_member_id) return null;
+    if (e.company_members?.id && e.assigned_by_member_id === e.company_members.id) return null;
+    const person = roster.find((r) => r.id === e.assigned_by_member_id);
+    return person ? person.display_name : null;
+  }
+
+  // A manager assigns a course to a person (Wendy, walkthrough
+  // 2026-11-19, #24). The enrollment is created through
+  // lib/training enroll() — the same path a self-start takes — with
+  // the assigning manager recorded on it (migration 100). Results
+  // come back to this page: the enrollment appears under Training
+  // in progress, and its exam attempts and certification follow as
+  // the person works through the course.
+  async function assignCourse() {
+    const person = roster.find((r) => r.id === assignForm.memberId);
+    const course = courses.find((c) => c.id === assignForm.courseId);
+    if (!person || !course) {
+      setAssignMsg("Pick a person and a course first.");
+      return;
+    }
+    const already = progress.some(
+      (e) =>
+        e.company_members?.id === person.id &&
+        e.training_courses?.slug === course.slug
+    );
+    if (already) {
+      setAssignMsg(
+        `${person.display_name} already has ${course.title} on their record — their progress is on this page.`
+      );
+      return;
+    }
+    setAssignBusy(true);
+    setAssignMsg("");
+    try {
+      const sb = supabase();
+      const { data: stepRows, error: stepError } = await sb
+        .from("training_steps")
+        .select("id, step_number")
+        .eq("course_id", course.id)
+        .order("step_number", { ascending: true });
+      if (stepError) throw stepError;
+      await enroll(companyId, person.id, course.id, stepRows || [], member.id);
+      setAssignMsg(
+        `Assigned ${course.title} to ${person.display_name}. Their progress and results will show on this page.`
+      );
+      setAssignForm({ memberId: "", courseId: "" });
+      setRefresh((n) => n + 1);
+    } catch (err) {
+      const msg = String(err?.message || err || "");
+      if (/duplicate|unique/i.test(msg)) {
+        setAssignMsg(
+          `${person.display_name} already has ${course.title} on their record — their progress is on this page.`
+        );
+      } else {
+        setAssignMsg(`Could not assign that course: ${msg}`);
+      }
+    } finally {
+      setAssignBusy(false);
+    }
+  }
+
   return (
     <div>
       <Link href={`/app/${companyId}/training`} className="card-link">← Training Center</Link>
@@ -228,6 +332,46 @@ export default function TrainingRecordsPage() {
         />
         <button onClick={exportCsv} style={button}>Export CSV</button>
       </div>
+      {isManager && (
+        <div className="portal-card" style={{ margin: "14px 0 4px", minHeight: 0 }}>
+          <h3 style={{ margin: "0 0 6px" }}>Assign a course</h3>
+          <p style={{ margin: "0 0 10px", fontSize: "0.9rem", color: "var(--muted)" }}>
+            Pick a person and a course. They can start it right away from
+            their Training Center, and their progress and results show
+            back here on this page.
+          </p>
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+            <select
+              value={assignForm.memberId}
+              onChange={(e) => setAssignForm({ ...assignForm, memberId: e.target.value })}
+              style={searchInput}
+              aria-label="Person to assign the course to"
+            >
+              <option value="">Choose a person…</option>
+              {roster.map((r) => (
+                <option key={r.id} value={r.id}>{r.display_name}</option>
+              ))}
+            </select>
+            <select
+              value={assignForm.courseId}
+              onChange={(e) => setAssignForm({ ...assignForm, courseId: e.target.value })}
+              style={searchInput}
+              aria-label="Course to assign"
+            >
+              <option value="">Choose a course…</option>
+              {courses.map((c) => (
+                <option key={c.id} value={c.id}>{c.title}</option>
+              ))}
+            </select>
+            <button onClick={assignCourse} disabled={assignBusy} style={button}>
+              {assignBusy ? "Assigning…" : "Assign course"}
+            </button>
+          </div>
+          {assignMsg && (
+            <p style={{ margin: "10px 0 0", fontSize: "0.92rem" }}>{assignMsg}</p>
+          )}
+        </div>
+      )}
       {alerts.length > 0 && (
         <div style={{ margin: "14px 0 18px" }}>
           <h3 style={{ margin: "0 0 8px" }}>Certification alerts</h3>
@@ -321,6 +465,7 @@ export default function TrainingRecordsPage() {
       )}
       {visibleProgress.map((e) => {
         const c = stepCounts[e.id];
+        const by = assignerName(e);
         return (
           <div key={e.id} className="portal-card" style={{ marginBottom: 10, minHeight: 0 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -345,6 +490,7 @@ export default function TrainingRecordsPage() {
                   {STATUS_LABELS[e.status] || e.status} • Step {e.current_step} of 11
                   {c && <> • {c.done} of {c.total} steps completed</>}
                   {" "}• Started {new Date(e.started_at).toLocaleDateString()}
+                  {by && <> • Assigned by {by}</>}
                 </p>
               </div>
             </div>
