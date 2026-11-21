@@ -11,6 +11,7 @@ import { chooseAssignedShift, shiftBounds } from "../../../../lib/attendance-shi
 import { dateInTz } from "../../../../lib/dates";
 import { proofRequired } from "../../../../lib/proof-policy";
 import { createPunchOutbox, openBrowserPunchStorage } from "../../../../lib/punch-outbox.mjs";
+import { browserOfflineStorage, loadOfflineContext, saveOfflineContext, clockInSnapshot, openEntrySnapshot } from "../../../../lib/offline-context.mjs";
 
 function getPosition() {
   return new Promise((resolve) => {
@@ -98,7 +99,7 @@ function chooseRosterShift(entry, candidates, timeZone) {
 }
 
 export default function TimeClockPage() {
-  const { company, member, loading } = useCompany();
+  const { company, member, loading, offline: shellOffline } = useCompany();
   const [open, setOpen] = useState(null);
   const [entries, setEntries] = useState([]);
   const [locations, setLocations] = useState([]);
@@ -129,6 +130,11 @@ export default function TimeClockPage() {
   const outboxRef = useRef(null);
   const outboxInitRef = useRef(null);
   const punchHandlersRef = useRef(null);
+  // Offline mode (Wendy, 2026-11-21): this page is running on the
+  // saved on-phone context (lib/offline-context.mjs) because there is
+  // no connection. The banner says so in plain words; punches still
+  // save locally first and deliver when signal returns.
+  const [offlineMode, setOfflineMode] = useState(false);
   const [lastShiftLength, setLastShiftLength] = useState(null);
   const [proofEntry, setProofEntry] = useState(null);
   const [proofNotice, setProofNotice] = useState("");
@@ -164,7 +170,8 @@ export default function TimeClockPage() {
     } catch (e) {
       /* hats unavailable — clock in normally */
     }
-    const { data: openRows } = await sb
+    const offlineSnap = loadOfflineContext(browserOfflineStorage(), member.user_id, company.id);
+    const { data: openRows, error: openError } = await sb
       .from("time_entries")
       .select("*, locations(name)")
       .eq("company_id", company.id)
@@ -172,7 +179,20 @@ export default function TimeClockPage() {
       .is("clock_out", null)
       .order("clock_in", { ascending: false })
       .limit(1);
-    setOpen(openRows && openRows[0] ? openRows[0] : null);
+    if (openRows) {
+      setOpen(openRows[0] ? openRows[0] : null);
+    } else if (openError) {
+      // No connection: an open shift saved on this phone still clocks
+      // out — the entry id is all the outbox needs, and the punch
+      // carries its own time and GPS when it delivers.
+      const savedOpen = openEntrySnapshot(offlineSnap);
+      if (savedOpen) {
+        setOpen(savedOpen);
+        setOfflineMode(true);
+      } else {
+        setOpen(null);
+      }
+    }
 
     let q = sb
       .from("time_entries")
@@ -224,7 +244,14 @@ export default function TimeClockPage() {
     } catch { /* overrides unavailable — entries still render */ }
 
     const { data: locs } = await sb.from("locations").select("id, name, lat, lng, geofence_radius_m").eq("company_id", company.id).order("name");
-    setLocations(locs || []);
+    if (locs) {
+      setLocations(locs);
+    } else if (Array.isArray(offlineSnap?.time?.locations)) {
+      setLocations(offlineSnap.time.locations);
+      setOfflineMode(true);
+    } else {
+      setLocations([]);
+    }
 
     // Show ONLY this signed-in member's assigned locations. The clock-in API
     // repeats this check server-side, so a stale phone or edited request
@@ -239,10 +266,37 @@ export default function TimeClockPage() {
       .eq("member_id", member.id)
       .in("shift_date", [yesterday, today]);
     if (scheduleError) {
-      setShiftError("Could not check your assigned shifts. Tap Refresh my shifts.");
-      setShiftNotice("");
-      setMyShifts([]);
-      setLocationId("");
+      // Offline: fall back to today's shifts as the server confirmed
+      // them earlier on this phone, re-checked against the clock-in
+      // windows right now. Yesterday's snapshot never applies — the
+      // helper returns null unless it was saved for today.
+      const savedTime = clockInSnapshot(offlineSnap, today);
+      if (savedTime) {
+        const tzSaved = company.timezone || "America/Chicago";
+        const relevantSaved = (savedTime.shifts || []).filter((shift) =>
+          shift.shift_date === today ||
+          (shift.shift_date === yesterday && shift.start_time > shift.end_time)
+        );
+        const validSaved = relevantSaved.filter((shift) =>
+          !!chooseAssignedShift([shift], now, new Set(), tzSaved)
+        );
+        setShiftError("");
+        setShiftNotice(relevantSaved.length > 0 && validSaved.length === 0
+          ? "Your scheduled shift's 30-minute clock-in window has passed. Ask management to authorize clock-in."
+          : "");
+        setMyShifts(validSaved);
+        setLocationId((id) => {
+          if (validSaved.some((shift) => shift.location_id === id)) return id;
+          const distinct = [...new Set(validSaved.map((shift) => shift.location_id).filter(Boolean))];
+          return distinct.length === 1 ? distinct[0] : "";
+        });
+        setOfflineMode(true);
+      } else {
+        setShiftError("Could not check your assigned shifts. Tap Refresh my shifts.");
+        setShiftNotice("");
+        setMyShifts([]);
+        setLocationId("");
+      }
     } else {
       const tz = company.timezone || "America/Chicago";
       const relevant = (assigned || []).filter((shift) =>
@@ -265,6 +319,33 @@ export default function TimeClockPage() {
         if (valid.some((shift) => shift.location_id === id)) return id;
         const distinct = [...new Set(valid.map((shift) => shift.location_id).filter(Boolean))];
         return distinct.length === 1 ? distinct[0] : "";
+      });
+    }
+    if (!scheduleError) {
+      // Save the server-confirmed picture for a future no-signal
+      // open: today's assigned shifts, the locations, the open entry
+      // and the hats, all stamped with today's date.
+      saveOfflineContext(browserOfflineStorage(), member.user_id, company.id, {
+        time: {
+          forDate: today,
+          shifts: assigned || [],
+          locations: locs || offlineSnap?.time?.locations || [],
+          // If the open-entry read itself failed this load, keep the
+          // previously saved entry rather than wiping it.
+          openEntry: openRows
+            ? (openRows[0]
+              ? {
+                  id: openRows[0].id,
+                  clock_in: openRows[0].clock_in,
+                  clock_out: null,
+                  location_id: openRows[0].location_id,
+                  clock_in_role: openRows[0].clock_in_role || null,
+                  locations: openRows[0].locations ? { name: openRows[0].locations.name } : null,
+                }
+              : null)
+            : openEntrySnapshot(offlineSnap),
+          hats: got,
+        },
       });
     }
     setShiftLoading(false);
@@ -360,6 +441,29 @@ export default function TimeClockPage() {
     if (!loading && company && member) load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loading, company, member, filter]);
+
+  // Offline tracking: the browser's own signal events plus the
+  // layout's word that this whole session opened from the snapshot.
+  // Coming back online reloads from the server right away.
+  useEffect(() => {
+    if (shellOffline) setOfflineMode(true);
+  }, [shellOffline]);
+
+  useEffect(() => {
+    const goOffline = () => setOfflineMode(true);
+    const goOnline = () => {
+      setOfflineMode(false);
+      if (company && member) void load();
+    };
+    if (typeof navigator !== "undefined" && navigator.onLine === false) setOfflineMode(true);
+    window.addEventListener("offline", goOffline);
+    window.addEventListener("online", goOnline);
+    return () => {
+      window.removeEventListener("offline", goOffline);
+      window.removeEventListener("online", goOnline);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [company, member]);
 
   // Warn before leaving while proof uploads are still in flight.
   // Once uploads finish, hasPendingUploads() is false and no warning shows.
@@ -771,6 +875,12 @@ export default function TimeClockPage() {
     <div>
       <p className="eyebrow">TIME CLOCK</p>
       <h2 style={{ fontSize: "1.8rem" }}>Clock in / out</h2>
+
+      {offlineMode && (
+        <p role="status" style={{ fontWeight: 800, padding: 12, border: "2px solid #b3261e", background: "#fdecea", borderRadius: 8 }}>
+          📴 No connection — you are working offline. Clock in and out as usual: every punch is saved on this phone with its time and location, and sends itself when you are back in signal.
+        </p>
+      )}
 
       <section className="panel" style={{ padding: 24, margin: "18px 0", textAlign: "center" }}>
         {open ? (

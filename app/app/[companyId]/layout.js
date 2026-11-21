@@ -5,7 +5,8 @@ import { useParams, useRouter, usePathname } from "next/navigation";
 import AppShell from "../../../components/AppShell";
 import IosInstallHint from "../../../components/IosInstallHint";
 import { supabase } from "../../../lib/supabase";
-import { getUser, linkMemberOnSignIn } from "../../../lib/session";
+import { getUser, getSession, linkMemberOnSignIn } from "../../../lib/session";
+import { browserOfflineStorage, loadOfflineContext, saveOfflineContext, shellSnapshot } from "../../../lib/offline-context.mjs";
 import { CompanyContext } from "../../../lib/company-context";
 import { saveLastPath, clearLastPath } from "../../../lib/last-path";
 import { entitledTier } from "../../../lib/tiers";
@@ -15,12 +16,25 @@ export default function CompanyLayout({ children }) {
   const router = useRouter();
   const pathname = usePathname();
   const companyId = params.companyId;
-  const [state, setState] = useState({ company: null, member: null, loading: true });
+  const [state, setState] = useState({ company: null, member: null, loading: true, offline: false });
   const [denied, setDenied] = useState(false);
 
   useEffect(() => {
     (async () => {
-      const user = await getUser();
+      let user = await getUser();
+      if (!user) {
+        // Offline (Wendy, 2026-11-21): getUser() validates against the
+        // server, so with no signal it answers null even for a person
+        // who is properly signed in on this phone. The locally stored
+        // session still identifies them; company/member then load
+        // from the network if it is actually there, or from the saved
+        // snapshot if it is not. Only a phone with NO session at all
+        // is sent to sign in. Nothing here grants anything: punches
+        // still reach the server only with this session's token, and
+        // the server re-checks everything before recording them.
+        const session = await getSession().catch(() => null);
+        if (session?.user) user = session.user;
+      }
       if (!user) {
         router.replace("/login");
         return;
@@ -67,16 +81,31 @@ export default function CompanyLayout({ children }) {
         .eq("user_id", user.id)
         .single();
       if (!company || !member) {
+        // Offline fallback: the last server-confirmed company/member
+        // for THIS signed-in user and THIS company, saved on this
+        // phone. Display + local queueing only (see the session note
+        // above); the moment the network answers, the live load below
+        // is what runs instead.
+        const snap = loadOfflineContext(browserOfflineStorage(), user.id, companyId);
+        const shell = shellSnapshot(snap);
+        if (shell) {
+          setState({ company: shell.company, member: shell.member, loading: false, offline: true });
+          return;
+        }
         clearLastPath();
         setDenied(true);
-        setState({ company: null, member: null, loading: false });
+        setState({ company: null, member: null, loading: false, offline: false });
         return;
       }
       // Feature gating uses the paid entitlement (tier + live subscription
       // status), not the raw tier label. company.tier keeps the raw value
       // for the Plans/billing screens.
       company.effectiveTier = entitledTier(company);
-      setState({ company, member, loading: false });
+      // Save the confirmed shell for a future no-signal open.
+      saveOfflineContext(browserOfflineStorage(), user.id, companyId, {
+        shell: { company, member },
+      });
+      setState({ company, member, loading: false, offline: false });
     })();
   }, [companyId, router]);
 

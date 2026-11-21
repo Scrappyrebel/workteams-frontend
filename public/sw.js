@@ -2,7 +2,7 @@
 // (real "Install app" prompt, standalone window, home-screen icon that
 // behaves like an app). Static assets are cached; API/auth always hit
 // the network and are never cached.
-const CACHE = "workteams-v3-fresh-js-20261011";
+const CACHE = "workteams-v4-offline-clock-20261121";
 const STATIC_RE = /\.(js|css|png|jpg|jpeg|gif|svg|ico|woff2?)$/i;
 
 self.addEventListener("install", (event) => {
@@ -17,6 +17,59 @@ self.addEventListener("activate", (event) => {
         Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k)))
       )
       .then(() => self.clients.claim())
+  );
+});
+
+// ---- Offline clock (Wendy, 2026-11-21): cached pages + context ----
+// App pages under /app/ (documents and their RSC payloads) are cached
+// network-first, exactly like the scripts below: online always wins,
+// the cached copy is only ever the OFFLINE fallback. That is what lets
+// the Time Clock open in a building with no signal — the page, its
+// saved context (lib/offline-context.mjs) and the punch outbox
+// (lib/punch-outbox.mjs) do the rest. A page never visited online has
+// no cached copy; the fallback below says so plainly instead of
+// leaving the browser's dead-page error.
+const OFFLINE_HTML =
+  "<!doctype html><html><head><meta charset=\"utf-8\">" +
+  "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">" +
+  "<title>WorkTeams — offline</title></head>" +
+  "<body style=\"font-family: system-ui, sans-serif; padding: 24px; text-align: center;\">" +
+  "<h2>📴 You're offline</h2>" +
+  "<p>WorkTeams needs a signal once to load this page. " +
+  "Reconnect, open the page, and after that it will open offline too.</p>" +
+  "</body></html>";
+
+self.addEventListener("fetch", (event) => {
+  const { request } = event;
+  if (request.method !== "GET") return;
+  const url = new URL(request.url);
+  if (url.origin !== self.location.origin) return;
+  const isNavigation = request.mode === "navigate";
+  const isRsc = url.searchParams.has("_rsc");
+  if (!isNavigation && !isRsc) return;
+  if (!(url.pathname === "/" || url.pathname === "/app" || url.pathname.startsWith("/app/"))) return;
+  event.respondWith(
+    caches.open(CACHE).then(async (cache) => {
+      try {
+        const res = await fetch(request);
+        // Never cache a redirect (e.g. to the login page): offline we
+        // must serve the real page or nothing, never a sign-in wall
+        // wearing the page's address.
+        if (res && res.ok && !res.redirected) {
+          await cache.put(request, res.clone());
+        }
+        return res;
+      } catch (err) {
+        const cachedPage = await cache.match(request);
+        if (cachedPage) return cachedPage;
+        if (isNavigation) {
+          return new Response(OFFLINE_HTML, {
+            headers: { "Content-Type": "text/html; charset=utf-8" },
+          });
+        }
+        return Response.error();
+      }
+    })
   );
 });
 
