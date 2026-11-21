@@ -243,7 +243,9 @@ export default function TimeClockPage() {
       }
     } catch { /* overrides unavailable — entries still render */ }
 
-    const { data: locs } = await sb.from("locations").select("id, name, lat, lng, geofence_radius_m").eq("company_id", company.id).order("name");
+    let locsRes = await sb.from("locations").select("id, name, lat, lng, geofence_radius_m, require_geofence").eq("company_id", company.id).order("name");
+    if (locsRes.error) locsRes = await sb.from("locations").select("id, name, lat, lng, geofence_radius_m").eq("company_id", company.id).order("name");
+    const { data: locs } = locsRes;
     if (locs) {
       setLocations(locs);
     } else if (Array.isArray(offlineSnap?.time?.locations)) {
@@ -700,7 +702,7 @@ export default function TimeClockPage() {
       // Fast client-side pre-check for a friendly message; the server
       // re-checks the geofence authoritatively before writing anything.
       const loc = locations.find((l) => l.id === locationId);
-      const fence = geoEnforced && loc && loc.lat != null && loc.lng != null
+      const fence = geoEnforced && loc && loc.lat != null && loc.lng != null && loc.require_geofence !== false
         ? { lat: parseFloat(loc.lat), lng: parseFloat(loc.lng), radius: parseInt(loc.geofence_radius_m, 10) || 100, name: loc.name }
         : null;
       const pos = await getPosition();
@@ -919,7 +921,7 @@ export default function TimeClockPage() {
               style={{ marginBottom: 12 }}>↻ Refresh my shifts</button>
             {(() => {
               const sel = locations.find((l) => l.id === locationId);
-              const fenced = geoEnforced && sel && sel.lat != null && sel.lng != null;
+              const fenced = geoEnforced && sel && sel.lat != null && sel.lng != null && sel.require_geofence !== false;
               return fenced ? (
                 <p style={{ color: "var(--brand-deep)", fontSize: "0.88rem", fontWeight: 700, margin: "0 0 10px" }}>
                   📍 Geofence active — you must be within {parseInt(sel.geofence_radius_m, 10) || 100}m of {sel.name} to clock in.

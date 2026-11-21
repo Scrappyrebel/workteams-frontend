@@ -8,7 +8,7 @@ import { isManagerRole, isSupervisorRole } from "../../../../lib/roles";
 import { chicagoToday, chicagoDaysAgo } from "../../../../lib/dates";
 import { validateLocationGeofence } from "../../../../lib/location-geofence-validation.mjs";
 
-const emptyForm = { name: "", address: "", client_name: "", client_phone: "", notes: "", lat: "", lng: "", geofence_radius_m: 100, rate_area_id: "" };
+const emptyForm = { name: "", address: "", client_name: "", client_phone: "", notes: "", lat: "", lng: "", geofence_radius_m: 100, require_geofence: true, rate_area_id: "" };
 
 async function geocodeAddress(address) {
   const url = "https://nominatim.openstreetmap.org/search?format=json&limit=1&q=" + encodeURIComponent(address);
@@ -125,6 +125,7 @@ export default function LocationsPage() {
       lat: Number.isFinite(lat) ? lat : null,
       lng: Number.isFinite(lng) ? lng : null,
       geofence_radius_m: parseInt(form.geofence_radius_m, 10) || 100,
+      require_geofence: form.require_geofence !== false,
       rate_area_id: form.rate_area_id || null,
     };
     // Gate codes, alarm notes, client phone numbers stay out of the main
@@ -137,10 +138,20 @@ export default function LocationsPage() {
     let locId = editing;
     if (editing) {
       ({ error } = await sb.from("locations").update(payload).eq("id", editing));
+      if (error && /require_geofence/.test(error.message || "")) {
+        const { require_geofence: _drop, ...rest } = payload;
+        ({ error } = await sb.from("locations").update(rest).eq("id", editing));
+      }
     } else {
       const { data, error: insErr } = await sb.from("locations").insert(payload).select("id").single();
       error = insErr;
       if (data) locId = data.id;
+      if (error && /require_geofence/.test(error.message || "")) {
+        const { require_geofence: _drop, ...rest } = payload;
+        const retry = await sb.from("locations").insert(rest).select("id").single();
+        error = retry.error;
+        if (retry.data) locId = retry.data.id;
+      }
     }
     if (!error && locId) {
       const { error: privErr } = await sb.from("location_private").upsert(
@@ -252,6 +263,7 @@ export default function LocationsPage() {
       lat: l.lat ?? "",
       lng: l.lng ?? "",
       geofence_radius_m: l.geofence_radius_m ?? 100,
+      require_geofence: l.require_geofence !== false,
       rate_area_id: l.rate_area_id || "",
     });
     window.scrollTo({ top: 0, behavior: "smooth" });
@@ -338,6 +350,21 @@ export default function LocationsPage() {
                 Geofence radius (meters)
                 <input type="number" min="10" value={form.geofence_radius_m} onChange={(e) => setForm({ ...form, geofence_radius_m: e.target.value })} style={{ ...input, marginTop: 6 }} />
               </label>
+              <label style={{ display: "flex", gap: 8, alignItems: "flex-start", fontSize: "0.9rem", marginTop: 10, cursor: "pointer" }}>
+                <input
+                  type="checkbox"
+                  checked={form.require_geofence !== false}
+                  onChange={(ev) => setForm({ ...form, require_geofence: ev.target.checked })}
+                  style={{ marginTop: 3 }}
+                />
+                <span>
+                  <strong>Require the geofence to clock in</strong>
+                  <br />
+                  <span style={{ color: "var(--muted)", fontSize: "0.82rem" }}>
+                    Untick this for a place with no signal — people there can clock in without the location check.
+                  </span>
+                </span>
+              </label>
               <p style={{ fontSize: "0.82rem", color: "var(--muted)", margin: "8px 0 0" }}>
                 Clock-ins outside this boundary are blocked. For Missouri sites, longitude must be negative (west). Confirm the pin at the building.
               </p>
@@ -419,7 +446,7 @@ export default function LocationsPage() {
           const raName = rateAreas.find((r) => r.id === l.rate_area_id)?.name;
           return (
           <div key={l.id} className="portal-card" style={{ minHeight: 0, padding: "16px 20px" }}>
-            <span className="card-kicker">{hasFence ? `📍 ${l.geofence_radius_m}m geofence` : "No geofence"}</span>
+            <span className="card-kicker">{l.require_geofence === false ? "Geofence off — no location check to clock in" : hasFence ? `📍 ${l.geofence_radius_m}m geofence` : "No geofence"}</span>
             <h3 style={{ margin: "6px 0" }}>{l.name}</h3>
             {l.address && <p style={{ color: "var(--muted)", margin: 0 }}>{l.address}</p>}
             {raName && <p style={{ margin: "4px 0 0", fontSize: "0.9rem" }}>💲 Rate area: {raName}</p>}

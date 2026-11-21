@@ -51,10 +51,17 @@ export async function GET(req) {
       .lte("clock_in", `${end}T23:59:59`)
       .order("clock_in");
 
-    const { data: locations } = await client
+    let locRes = await client
       .from("locations")
-      .select("id, name, lat, lng, geofence_radius_m")
+      .select("id, name, lat, lng, geofence_radius_m, require_geofence")
       .eq("company_id", companyId);
+    if (locRes.error) {
+      locRes = await client
+        .from("locations")
+        .select("id, name, lat, lng, geofence_radius_m")
+        .eq("company_id", companyId);
+    }
+    const { data: locations } = locRes;
 
     const { data: members } = await client
       .from("company_members")
@@ -72,7 +79,7 @@ export async function GET(req) {
       if (loc?.lat != null && loc?.lng != null) {
         if (e.clock_in_lat != null && e.clock_in_lng != null) {
           inM = Math.round(distM(Number(loc.lat), Number(loc.lng), Number(e.clock_in_lat), Number(e.clock_in_lng)));
-          inFence = inM <= (loc.geofence_radius_m || 100);
+          inFence = loc.require_geofence === false ? null : inM <= (loc.geofence_radius_m || 100);
         }
         if (e.clock_out_lat != null && e.clock_out_lng != null) {
           outM = Math.round(distM(Number(loc.lat), Number(loc.lng), Number(e.clock_out_lat), Number(e.clock_out_lng)));
@@ -87,6 +94,7 @@ export async function GET(req) {
         out_distance_m: outM,
         geofence_radius_m: loc?.geofence_radius_m || 100,
         in_geofence: inFence,
+        geofence_required: loc ? loc.require_geofence !== false : true,
         has_gps: e.clock_in_lat != null,
         location_has_gps: loc?.lat != null,
       };

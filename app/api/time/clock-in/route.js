@@ -98,11 +98,22 @@ export async function POST(req) {
       .select("id, tier, subscription_status, timezone")
       .eq("id", companyId)
       .single();
-    const { data: location } = await sb
+    // require_geofence arrives with migration 102; until it has run,
+    // the select falls back to the pre-102 columns and the fence stays
+    // required (today's behavior).
+    let locationRes = await sb
       .from("locations")
-      .select("id, company_id, name, lat, lng, geofence_radius_m")
+      .select("id, company_id, name, lat, lng, geofence_radius_m, require_geofence")
       .eq("id", locationId)
       .maybeSingle();
+    if (locationRes.error) {
+      locationRes = await sb
+        .from("locations")
+        .select("id, company_id, name, lat, lng, geofence_radius_m")
+        .eq("id", locationId)
+        .maybeSingle();
+    }
+    const { data: location } = locationRes;
     if (!location || location.company_id !== companyId) {
       return NextResponse.json({ error: "Location not found in this company" }, { status: 400 });
     }
@@ -146,8 +157,10 @@ export async function POST(req) {
     }
 
     // Server-side geofence check (Plus/Pro feature).
+    // Per-location tick box (Wendy, 2026-11-18): a location with no
+    // signal gets require_geofence = false and the fence is skipped.
     const geoEnforced =
-      canUse(entitledTier(company), "geofencing") && location.lat != null && location.lng != null;
+      canUse(entitledTier(company), "geofencing") && location.lat != null && location.lng != null && location.require_geofence !== false;
     if (geoEnforced) {
       const plat = Number(lat);
       const plng = Number(lng);
