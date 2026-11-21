@@ -6,6 +6,7 @@ import {uploadWorkTeamsB2Video} from "../lib/workteams-b2-client";
 import { supabase } from "../lib/supabase";
 import { NO_COMMUNICATION_BOOK_NOTE } from "../lib/no-book-proof";
 import { chooseRecorderMimeType, inspectRecordedMp4 } from "../lib/recording-integrity.mjs";
+import { vaultPut, vaultGet, vaultRemove } from "../lib/media-vault.mjs";
 
 const MAX_VIDEO_SECONDS = 10 * 60;
 const MAX_ACTIVE_VIDEO_MS = MAX_VIDEO_SECONDS * 1000;
@@ -76,6 +77,9 @@ const EndShiftProof = forwardRef(function EndShiftProof(
   const [bookOverrideError, setBookOverrideError] = useState("");
 
   const [done, setDone] = useState(false);
+  // Media vault (offline proof): set when this entry has proof saved
+  // on the phone that still needs to upload.
+  const [vaultNote, setVaultNote] = useState("");
 
   const streamRef = useRef(null);
   const recorderRef = useRef(null);
@@ -291,6 +295,21 @@ const EndShiftProof = forwardRef(function EndShiftProof(
             integrityWarningRef.current = warning;
             setVideoIntegrityWarning(warning);
           }
+          // Durable copy FIRST (offline fix, 2026-11-21): the recording
+          // is written to the on-phone vault before any upload attempt,
+          // so closing this page or losing signal can no longer lose it.
+          // Removed only when the verified upload below succeeds.
+          void vaultPut({
+            kind: "video", companyId, entryId, memberId,
+            locationId: locationId || null, locationName: locationName || null,
+            blob, mime: actualMime,
+            durationSeconds: Math.min(MAX_VIDEO_SECONDS, Math.round(activeMsRef.current / 1000)),
+            integrityWarning: integrityWarningRef.current || "",
+          }).then((stored) => {
+            if (stored && typeof navigator !== "undefined" && !navigator.onLine) {
+              setVaultNote("📴 Saved on this phone — it will upload itself when you have signal.");
+            }
+          });
           // Always upload original immediately after inspection, including
           // damaged evidence, and preserve the Blob for Retry on failure.
           await uploadVideo(blob);
@@ -565,6 +584,7 @@ const EndShiftProof = forwardRef(function EndShiftProof(
         }
 
         window.__endShiftVideoBlob = null;
+        void vaultRemove(entryId, "video");
         videoSavedRef.current = true;
         setVideoSaved(true);
         setRecState("uploaded");
@@ -777,6 +797,17 @@ const EndShiftProof = forwardRef(function EndShiftProof(
     if (!f.type.startsWith("image/")) { setPhotoError("Please choose a photo."); return; }
     setPhotoFile(f);
     setPhotoState("ready");
+    // Durable copy first (same offline rule as the video): the photo
+    // lives in the on-phone vault until its upload succeeds.
+    void vaultPut({
+      kind: "photo", companyId, entryId, memberId,
+      locationId: locationId || null, locationName: locationName || null,
+      blob: f, mime: f.type || "", fileName: f.name || "book-photo.jpg",
+    }).then((stored) => {
+      if (stored && typeof navigator !== "undefined" && !navigator.onLine) {
+        setVaultNote("📴 Saved on this phone — it will upload itself when you have signal.");
+      }
+    });
     // Auto-upload so the crew doesn't wait
     uploadPhoto(f);
   }
@@ -820,6 +851,7 @@ const EndShiftProof = forwardRef(function EndShiftProof(
         });
       } catch {}
 
+      void vaultRemove(entryId, "photo");
       photoSavedRef.current = true;
       setPhotoState("uploaded");
       setDone(true);
@@ -832,8 +864,65 @@ const EndShiftProof = forwardRef(function EndShiftProof(
     }
   }
 
+  // Vault drain: when this proof section opens (or the phone comes
+  // back online) and the vault holds media for THIS entry that never
+  // finished uploading, restore it and run it through the same upload
+  // path a fresh capture uses. Nothing here replaces a fresh
+  // recording: it only acts when no in-page capture exists.
+  const drainAttemptedRef = useRef(false);
+  useEffect(() => {
+    let cancelled = false;
+    async function drainVault() {
+      if (!entryId) return;
+      try {
+        if (enableVideo && !videoSavedRef.current && !window.__endShiftVideoBlob) {
+          const item = await vaultGet(entryId, "video");
+          if (!cancelled && item?.blob) {
+            mimeRef.current = item.mime || item.blob.type || "";
+            activeMsRef.current = (item.durationSeconds || 0) * 1000;
+            integrityWarningRef.current = item.integrityWarning || "";
+            if (item.integrityWarning) setVideoIntegrityWarning(item.integrityWarning);
+            window.__endShiftVideoBlob = item.blob;
+            setRecState("recorded");
+            setVaultNote("📴 This recording was saved on this phone — uploading it now if you have signal.");
+            if (typeof navigator === "undefined" || navigator.onLine) {
+              await uploadVideo(item.blob);
+              if (!cancelled) setVaultNote("");
+            }
+          }
+        }
+        if (enableBook && !photoSavedRef.current && !noBookSelectedRef.current) {
+          const item = await vaultGet(entryId, "photo");
+          if (!cancelled && item?.blob) {
+            const file = new File([item.blob], item.fileName || "book-photo.jpg", { type: item.mime || item.blob.type || "image/jpeg" });
+            setPhotoFile(file);
+            setPhotoState("ready");
+            setVaultNote("📴 This book photo was saved on this phone — uploading it now if you have signal.");
+            if (typeof navigator === "undefined" || navigator.onLine) {
+              await uploadPhoto(file);
+              if (!cancelled) setVaultNote("");
+            }
+          }
+        }
+      } catch { /* the vault is best-effort; the in-page paths still apply */ }
+    }
+    if (!drainAttemptedRef.current) {
+      drainAttemptedRef.current = true;
+      void drainVault();
+    }
+    const onOnline = () => void drainVault();
+    window.addEventListener("online", onOnline);
+    return () => { cancelled = true; window.removeEventListener("online", onOnline); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [entryId]);
+
   return (
     <div>
+      {vaultNote && (
+        <p role="status" style={{ background: "#fff7e0", border: "1px solid #d9a400", borderRadius: 8, padding: "10px 14px", fontWeight: 700 }}>
+          {vaultNote}
+        </p>
+      )}
       {enableVideo && (
       <>
       {/* ---- Walkthrough video ---- */}
