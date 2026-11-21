@@ -6,6 +6,7 @@ import { useCompany } from "../../../../lib/company-context";
 import { isManagerRole } from "../../../../lib/roles";
 import { getUser } from "../../../../lib/session";
 import { buildTempPayOwed, applyTempPayments, fmtMoney, fmtHours } from "../../../../lib/temp-pay-owed";
+import TempAgencyConstructionNotice from "../../../../components/TempAgencyConstructionNotice";
 
 function isoDate(d) {
   // Local-timezone YYYY-MM-DD (same helper as the Payroll report).
@@ -320,6 +321,7 @@ export default function TempPayOwedPage() {
 
   return (
     <div>
+      <TempAgencyConstructionNotice />
       <p className="eyebrow">TEMP STAFFING — PAY</p>
       <h2 style={{ fontSize: "1.8rem" }}>Temp pay owed</h2>
       <p style={{ color: "var(--muted)" }}>

@@ -7,6 +7,7 @@ import { supabase } from "../../../../lib/supabase";
 import { CompanyContext } from "../../../../lib/company-context";
 import { clearLastPath } from "../../../../lib/last-path";
 import Playbook from "./Playbook";
+import TempAgencyConstructionNotice from "../../../../components/TempAgencyConstructionNotice";
 import { ClientsTab, OffersTab } from "./Intake";
 import StatePricing from "./StatePricing";
 import Walkthroughs from "./Walkthroughs";
@@ -419,6 +420,7 @@ export default function TempDashboard() {
   return (
     <main className="site-shell">
       <section className="panel" style={{ padding: 24 }}>
+        <TempAgencyConstructionNotice />
         <p className="kicker">Temp Staffing</p>
         <h1 style={{ marginTop: 4 }}>Agency dashboard</h1>
         <div className={styles.workerActions}>
