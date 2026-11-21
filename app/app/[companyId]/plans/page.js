@@ -43,6 +43,27 @@ export default function PlansPage() {
     getTierPrices().then(setPrices);
   }, []);
 
+  // A tier picked on the home page / signup is remembered on this
+  // device; when this company's owner has no subscription yet, arm
+  // that plan's subscribe button so buying takes one more tap, and
+  // say plainly why it is armed. Cleared once a subscription exists.
+  const [homePick, setHomePick] = useState(null);
+  useEffect(() => {
+    if (!isOwner) return;
+    try {
+      const key = localStorage.getItem("workteams:chosen-tier");
+      if (hasSubscription) {
+        if (key) localStorage.removeItem("workteams:chosen-tier");
+        return;
+      }
+      if (key && TIERS[key]) {
+        setHomePick(key);
+        setConfirmKey(key);
+      }
+    } catch { /* no remembered pick */ }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOwner, hasSubscription]);
+
   useEffect(() => {
     if (!company?.id) return;
     supabase()
@@ -255,6 +276,12 @@ export default function PlansPage() {
             )}
           </div>
         )
+      )}
+
+      {homePick && !hasSubscription && TIERS[homePick] && (
+        <p role="status" style={{ background: "var(--primary-bg)", border: "1px solid var(--primary)", borderRadius: 8, padding: "10px 14px", marginTop: 16, fontSize: "0.92rem" }}>
+          🎁 You picked <strong>{TIERS[homePick].name}</strong> on the home page — its button below is ready. Tap it once more to start checkout.
+        </p>
       )}
 
       <div className="portal-grid" style={{ marginTop: 20 }}>
