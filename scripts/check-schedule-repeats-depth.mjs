@@ -183,3 +183,32 @@ test("repeat-series helpers derive pattern, cadence and scheduled time honestly"
   assert.equal(s.distinctMembers, 2);
   assert.equal(lib.summarizeSeries([]).count, 0);
 });
+
+// Rolling window + honest failure (Wendy, 2026-11-21): the original
+// load pulled EVERY future shift in one unbounded query and read
+// only `data`, so a failed or capped load silently rendered as
+// "On repeat (0)" while 1,800+ future shifts existed. Her ruling:
+// load a rolling couple of months, extend as needed, and a failed
+// load must say so on the page. Series that occur in the window are
+// completed with one bounded per-series query each, so the derived
+// totals above stay true; the pins in the first test still hold
+// (the load is still future-only and grouped by series_id).
+test("rolling two-month window, chunked loads, honest failure", () => {
+  const page = read(PAGE);
+  for (const needle of [
+    "addMonthsISO(today, 2)",
+    '.lt("shift_date", end)',
+    ".range(from, from + 999)",
+    "setLoadError",
+    "Could not load the repeats list",
+    "Show the next two months",
+    "Show the next two months",
+    "occur through {friendlyDate(addDaysISO(windowEnd, -1))}",
+    "load(windowEnd, [])",
+  ]) {
+    assert.ok(page.includes(needle), `rolling window keeps: ${needle}`);
+  }
+  // The old silent shape is gone: the window load destructures the
+  // error instead of reading data alone.
+  assert.ok(!page.includes("const { data } = await sb\n      .from(\"shifts\")"), "no silent data-only load remains");
+});

@@ -34,6 +34,13 @@ export default function RepeatsPage() {
   const [workedCountBySeries, setWorkedCountBySeries] = useState({});
   const [endPick, setEndPick] = useState(null); // { seriesId, date }
   const [confirmEndSeriesId, setConfirmEndSeriesId] = useState(null);
+  // Rolling window (Wendy, 2026-11-21): the page loads repeats that
+  // occur in the next two months, never years of future shifts at
+  // once. "Show the next two months" extends the window. A failed
+  // load says so on the page — it never silently shows zero.
+  const [windowEnd, setWindowEnd] = useState(null); // ISO date, exclusive
+  const [loadError, setLoadError] = useState(null);
+  const [loadingMore, setLoadingMore] = useState(false);
 
   const isManager = member && (member.role === "owner" || member.role === "admin");
 
@@ -67,17 +74,99 @@ export default function RepeatsPage() {
     return countWorkedShifts(ids, workedIds);
   }
 
-  async function load() {
+  // Add months to an ISO date (parseDay pins local noon, so DST and
+  // timezone shifts cannot move the result).
+  function addMonthsISO(iso, n) {
+    const d = parseDay(iso);
+    d.setMonth(d.getMonth() + n);
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return `${y}-${m}-${day}`;
+  }
+
+  function addDaysISO(iso, n) {
+    const d = parseDay(iso);
+    d.setDate(d.getDate() + n);
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return `${y}-${m}-${day}`;
+  }
+
+  // Fetch a shifts query in 1,000-row chunks so a large result can
+  // never fail or truncate silently. Returns { rows } or { error }.
+  async function fetchRows(buildQuery) {
+    const rows = [];
+    for (let from = 0; ; from += 1000) {
+      const { data, error } = await buildQuery().range(from, from + 999);
+      if (error) return { rows: null, error };
+      const batch = data || [];
+      rows.push(...batch);
+      if (batch.length < 1000) break;
+    }
+    return { rows, error: null };
+  }
+
+  // Rolling-window load (Wendy, 2026-11-21). Loads the shifts that
+  // occur in [today, upto) — the next two months unless the window
+  // has been extended — then completes every series that occurs in
+  // the window by loading that series' own future rows (a series is
+  // capped at 520 rows at creation, so each completion is one small
+  // bounded query). Series cards therefore always show the series'
+  // true totals, while the page never pulls years of shifts at once.
+  // Any failure sets loadError and keeps what was already on screen.
+  async function load(upto, base) {
     const sb = supabase();
     const today = chicagoToday(company?.timezone);
-    const { data } = await sb
-      .from("shifts")
-      .select("*, locations(name)")
-      .eq("company_id", company.id)
-      .gte("shift_date", today)
-      .order("shift_date", { ascending: true })
-      .order("start_time", { ascending: true });
-    const shiftRows = data || [];
+    const end = upto || addMonthsISO(today, 2);
+    const win = await fetchRows(() =>
+      sb
+        .from("shifts")
+        .select("*, locations(name)")
+        .eq("company_id", company.id)
+        .gte("shift_date", today)
+        .lt("shift_date", end)
+        .order("shift_date", { ascending: true })
+        .order("start_time", { ascending: true })
+    );
+    if (win.error) {
+      setLoadError(win.error.message || "The load failed.");
+      return;
+    }
+    const byId = new Map((base || []).map((s) => [s.id, s]));
+    for (const r of win.rows) byId.set(r.id, r);
+    const knownSeries = new Set(
+      (base || []).map((s) => s.series_id).filter(Boolean)
+    );
+    const windowSeriesIds = [
+      ...new Set(win.rows.map((s) => s.series_id).filter(Boolean)),
+    ];
+    for (const sid of windowSeriesIds) {
+      if (knownSeries.has(sid)) continue;
+      const full = await fetchRows(() =>
+        sb
+          .from("shifts")
+          .select("*, locations(name)")
+          .eq("company_id", company.id)
+          .eq("series_id", sid)
+          .gte("shift_date", today)
+          .order("shift_date", { ascending: true })
+          .order("start_time", { ascending: true })
+      );
+      if (full.error) {
+        setLoadError(full.error.message || "The load failed.");
+        return;
+      }
+      for (const r of full.rows) byId.set(r.id, r);
+    }
+    const shiftRows = [...byId.values()].sort((a, b) =>
+      a.shift_date === b.shift_date
+        ? String(a.start_time || "").localeCompare(String(b.start_time || ""))
+        : a.shift_date < b.shift_date
+          ? -1
+          : 1
+    );
     const memberIds = [...new Set(shiftRows.map((s) => s.member_id).filter(Boolean))];
     let names = {};
     if (memberIds.length > 0) {
@@ -86,6 +175,8 @@ export default function RepeatsPage() {
     }
     setShifts(shiftRows);
     setNameById(names);
+    setWindowEnd(end);
+    setLoadError(null);
     // Additive (D-WT-13): exact past counts per series, so the page can
     // say how much of a series is already history. Head-only counts —
     // no past rows are loaded — and any failure simply leaves the
@@ -126,8 +217,15 @@ export default function RepeatsPage() {
     }
   }
 
+  async function loadMore() {
+    if (!windowEnd) return;
+    setLoadingMore(true);
+    await load(addMonthsISO(windowEnd, 2), shifts);
+    setLoadingMore(false);
+  }
+
   useEffect(() => {
-    if (!loading && company) load();
+    if (!loading && company) load(null, []);
   }, [loading, company]);
 
   async function deleteSeries(seriesId) {
@@ -158,7 +256,7 @@ export default function RepeatsPage() {
       .eq("series_id", seriesId)
       .gte("shift_date", chicagoToday(company?.timezone));
     if (error) alert("Could not delete series: " + error.message);
-    else load();
+    else load(windowEnd, []);
   }
 
   async function endSeriesEarly(g) {
@@ -183,7 +281,7 @@ export default function RepeatsPage() {
     if (error) alert("Could not end series: " + error.message);
     else {
       setEndPick(null);
-      load();
+      load(windowEnd, []);
     }
   }
 
@@ -248,6 +346,18 @@ export default function RepeatsPage() {
         Everything on repeat, plus one-time shifts — in one place.
       </p>
 
+      {loadError && (
+        <div style={{ ...card, borderColor: "#fca5a5", background: "#fef2f2", marginTop: 12 }}>
+          <div style={{ fontWeight: 800, color: "#b91c1c" }}>Could not load the repeats list</div>
+          <div style={{ fontSize: "0.9rem", marginTop: 4 }}>
+            The load failed ({loadError}), so this page may be missing repeats or out of date. Nothing was changed.
+          </div>
+          <button type="button" onClick={() => load(windowEnd, [])} style={{ ...ghostBtn, marginTop: 8 }}>
+            Try again
+          </button>
+        </div>
+      )}
+
       {seriesList.length > 0 && (
         <div style={card}>
           <div style={{ fontWeight: 800 }}>Repeats at a glance</div>
@@ -271,7 +381,7 @@ export default function RepeatsPage() {
 
       <h2 style={{ fontSize: "1.1rem", margin: "20px 0 8px" }}>On repeat ({seriesList.length})</h2>
       {seriesList.length === 0 ? (
-        <p style={{ color: "var(--muted)" }}>Nothing repeating right now.</p>
+        loadError ? null : <p style={{ color: "var(--muted)" }}>Nothing repeating right now.</p>
       ) : (
         <div style={{ display: "grid", gap: 12 }}>
           {seriesList.map((g) => (
@@ -413,7 +523,7 @@ export default function RepeatsPage() {
 
       <h2 style={{ fontSize: "1.1rem", margin: "24px 0 8px" }}>One-time shifts ({oneOffs.length})</h2>
       {oneOffs.length === 0 ? (
-        <p style={{ color: "var(--muted)" }}>No one-time shifts scheduled.</p>
+        loadError ? null : <p style={{ color: "var(--muted)" }}>No one-time shifts scheduled.</p>
       ) : (
         <div style={{ display: "grid", gap: 8 }}>
           {oneOffs.map((s) => (
@@ -428,6 +538,17 @@ export default function RepeatsPage() {
               {s.notes && <div style={{ fontSize: "0.85rem", color: "var(--muted)", marginTop: 2 }}>{s.notes}</div>}
             </div>
           ))}
+        </div>
+      )}
+
+      {!loadError && windowEnd && (
+        <div style={{ marginTop: 24, display: "grid", gap: 8, justifyItems: "start" }}>
+          <div style={{ fontSize: "0.85rem", color: "var(--muted)" }}>
+            Showing repeats and one-time shifts that occur through {friendlyDate(addDaysISO(windowEnd, -1))}. Every series that occurs in this window is shown in full, out to its last repeat.
+          </div>
+          <button type="button" onClick={loadMore} disabled={loadingMore} style={ghostBtn}>
+            {loadingMore ? "Loading…" : "Show the next two months"}
+          </button>
         </div>
       )}
     </div>
