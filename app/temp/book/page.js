@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import TempAgencyConstructionNotice from "../../../components/TempAgencyConstructionNotice";
 
 export default function TempBook() {
   const [cfg, setCfg] = useState(null);
@@ -114,6 +115,7 @@ export default function TempBook() {
   return (
     <main className="site-shell wt2-t-site">
       <section className="panel wt2-t-book-panel" style={{ padding: 30, maxWidth: 640, margin: "0 auto" }}>
+        <TempAgencyConstructionNotice />
         <p className="kicker">Book temp staff</p>
         <h1 style={{ marginTop: 4 }}>Request your crew</h1>
         <p style={{ color: "var(--muted)" }}>

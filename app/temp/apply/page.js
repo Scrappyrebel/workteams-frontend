@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import TempAgencyConstructionNotice from "../../../components/TempAgencyConstructionNotice";
 
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
@@ -193,6 +194,7 @@ export default function TempApply() {
   return (
     <main className="site-shell">
       <section className="panel" style={{ padding: 30, maxWidth: 680, margin: "0 auto" }}>
+        <TempAgencyConstructionNotice />
         <p className="kicker">Work as a temp</p>
         <h1 style={{ marginTop: 4 }}>Apply</h1>
         <p style={{ color: "var(--muted)" }}>
