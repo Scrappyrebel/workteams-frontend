@@ -2,11 +2,13 @@
 
 import Link from "next/link";
 import CommercialConstructionNotice from "../../components/CommercialConstructionNotice";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "../../lib/supabase";
 import { friendlyAuthErrorMessage } from "../../lib/auth-errors";
 import { getSession } from "../../lib/session";
+import { TIERS } from "../../lib/tiers";
+import { getTierPrices } from "../../lib/product";
 
 export default function SignupPage() {
   const router = useRouter();
@@ -16,6 +18,23 @@ export default function SignupPage() {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [loading, setLoading] = useState(false);
+  // A tier picked on the home page's pricing section arrives as
+  // ?tier=<key> (Wendy, 2026-11-06: buying starts from the homepage).
+  // It is remembered on this device so the Plans page can have that
+  // plan's subscribe button ready after the company is created.
+  const [pickedTier, setPickedTier] = useState(null);
+  const [pickedPrice, setPickedPrice] = useState(null);
+
+  useEffect(() => {
+    try {
+      const key = new URLSearchParams(window.location.search).get("tier");
+      if (key && TIERS[key]) {
+        setPickedTier(key);
+        localStorage.setItem("workteams:chosen-tier", key);
+        getTierPrices().then((p) => setPickedPrice(p?.[key] ?? null));
+      }
+    } catch { /* no pick — plain signup */ }
+  }, []);
 
   async function signUpPassword(e) {
     e.preventDefault();
@@ -50,6 +69,14 @@ export default function SignupPage() {
       <section className="panel" style={{ padding: 30 }}>
         <p className="eyebrow">SIGN UP</p>
         <h2>Create your account.</h2>
+        {pickedTier && TIERS[pickedTier] && (
+          <p style={successStyle}>
+            🎁 You picked <strong>{TIERS[pickedTier].name}</strong>
+            {pickedPrice ? <> — ${pickedPrice}/month after your trial</> : ""}. Your free
+            7-day trial starts when you create your company, and the Plans page will
+            have this plan ready for you. No card required to start.
+          </p>
+        )}
 
         <form onSubmit={signUpPassword}>
           <label style={labelStyle} htmlFor="su-email">Work email</label>

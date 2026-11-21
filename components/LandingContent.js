@@ -457,6 +457,11 @@ function Staffing() {
             your clients, dispatch the right person for each shift, and let clients
             confirm hours right in their portal.
           </p>
+          <p>
+            🚧 <strong>Under construction:</strong> the temp agency is still being
+            built and tested. It is not part of the December 15 launch and will be
+            available at a later date.
+          </p>
           <div className="wt2-m-lane-row" aria-label="Staffing types">
             {["Cleaning", "Office", "Manufacturing", "Hospitality", "General labor"].map((lane) => (
               <span key={lane} className="wt2-m-lane">{lane}</span>
@@ -467,8 +472,8 @@ function Staffing() {
           <span className="wt2-m-staffing-ic">{I.users}</span>
           <h3>See it in action</h3>
           <p>
-            Lilly B&apos;s Temp Cleaning Staffing — temp cleaners on demand — runs on
-            this same app, from client requests to confirmed hours.
+            Lilly B&apos;s Temp Cleaning Staffing — temp cleaners on demand — is
+            being built on this same app, from client requests to confirmed hours.
           </p>
           <Link href="/temp" className="wt2-m-btn wt2-m-btn-primary wt2-m-btn-block">
             Visit the temp staffing service {I.arrow}
@@ -534,7 +539,7 @@ function Pricing({ tierKeys, prices }) {
                 ))}
               </ul>
               <Link
-                href="/signup"
+                href={`/signup?tier=${key}`}
                 className={featured ? "wt2-m-btn wt2-m-btn-tier-featured wt2-m-btn-block" : "wt2-m-btn wt2-m-btn-tier wt2-m-btn-block"}
               >
                 {i === 0 ? "Start free trial" : `Choose ${tier.name}`}
