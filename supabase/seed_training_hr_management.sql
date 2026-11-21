@@ -106,8 +106,17 @@ Always document with dates and facts ("Late 25 minutes on March 3, no call"), ne
 
 RETENTION. Replacing a cleaner costs you roughly $500 to $1,500 in recruiting, training, and covered shifts. Keeping good people is cheaper than finding new ones. The biggest retention levers: pay fairly and always on time, recognize good work specifically ("The restrooms at the clinic looked perfect Tuesday"), give a path up (lead cleaner, trainer, supervisor), and ask twice a year: "What would make this job better for you?" Then act on at least one answer.
 
-When someone does leave, ask why in a short exit conversation. If three people in a row mention the same supervisor or the same schedule, you have found your real problem.',
-null;
+When someone does leave, ask why in a short exit conversation. If three people in a row mention the same supervisor or the same schedule, you have found your real problem.', null
+union all select (select cid from c), (select sid from st where step_number = 1), 4, 'reading', 'Assigning Training — and Seeing the Results',
+'Training only works if the right person takes the right course BEFORE the work starts. A new hire should finish the intro course before their first solo shift. A cleaner moving to medical buildings takes the medical course first, not after a month on site. As a manager, you do not wait for people to find courses on their own — you assign them.
+
+HOW TO ASSIGN A COURSE. Go to Training Records. Managers see an ''Assign a course'' panel there. Pick the person, pick the course, and assign it. The course lands on that person''s training record exactly as if they had started it themselves, and the record shows ''Assigned by'' with your name — so the person knows it came from you, and anyone reviewing the record can see who assigned it. If the person already has that course on their record, the app tells you instead of doubling it up.
+
+ONE AT A TIME. Assign one course at a time per person in most cases. Three courses dumped on a new hire in one day means three courses half-learned. Sequence them the way the work sequences: intro first, then the specialty the person will actually work.
+
+READING THE RESULTS. The Training Records page is also where you read progress: who has not started, who is in progress, exam scores, and who is waiting on the approval step. When someone finishes a course, their evidence comes to a manager for approval — look at it before you approve. The approval is your signature that this person is ready for that work.
+
+THE RULE. Assign before the work, check the record weekly, and never let ''I assigned it'' be the end of it. An assigned course nobody finished is the same as no training at all.', null;
 
 -- ============ STEP 2: VISUAL ============
 
