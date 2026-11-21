@@ -129,7 +129,9 @@ STEP 4: FREQUENCY, JOB TYPE, VALID-UNTIL. Set frequency (1x/week, 3x/week, daily
 
 STEP 5: LINK THE WALKTHROUGH TO THE BID. In the app, link the walkthrough you created to the bid. Now the bid tells a complete story: the measurements, your notes, the scope, and the price — all in one place. When the client asks ''how did you get this number?'' you can show them.
 
-BEFORE YOU SEND: re-read the scope out loud. Check the math twice. Make sure the client name and location are right. A bid with a typo in the client''s name tells them you do not pay attention — fatal for a cleaning company.', null
+BEFORE YOU SEND: re-read the scope out loud. Check the math twice. Make sure the client name and location are right. A bid with a typo in the client''s name tells them you do not pay attention — fatal for a cleaning company.
+
+STEP 1B: WHEN THE PROSPECT IS NOT LISTED YET. Brand-new prospects will not be in the location list — that is normal, and it is not a reason to stop or to pick the wrong location just to move on. Under the location dropdown on both the walkthrough form and the bid form there is an ''Add their location here'' link (''New prospect not listed?'' on the walkthrough form, ''New client not listed?'' on the bid form). Tap it, type the location name — and the address too, if you have it — and the location is added and selected for you on the spot. Then finish the walkthrough or bid exactly as this lesson describes.', null
 union all select (select cid from c), (select sid from st where step_number = 1), 5, 'reading', 'Lesson 5: Presenting the bid, handling objections, and the contract', 'Sending the bid is not the end — presenting it is where you win or lose. Never just email a price with no context. Call or meet to walk through it.
 
 PRESENTING THE BID. Start with the scope, not the price: ''Here is exactly what we will do, three times a week...'' Then the price: ''That comes to $504 per visit, which is $6,552 a month for 13 visits.'' Always give the per-visit AND monthly numbers. Then be quiet. Let them respond first.

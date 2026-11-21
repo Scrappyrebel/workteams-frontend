@@ -86,7 +86,32 @@ Daily (15 min): review yesterday''s time entries, check today''s schedule for ga
 Weekly (1 hr): post next week''s schedule 7+ days out, review hours vs. budget, check supply levels, follow up on any client issues, touch base with each cleaner (''how is the Plaza building going?'').
 Monthly (2 hrs): review no-show/late patterns, audit a few location records, walk one building unannounced to see the real quality, review profitability per client — are any accounts losing money on labor?
 
-The routine is the job. Operations is not firefighting — it is preventing fires with boring, repeated habits.', null;
+The routine is the job. Operations is not firefighting — it is preventing fires with boring, repeated habits.', null
+union all select (select cid from c), (select sid from st where step_number = 1), 4, 'reading', 'Lesson 4: Restock requests — how urgent, and scanning barcodes', 'Lesson 3 set the par levels. This lesson covers the two tools on the Supplies page (it is labeled Inventory in the menu) that make restocking fast and honest.
+
+MARK HOW URGENT IT IS. The restock request form asks ''How urgent'' — answer it truthfully:
+- Urgent — we are OUT, need it ASAP.
+- Running low — needed in the next couple of days.
+- Low — at least a week left.
+Open requests are listed urgent-first, so the worst needs get handled first. Marking everything urgent breaks the system — if everything is an emergency, nothing is. ''Urgent'' should be rare, and when it happens, ask why the par level failed so it does not happen again next week.
+
+SCAN THE BARCODE. The Supplies page has a ''Scan a barcode'' panel. On phones that support it, the camera reads the barcode on the product and finds that supply for you — no typing, no guessing which of four similar products it is. On phones without camera scanning, type the barcode number in instead. If nothing matches, a manager can add it as a new supply with that code right there, so the next person''s scan finds it.
+
+The point of both tools is the same as the par system itself: the request goes in the moment someone sees the shelf, with the right product and the right urgency — not from memory at the end of the week.', null
+union all select (select cid from c), (select sid from st where step_number = 1), 5, 'reading', 'Lesson 5: Documents & Forms — the everyday paperwork', 'Every company runs on a handful of everyday forms. In this app they live in one place: the Documents & Forms section. Every company starts with the same nine starter forms:
+- Incident Report — something went wrong: an injury, damage, a spill, a security problem.
+- Supply Request — a building or a crew needs supplies.
+- Walkthrough Form — the record of a walkthrough visit.
+- Inspection Form — the record of a quality inspection.
+- Time Off Request — a cleaner asks for time off, in writing, ahead of time.
+- End-of-Shift Report — what got done, what did not, and anything the next shift needs to know.
+- Key Sign-Out Log — who has which building key, and when it comes back.
+- Customer Feedback — what a customer said, good or bad, in their words.
+- New Customer Information — the facts a new account starts with.
+
+You can also upload your own documents and forms into the same section, so the form a cleaner needs is in the app on their phone — not in a drawer at the office, and not in a group chat from three months ago.
+
+THE RULE. If it happened, there is a form for it — and it gets filled in the same day. Paperwork written from memory a week later is fiction, and fiction does not protect the company. Managers: when a form comes in, read it, act on what it asks for, and keep it. These records are the company''s memory.', null;
 
 -- ============ STEP 2: VISUAL ============
 
