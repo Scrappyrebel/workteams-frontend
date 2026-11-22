@@ -102,8 +102,13 @@ function chooseRosterShift(entry, candidates, timeZone) {
 export default function TimeClockPage() {
   const { company, member, loading, offline: shellOffline } = useCompany();
 
+  const [open, setOpen] = useState(null);
+  const [vaultCount, setVaultCount] = useState(0);
   // Saved-offline proof (media vault): keep the waiting count current
-  // so the banner below is never stale.
+  // so the banner below is never stale. This effect MUST stay below the
+  // state declarations above: its dependency list reads `open`, and
+  // reading it before the declaration crashes the page on load
+  // (ReferenceError, HTTP 500 — hit production 2026-11-22).
   useEffect(() => {
     if (!company?.id || !member?.id) return;
     let cancelled = false;
@@ -116,8 +121,6 @@ export default function TimeClockPage() {
     window.addEventListener("online", recount);
     return () => { cancelled = true; window.removeEventListener("online", recount); };
   }, [company?.id, member?.id, open?.id]);
-  const [open, setOpen] = useState(null);
-  const [vaultCount, setVaultCount] = useState(0);
   const [entries, setEntries] = useState([]);
   const [locations, setLocations] = useState([]);
   const [myShifts, setMyShifts] = useState([]);
