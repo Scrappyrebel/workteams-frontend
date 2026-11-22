@@ -176,13 +176,18 @@ export default function TimeClockPage() {
   async function load() {
     const sb = supabase();
     // Which hats can this member clock in as? (titles only, never pay rates)
+    // `got` is declared here, outside the try, because the offline
+    // snapshot save at the end of load() reads it — declared inside the
+    // try it is out of scope there and the save throws, which left
+    // "Checking your assigned shifts…" up forever (2026-11-22).
+    let got = [];
     try {
       const { data: { session } } = await sb.auth.getSession();
       const hr = await fetch(`/api/time/hats?companyId=${company.id}`, {
         headers: { Authorization: `Bearer ${session?.access_token || ""}` },
       });
       const hj = await hr.json().catch(() => ({}));
-      const got = Array.isArray(hj.hats) ? hj.hats : [];
+      got = Array.isArray(hj.hats) ? hj.hats : [];
       setHats(got);
       if (got.length > 0 && !got.some((h) => h.key === clockInHat)) {
         setClockInHat(got[0].key);
