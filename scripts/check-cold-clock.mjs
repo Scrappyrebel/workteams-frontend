@@ -18,7 +18,7 @@ function fixture(cid=company,uid=user,mid=member){
  const token=uid=>`header.${btoa(JSON.stringify({sub:uid,session_id:"session-1"}))}.signature`;
  storage.setItem(key,JSON.stringify({access_token:token(uid),refresh_token:"local-test",user:{id:uid}}));
  const snap={userId:uid,companyId:cid,shell:{company:{id:cid,name:"Subscriber",timezone:"America/Chicago"},member:{id:mid,user_id:uid,company_id:cid}},
-  time:{forDate:day,serverReadStartedAt:now-1000,openEntry:null,shifts:[{id:"shift",company_id:cid,member_id:mid,location_id:"site",shift_date:day,start_time:"23:59",end_time:"23:59:59"}],locations:[{id:"site",name:"Office"}],hats:[]}};
+  time:{forDate:day,serverReadStartedAt:now-1000,openEntry:null,shifts:[{id:"shift",location_id:"site",shift_date:day,start_time:"23:59",end_time:"23:59:59"}],locations:[{id:"site",name:"Office"}],hats:[]}};
  storage.setItem(`workteams-offline-context-v1:${uid}:${cid}`,JSON.stringify(snap));
  assert.equal(prepareColdClock(storage,uid,cid,"https://test.supabase.co"),true);
  return {storage,idb:new IDBFactory(),cid,uid,mid,map};
@@ -78,6 +78,13 @@ test("stale assignments cannot clock in; overnight open entries can still clock 
  snap.time.openEntry={id:"overnight",location_id:"site",clock_in:"2026-11-24T23:00:00Z",clock_out:null,punch_revision:0};f.storage.setItem(k,JSON.stringify(snap));
  page=await screen(f);assert.equal(page.element("clock-out").disabled,false);await page.element("clock-out").onclick();
  globalThis.indexedDB=f.idb;assert.equal((await createIndexedDbStorage().getAll())[0].entryId,"overnight");
+});
+test("the exact existing saved schedule shape is accepted, but explicit foreign members are rejected",async()=>{
+ const f=fixture(),key=`workteams-offline-context-v1:${user}:${company}`,snap=JSON.parse(f.storage.getItem(key));
+ assert.deepEqual(Object.keys(snap.time.shifts[0]).sort(),["id","location_id","shift_date","start_time","end_time"].sort());
+ let page=await screen(f);assert.equal(page.element("clock-in").disabled,false);
+ snap.time.shifts[0].member_id="someone-else";f.storage.setItem(key,JSON.stringify(snap));
+ page=await screen(f);assert.equal(page.element("clock-in").disabled,true);
 });
 test("unreadable context fails closed and no startup code clears saved media",async()=>{
  const f=fixture();f.storage.getItem=()=>{throw Error("storage unavailable");};const page=await screen(f);assert.equal(page.element("clock-controls").hidden,true);
