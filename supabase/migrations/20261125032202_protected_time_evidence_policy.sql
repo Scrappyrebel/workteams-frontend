@@ -21,16 +21,19 @@ on public.time_entries(company_id,member_id) where clock_out is null;
 
 alter table public.time_entries
   add column if not exists clock_in_received_at timestamptz,
-  add column if not exists clock_out_received_at timestamptz;
-grant select(clock_in_received_at,clock_out_received_at) on public.time_entries to authenticated;
+  add column if not exists clock_out_received_at timestamptz,
+  add column if not exists punch_revision integer not null default 0;
+grant select(clock_in_received_at,clock_out_received_at,punch_revision) on public.time_entries to authenticated;
 -- Existing records remain NULL: their historical receipt time is unknown.
 create or replace function public.stamp_time_punch_receipt()
 returns trigger language plpgsql security invoker set search_path=public,pg_temp as $$
 begin
   if tg_op='INSERT' then
+    new.punch_revision=0;
     new.clock_in_received_at=clock_timestamp();
     new.clock_out_received_at=case when new.clock_out is not null then clock_timestamp() else null end;
   else
+    new.punch_revision=case when new.clock_in is distinct from old.clock_in or new.clock_out is distinct from old.clock_out then old.punch_revision+1 else old.punch_revision end;
     new.clock_in_received_at=old.clock_in_received_at;
     new.clock_out_received_at=case when old.clock_out is null and new.clock_out is not null
       then clock_timestamp() else old.clock_out_received_at end;

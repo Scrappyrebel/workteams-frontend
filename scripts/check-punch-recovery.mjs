@@ -20,7 +20,7 @@ await check("blocked punch retains identity and timestamp on repeated tap",async
  assert.equal(repeat.id,first.id);assert.equal(repeat.tappedAt,first.tappedAt);assert.equal(repeat.status,"blocked");box.stop();
 });
 await check("hung confirmation cannot strand delivery",async()=>{
- const box=make({canSend:()=>true,sendTimeoutMs:10,send:async()=>({id:"entry-a"}),confirm:()=>new Promise(()=>{})});
+ const box=make({canSend:()=>true,sendTimeoutMs:10,send:async()=>({id:"entry-a",clock_in:"2026-11-24T12:00Z",clock_out:"2026-11-24T14:00Z"}),confirm:()=>new Promise(()=>{})});
  await box.enqueue(intent);let timer;try{await Promise.race([box.drainOnce(),new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error("confirmation hung")),150)})]);assert.equal(box.snapshot().records.length,0)}finally{clearTimeout(timer);box.stop()}
 });
 await check("corrupt local storage is reported without erasing punches",async()=>{

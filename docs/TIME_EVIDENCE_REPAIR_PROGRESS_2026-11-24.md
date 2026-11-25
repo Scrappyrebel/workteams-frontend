@@ -41,3 +41,18 @@ The owner authorized launching the verified repairs in this thread. This does no
 Full build passed after company/industry/site policy, durable confirmation receipts, offline identity recovery and proof-finalization repairs. Added real IndexedDB recovery tests, exact migration on PostgreSQL, and eight actual route-handler completion cases. Fixed clock-screen hook initialization order and ensured newer manager corrections/closure override stale confirmation receipts. Photo retries use content hashes and verify object size, scoped row and attachment receipt before removing the original. Production migration is not yet applied; the earlier service confirmation expired without schema changes.
 
 Authenticated production browser and actual physical Android/iPhone/restart tests have not been completed. No production deployment or payroll cutover is claimed. Connecteam remains the official payroll record. Earlier unresolved cross-device, damaged-track and full offline recovery acceptance items still require verification before calling the whole application launch-ready.
+
+## November 25 continuation — receipts, manager corrections and actual storage
+
+Verified all 504 available blobs against exact draft 1fceb7af; the two unchanged icon assets remain in GitHub. Previous repairs were preserved.
+
+Fixed an older finishing receipt hiding a newer management reopening. Projection now respects server-controlled revisions, carries authoritative read age/revision into the offline context, ignores acknowledged queue leftovers and preserves corrected start times. Clock-out read-back scopes company and member, and replay pauses when the live authenticated actor changes. Invalid/foreign receipt rows retain originals. New persistent receipts exclude notes, pay rates, GPS and credentials.
+
+Proof completion now verifies actual scoped private files and their container signatures, sizes, multipart shape/order/completeness and signed B2 versions. Missing files, wrong companies, incomplete parts, forged manifests or changed private versions cannot clear pending status. Failed company-policy reads cannot waive a required cleaning book; an override requires its persisted nonempty reason and remains flagged. Storage/container checks do not certify moving frames or semantic notebook content.
+
+Executed: original queue/recovery drills and extended actual route/IndexedDB/receipt tests pass, including manager reopening, corrected start, failed persistence, actor change, malformed/foreign receipts and minimal persistence. Twenty-eight actual proof-finalization cases pass. All 64 company/industry/site policy combinations and exact PostgreSQL migration/repeat/receipt/revision tests pass. Full configured prebuild passed; hosted build for this continuation is next. Actual rollback was rehearsed locally without rewriting any time. A private backup preserves 71 live time entries, 44 video rows, 50 book rows, two company configurations, locations, grants, policies, storage metadata and rollback SQL. Both current companies' explicit staffing_types are cleaning-only; no names were used to infer industry.
+
+Production migration remains absent and this release remains unmerged/undeployed. Authenticated unrelated subscriber/device acceptance, semantic notebook rejection, physical Android/iPhone capture/playback/frozen-frame, cross-device concurrency and broader commercial security remain unverified. Do not call the application launch-ready. Connecteam remains the payroll record. Phase 2 follows the protected repairs; Accounting follows the four applications.
+
+LAST WORKED: November 25, 2026 — 12:24 PM CST
+CURRENT UPDATE: November 25, 2026 — 12:24 PM CST

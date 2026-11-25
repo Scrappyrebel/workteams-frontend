@@ -51,4 +51,12 @@ await assert.rejects(db.query("insert into comm_book(id,company_id) values('0000
 assert.equal((await db.query("select count(*)::int n from comm_book")).rows[0].n,1);
 await db.exec(sql);assert.equal((await db.query("select count(*)::int n from time_entries")).rows[0].n,2);
 console.log("ok - database rejects non-cleaning/disabled book creation, retains historical evidence and migration is repeatable");
+assert.equal(original.punch_revision,0);assert.equal(closed.punch_revision,1);
+await db.query("update time_entries set punch_revision=999 where id=$1",[first]);
+assert.equal((await db.query("select punch_revision from time_entries where id=$1",[first])).rows[0].punch_revision,1);
+await db.query("update time_entries set clock_out=clock_out+interval '1 minute' where id=$1",[first]);
+assert.equal((await db.query("select punch_revision from time_entries where id=$1",[first])).rows[0].punch_revision,2);
+await db.query("update time_entries set clock_out=null where id=$1",[first]);
+assert.equal((await db.query("select punch_revision from time_entries where id=$1",[first])).rows[0].punch_revision,3);
+console.log("ok - unspoofable server revisions advance on correction/reopening while proof-only writes keep the same punch revision");
 await db.close();

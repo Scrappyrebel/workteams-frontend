@@ -53,7 +53,7 @@ export async function POST(req) {
       // clock_in included so the idempotent already-closed answer below
       // carries the entry's full recorded state (the punch outbox confirms
       // deliveries by read-back and shows the shift length from it).
-      .select("id, member_id, company_id, clock_in, clock_out")
+      .select("id, member_id, company_id, clock_in, clock_out, location_id, punch_revision")
       .eq("id", entryId)
       .maybeSingle();
     if (!entry || entry.company_id !== companyId || entry.member_id !== member.id) {

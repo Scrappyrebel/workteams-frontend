@@ -99,7 +99,7 @@ console.log("ok - invalid and future device times require review");
  console.log("ok - actual IndexedDB confirmations survive reopening and stale reads cannot resurrect a finished shift");
 }
 {
- const storage=createMemoryStorage();storage.putReceipt=async()=>{throw Error("quota")};const box=createPunchOutbox({storage,send:async()=>({id:"closed",clock_out:input.tappedAt}),canSend:()=>true,drainIntervalMs:0});
+ const storage=createMemoryStorage();storage.putReceipt=async()=>{throw Error("quota")};const box=createPunchOutbox({storage,send:async()=>({id:"closed",clock_in:input.tappedAt,clock_out:input.tappedAt}),canSend:()=>true,drainIntervalMs:0});
  await box.enqueue({type:"out",companyId:COMPANY,memberId:MEMBER,entryId:"closed"});await assert.rejects(box.drainOnce(),/quota/);assert.equal(box.snapshot().records[0].status,"queued");assert.equal((await storage.getAll()).length,1);box.stop();
  console.log("ok - failed confirmation persistence retains the original punch and remains retryable");
 }
@@ -112,4 +112,44 @@ console.log("ok - invalid and future device times require review");
  assert.equal(localShift(null,[],COMPANY,MEMBER,receipts,99).id,entry.id);
  const page=readFileSync(new URL("../app/app/[companyId]/time/page.js",import.meta.url),"utf8");assert.ok(page.indexOf("const open =")<page.indexOf("[company?.id, member?.id, open?.id]"));
  console.log("ok - newer authoritative closure and corrections win over old receipts; clock-screen hooks read active state after initialization");
+}
+
+{
+ const active={id:'manager-reopened',company_id:COMPANY,member_id:MEMBER,clock_in:'2026-11-24T15:00Z',clock_out:null,punch_revision:2};
+ const oldOut={id:'original-out',punch:{id:'original-out',companyId:COMPANY,memberId:MEMBER,type:'out',entryId:active.id,tappedAtMs:2},entry:{...active,clock_out:'2026-11-24T17:00Z',punch_revision:1},deliveredAtMs:100};
+ assert.equal(localShift(active,[],COMPANY,MEMBER,[oldOut],0).id,active.id);
+ const legacyOut={...oldOut,entry:{...oldOut.entry}};delete legacyOut.entry.punch_revision;
+ assert.equal(localShift(active,[],COMPANY,MEMBER,[legacyOut],0).id,active.id);
+ assert.equal(localShift({...active,punch_revision:0},[],COMPANY,MEMBER,[oldOut],0),null);
+ const legacy={...active};delete legacy.punch_revision;
+ assert.equal(localShift(legacy,[],COMPANY,MEMBER,[oldOut],101).id,active.id);
+ const acknowledged={id:active.id,type:'in',companyId:COMPANY,memberId:MEMBER,tappedAt:'2026-11-24T14:00Z',tappedAtMs:1};
+ const inReceipt={id:active.id,punch:acknowledged,entry:{...active,punch_revision:0},deliveredAtMs:100};
+ const corrected={...active,clock_in:'2026-11-24T15:30Z',punch_revision:3};
+ assert.equal(localShift(corrected,[acknowledged],COMPANY,MEMBER,[inReceipt,oldOut],0).clock_in,corrected.clock_in);
+ assert.equal(localShift({...active,company_id:'foreign'},[],COMPANY,MEMBER,[],0),null);
+ console.log('ok - older finishing receipts and acknowledged originals cannot hide management reopenings or reverse corrected starts');
+}
+{
+ const source=readFileSync(new URL('../app/app/[companyId]/time/page.js',import.meta.url),'utf8');
+ const expression=source.split('canSend: (r) => ')[1].split(',\n')[0];const liveAuthUserRef={current:null};
+ const canSend=new Function('company','member','liveAuthUserRef','return r=>('+expression+');')({id:COMPANY},{id:MEMBER,user_id:'actor-a'},liveAuthUserRef);
+ const punch={companyId:COMPANY,memberId:MEMBER};assert.equal(canSend(punch),false);
+ liveAuthUserRef.current='actor-b';assert.equal(canSend(punch),false);liveAuthUserRef.current='actor-a';assert.equal(canSend(punch),true);
+ assert.equal(canSend({...punch,memberId:'other'}),false);
+ console.log('ok - actual time-clock sender predicate pauses when the authenticated actor changes');
+}
+
+{
+ for(const patch of [{id:'wrong-entry'},{company_id:'foreign'},{member_id:'foreign'},{clock_out:null},{clock_out:'invalid'}]){
+  const storage=createMemoryStorage(),box=createPunchOutbox({storage,canSend:()=>true,drainIntervalMs:0,
+   send:async()=>({id:'receipt-entry',company_id:COMPANY,member_id:MEMBER,clock_in:'2026-11-24T12:00Z',clock_out:'2026-11-24T14:00Z',...patch})});
+  await box.enqueue({type:'out',companyId:COMPANY,memberId:MEMBER,entryId:'receipt-entry'});
+  await assert.rejects(box.drainOnce(),/receipt does not match/);assert.equal((await storage.getAll()).length,1);assert.equal(box.snapshot().lastDelivered,null);box.stop();
+ }
+ const storage=createMemoryStorage(),box=createPunchOutbox({storage,canSend:()=>true,drainIntervalMs:0,
+  send:async()=>({id:'receipt-entry',clock_in:'2026-11-24T12:00Z',clock_out:'2026-11-24T14:00Z',notes:'private note',pay_rate_applied:30,clock_in_lat:38,access_token:'synthetic-secret'})});
+ await box.enqueue({type:'out',companyId:COMPANY,memberId:MEMBER,entryId:'receipt-entry',notes:'private note',lat:38,lng:-90});await box.drainOnce();
+ const saved=JSON.stringify(await storage.getReceipts());assert.ok(!saved.includes('private note'));assert.ok(!saved.includes('synthetic-secret'));assert.ok(!saved.includes('pay_rate_applied'));assert.ok(!saved.includes('clock_in_lat'));box.stop();
+ console.log('ok - invalid/foreign receipts retain originals and durable confirmations exclude notes, pay rates, GPS and credentials');
 }

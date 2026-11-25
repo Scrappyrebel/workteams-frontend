@@ -132,6 +132,14 @@ export default function TimeClockPage() {
   // the screen always shows the truth: saved on this phone / sending /
   // confirmed / blocked with the server's reason.
   const [punchState, setPunchState] = useState({ records: [], lastDelivered: null });
+  const liveAuthUserRef=useRef(null);
+  useEffect(()=>{
+    const {data:{subscription}}=supabase().auth.onAuthStateChange((_event,session)=>{
+      liveAuthUserRef.current=session?.user?.id||null;
+      Promise.resolve().then(()=>outboxRef.current?.kick());
+    });
+    return()=>{subscription.unsubscribe();liveAuthUserRef.current=null;};
+  },[]);
   const outboxRef = useRef(null);
   const outboxInitRef = useRef(null);
   const punchHandlersRef = useRef(null);
@@ -190,6 +198,7 @@ export default function TimeClockPage() {
     if(navigator.onLine===false) {
       const snap=loadOfflineContext(browserOfflineStorage(),member.user_id,company.id);
       const saved=openEntrySnapshot(snap);
+      setServerReadStartedAt(Number(snap?.time?.serverReadStartedAt)||0);
       setOpen(saved ? {...saved,company_id:company.id,member_id:member.id} : null);
       const today=dateInTz(new Date(),company.timezone || "America/Chicago");
       const time=clockInSnapshot(snap,today);
@@ -238,6 +247,7 @@ export default function TimeClockPage() {
       // out — the entry id is all the outbox needs, and the punch
       // carries its own time and GPS when it delivers.
       const savedOpen = openEntrySnapshot(offlineSnap);
+      setServerReadStartedAt(Number(offlineSnap?.time?.serverReadStartedAt)||0);
       if (savedOpen) {
         setOpen({...savedOpen,company_id:company.id,member_id:member.id});
         setOfflineMode(true);
@@ -368,6 +378,7 @@ export default function TimeClockPage() {
       saveOfflineContext(browserOfflineStorage(), member.user_id, company.id, {
         time: {
           forDate: today,
+          serverReadStartedAt: !openError&&openRows ? openReadStartedAt : Number(offlineSnap?.time?.serverReadStartedAt)||0,
           shifts: assigned || [],
           locations: locs || offlineSnap?.time?.locations || [],
           // If the open-entry read itself failed this load, keep the
@@ -378,6 +389,7 @@ export default function TimeClockPage() {
                   id: openRows[0].id,
                   clock_in: openRows[0].clock_in,
                   clock_out: null,
+                  punch_revision: openRows[0].punch_revision,
                   location_id: openRows[0].location_id,
                   clock_in_role: openRows[0].clock_in_role || null,
                   locations: openRows[0].locations ? { name: openRows[0].locations.name } : null,
@@ -601,14 +613,15 @@ export default function TimeClockPage() {
   async function confirmPunch(punch) {
     const sb = supabase();
     if (punch.type === "in") {
-      const {data} = await sb.from("time_entries").select("id,clock_in,clock_out,location_id").eq("id",punch.id).eq("company_id",punch.companyId).eq("member_id",punch.memberId).maybeSingle();
+      const {data} = await sb.from("time_entries").select("id,company_id,member_id,clock_in,clock_out,location_id,punch_revision").eq("id",punch.id).eq("company_id",punch.companyId).eq("member_id",punch.memberId).maybeSingle();
       return data || null;
     }
     if (punch.type === "out") {
       const { data } = await sb
         .from("time_entries")
-        .select("id, clock_in, clock_out, location_id")
+        .select("id, company_id, member_id, clock_in, clock_out, location_id, punch_revision")
         .eq("id", punch.entryId)
+        .eq("company_id",punch.companyId).eq("member_id",punch.memberId)
         .maybeSingle();
       return data && data.clock_out ? data : null;
     }
@@ -671,7 +684,7 @@ export default function TimeClockPage() {
         const storage = await openBrowserPunchStorage();
         const outbox = createPunchOutbox({
           storage,
-          canSend: (r) => r.companyId === company?.id && r.memberId === member?.id,
+          canSend: (r) => r.companyId === company?.id && r.memberId === member?.id && liveAuthUserRef.current === member?.user_id,
           send: (punch) => punchHandlersRef.current.sendPunch(punch),
           confirm: (punch) => punchHandlersRef.current.confirmPunch(punch),
           onChange: (snap) => setPunchState(snap),
