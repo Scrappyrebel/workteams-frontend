@@ -1,3 +1,4 @@
+import { devicePunchTime } from "../../../../lib/local-shift.mjs";
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { checkRateLimit, clientIp } from "../../../../lib/rate-limit";
@@ -32,7 +33,7 @@ export async function POST(req) {
     const user = await authedUser(req);
     if (!user) return NextResponse.json({ error: "Sign in required" }, { status: 401 });
 
-    const { companyId, entryId, lat, lng } = await req.json();
+    const { companyId, entryId, lat, lng, punchId, tappedAt } = await req.json();
     if (!companyId || !entryId) {
       return NextResponse.json({ error: "companyId and entryId are required" }, { status: 400 });
     }
@@ -52,7 +53,7 @@ export async function POST(req) {
       // clock_in included so the idempotent already-closed answer below
       // carries the entry's full recorded state (the punch outbox confirms
       // deliveries by read-back and shows the shift length from it).
-      .select("id, member_id, company_id, clock_in, clock_out")
+      .select("id, member_id, company_id, clock_in, clock_out, location_id, punch_revision")
       .eq("id", entryId)
       .maybeSingle();
     if (!entry || entry.company_id !== companyId || entry.member_id !== member.id) {
@@ -65,24 +66,35 @@ export async function POST(req) {
       return NextResponse.json({ entry, alreadyClosed: true });
     }
 
+    let originalTime;
+    try { originalTime = punchId ? devicePunchTime(tappedAt,Date.now(),entry.clock_in) : new Date().toISOString(); }
+    catch(error) { return NextResponse.json({error:error.message},{status:400}); }
+
     const { data: updated, error } = await sb
       .from("time_entries")
       .update({
-        clock_out: new Date().toISOString(), // server time, not client time
-        clock_out_lat: Number.isFinite(Number(lat)) ? Number(lat) : null,
-        clock_out_lng: Number.isFinite(Number(lng)) ? Number(lng) : null,
+        clock_out: originalTime,
+        clock_out_lat: lat != null && lat !== "" && Number.isFinite(Number(lat)) ? Number(lat) : null,
+        clock_out_lng: lng != null && lng !== "" && Number.isFinite(Number(lng)) ? Number(lng) : null,
         upload_pending: true, // proof uploads finish after the timestamp saves
       })
       .eq("id", entryId)
+      .eq("company_id", companyId)
+      .eq("member_id", member.id)
+      .is("clock_out", null)
       .select()
-      .single();
+      .maybeSingle();
     if (error) {
       console.error("clock-out update failed", error.message);
       return NextResponse.json({ error: "Clock-out failed. Try again." }, { status: 500 });
     }
-    return NextResponse.json({ entry: updated });
+    if (updated) return NextResponse.json({ entry: updated });
+    const {data: closed} = await sb.from("time_entries").select("*").eq("id",entryId).eq("company_id",companyId).eq("member_id",member.id).maybeSingle();
+    if (closed?.clock_out) return NextResponse.json({entry:closed});
+    return NextResponse.json({error:"Clock-out could not be confirmed; original punch remains pending."},{status:503});
   } catch (e) {
     console.error("clock-out error", e);
     return NextResponse.json({ error: "Clock-out failed. Try again." }, { status: 500 });
   }
 }
+

@@ -31,7 +31,7 @@ test("existing form, save path and private posture are unchanged", () => {
     // 2026-11-21: emptyForm gains require_geofence (Wendy's per-location
     // geofence tick box, offline-fix requirements 2026-11-18). The pin
     // below is the new exact shape; every other assertion is unchanged.
-    'const emptyForm = { name: "", address: "", client_name: "", client_phone: "", notes: "", lat: "", lng: "", geofence_radius_m: 100, require_geofence: true, rate_area_id: "" }',
+    'const emptyForm = { name: "", address: "", client_name: "", client_phone: "", notes: "", lat: "", lng: "", geofence_radius_m: 100, require_geofence: true, require_walkthrough_video: true, require_book_photo: true, rate_area_id: "" }',
     '.from("location_private")',
     'onConflict: "location_id"',
     "validateLocationGeofence(form.address, form.lat, form.lng)",
@@ -86,3 +86,4 @@ test("search filters displayed cards by stored fields only", () => {
   assert.ok(page.includes("No locations match your search."), "no-match line exists");
   assert.ok(page.includes("Site activity"), "activity toggle is labelled");
 });
+

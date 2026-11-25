@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { supabase } from "../../../../lib/supabase";
+import { proofFeatureEnabled } from "../../../../lib/proof-policy";
 import { useCompany } from "../../../../lib/company-context";
 import { readEvidenceBlob, evidenceFilename, exportEvidence } from "../../../../lib/evidence-export";
 
@@ -230,6 +231,7 @@ export default function CommBookPage() {
 
   const catLabel = (key) => CATEGORIES.find((c) => c.key === key)?.label || key;
 
+  if (!loading && !proofFeatureEnabled(company,"book")) return <main className="site-shell"><p>Communication Book is available only when enabled for a cleaning company. Existing records are preserved.</p></main>;
   if (loading) return <main className="site-shell"><p>Loading…</p></main>;
 
   // Log roll-up (Wendy, WorkTeams walkthrough, 2026-11-19): today's
@@ -431,3 +433,4 @@ export default function CommBookPage() {
     </main>
   );
 }
+

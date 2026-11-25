@@ -15,7 +15,7 @@ import { supabase } from "../lib/supabase";
 // starting values and this panel only talks to the database when the
 // owner actually saves. A save error still shows — that one is real
 // and the owner caused it by tapping Save.
-export default function CompanyFeatureToggles({ companyId, initialFlags }) {
+export default function CompanyFeatureToggles({ companyId, initialFlags, bookApplicable = false }) {
   const [saving, setSaving] = useState(false);
   const [flags, setFlags] = useState({
     videos: initialFlags?.videos !== false,
@@ -45,7 +45,8 @@ export default function CompanyFeatureToggles({ companyId, initialFlags }) {
         videos: data.enable_shift_videos !== false,
         book: data.enable_comm_book !== false,
       });
-      setMessage("Saved. The app will update on next page load.");
+      window.dispatchEvent(new CustomEvent("workteams:policy-changed",{detail:{companyId,policy:data}}));
+      setMessage("Feature switches saved.");
     }
     setSaving(false);
   }
@@ -63,11 +64,12 @@ export default function CompanyFeatureToggles({ companyId, initialFlags }) {
             onChange={(e) => setFlags((f) => ({ ...f, videos: e.target.checked }))} />
           🎬 Shift Videos
         </label>
-        <label style={{ display: "flex", gap: 10, marginBottom: 14, alignItems: "center" }}>
+        {bookApplicable && <label style={{ display: "flex", gap: 10, marginBottom: 14, alignItems: "center" }}>
           <input type="checkbox" checked={flags.book}
             onChange={(e) => setFlags((f) => ({ ...f, book: e.target.checked }))} />
           📖 Communication Book
-        </label>
+        </label>}
+
         <button type="submit" disabled={saving} className="btn btn-primary"
           style={{ cursor: saving ? "wait" : "pointer" }}>
           {saving ? "Saving…" : "Save"}
@@ -78,3 +80,4 @@ export default function CompanyFeatureToggles({ companyId, initialFlags }) {
     </section>
   );
 }
+

@@ -45,7 +45,7 @@ check("phase-1 clock-out first", T, (s) =>
   s.includes('await api("/api/time/clock-out"') && s.includes('setProofEntry(open)') &&
   !s.includes('await proofRef.current.waitForUploads()'));
 check("recording retained after clock-out", T, (s) =>
-  s.includes('(open || proofEntry) &&') && s.includes("hasUnsavedRecording") &&
+  s.includes('evidenceEntry &&') && s.includes("hasUnsavedRecording") &&
   s.includes("onProofUploaded={finalizeProofUpload}"));
 check("multipart 10-minute upload", C, (s) =>
   s.includes("VIDEO_PART_BYTES = 40 * 1024 * 1024") &&
@@ -229,3 +229,4 @@ if (failures.length) {
   process.exit(1);
 }
 console.log("\nAll end-of-shift proof guards passed.");
+

@@ -28,7 +28,7 @@ test("migration 102 adds the column defaulting to required", () => {
 test("locations form carries the tick and saves fail-soft", () => {
   const page = read("app/app/[companyId]/locations/page.js");
   for (const needle of [
-    "require_geofence: true, rate_area_id",
+    "require_geofence: true, require_walkthrough_video: true, require_book_photo: true, rate_area_id",
     "require_geofence: form.require_geofence !== false,",
     "require_geofence: l.require_geofence !== false,",
     "Require the geofence to clock in",
@@ -50,11 +50,10 @@ test("clock-in route skips the fence only when the tick is off", () => {
   }
 });
 
-test("time page pre-check and hint honor the tick", () => {
+test("time page hint honors the tick; server authorizes after durable capture", () => {
   const page = read("app/app/[companyId]/time/page.js");
   for (const needle of [
     "geofence_radius_m, require_geofence",
-    "loc.require_geofence !== false",
     "sel.require_geofence !== false",
   ]) {
     assert.ok(page.includes(needle), `time page keeps: ${needle}`);
@@ -70,3 +69,4 @@ test("owner verification report treats tick-off locations as not required", () =
     assert.ok(route.includes(needle), `geofence-check keeps: ${needle}`);
   }
 });
+

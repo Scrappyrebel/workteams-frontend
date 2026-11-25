@@ -6,7 +6,7 @@ import AppShell from "../../../components/AppShell";
 import IosInstallHint from "../../../components/IosInstallHint";
 import { supabase } from "../../../lib/supabase";
 import { getUser, getSession, linkMemberOnSignIn } from "../../../lib/session";
-import { browserOfflineStorage, loadOfflineContext, saveOfflineContext, shellSnapshot } from "../../../lib/offline-context.mjs";
+import { browserOfflineStorage, loadOfflineContext, saveOfflineContext, shellSnapshot, cachedOfflineUser } from "../../../lib/offline-context.mjs";
 import { CompanyContext } from "../../../lib/company-context";
 import { saveLastPath, clearLastPath } from "../../../lib/last-path";
 import { entitledTier } from "../../../lib/tiers";
@@ -21,7 +21,12 @@ export default function CompanyLayout({ children }) {
 
   useEffect(() => {
     (async () => {
-      let user = await getUser();
+      const offline=typeof navigator!=="undefined" && navigator.onLine===false;
+      let user = offline ? cachedOfflineUser(browserOfflineStorage(),process.env.NEXT_PUBLIC_SUPABASE_URL) : await getUser();
+      if(offline && user) {
+        const shell=shellSnapshot(loadOfflineContext(browserOfflineStorage(),user.id,companyId));
+        if(shell){setState({company:shell.company,member:shell.member,loading:false,offline:true});return;}
+      }
       if (!user) {
         // Offline (Wendy, 2026-11-21): getUser() validates against the
         // server, so with no signal it answers null even for a person
@@ -60,7 +65,7 @@ export default function CompanyLayout({ children }) {
         // step instead of locking the user out. Missing proof values are
         // resolved downstream by lib/proof-policy: absence = feature ON and
         // requirement ON (the spec default), never a crash.
-        const widest = await sb.from("companies").select("id,name,tier,timezone,subscription_status,is_complimentary,created_at,enable_shift_videos,enable_comm_book,require_walkthrough_video,require_book_photo").eq("id", companyId).single();
+        const widest = await sb.from("companies").select("id,name,tier,timezone,subscription_status,is_complimentary,created_at,industry_key,enable_shift_videos,enable_comm_book,require_walkthrough_video,require_book_photo").eq("id", companyId).single();
         if (widest.data) {
           company = widest.data;
         } else {
@@ -109,6 +114,17 @@ export default function CompanyLayout({ children }) {
     })();
   }, [companyId, router]);
 
+  useEffect(() => {
+    const updatePolicy = event => {
+      if (event.detail?.companyId !== companyId) return;
+      const policy=event.detail.policy;
+      if (!policy) return;
+      setState(previous => ({...previous,company:previous.company ? {...previous.company,...policy} : null}));
+    };
+    window.addEventListener("workteams:policy-changed",updatePolicy);
+    return () => window.removeEventListener("workteams:policy-changed",updatePolicy);
+  },[companyId]);
+
   // Remember where the user was so the app icon reopens here.
   useEffect(() => {
     saveLastPath(pathname);
@@ -137,3 +153,4 @@ export default function CompanyLayout({ children }) {
     </CompanyContext.Provider>
   );
 }
+

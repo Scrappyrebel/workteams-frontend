@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { proofFeatureEnabled } from "../lib/proof-policy";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { clearLastPath } from "../lib/last-path";
@@ -239,6 +240,7 @@ export default function AppShell({ company, member, children }) {
   const links = NAV.filter((item) => {
     if (item.minRole && !roleAtLeast(role, item.minRole)) return false;
     if (item.productOwnerOnly && !isOwner) return false;
+    if (item.key === "commbook" && !proofFeatureEnabled(company,"book")) return false;
     if (item.featureFlag && company && company[item.featureFlag] === false) return false;
     return true;
   });
@@ -720,3 +722,4 @@ export default function AppShell({ company, member, children }) {
     </div>
   );
 }
+
