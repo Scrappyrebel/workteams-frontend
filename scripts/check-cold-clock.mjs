@@ -27,6 +27,16 @@ test("built worker restarts with imports and all networking unavailable and answ
    for(const fn of handlers.fetch)fn({request:{method:"GET",mode:"navigate",url:`https://workteams.test${path}`},respondWith:p=>{result=p;},waitUntil:()=>{}});
    assert.match(await (await result).text(),/Offline Time Clock/);
  }
+ for(const path of ["/login","/signup",`/app/${company}/schedule`,"/sw.js"]){
+   let result,count=0;
+   for(const fn of handlers.fetch)fn({request:{method:"GET",mode:"navigate",url:`https://workteams.test${path}`},respondWith:p=>{result=p;count++;},waitUntil:()=>{}});
+   assert.equal(count,1,"exactly one navigation handler owns "+path);
+   const fallback=await (await result).text();assert.match(fallback,/You're offline/);assert.match(fallback,/href="\/app"/);
+   assert.ok(!fallback.includes('id="clock-controls"'),"unrelated routes get a public fallback, not a saved company");
+ }
+ let intercepted=false;
+ for(const fn of handlers.fetch)fn({request:{method:"GET",mode:"navigate",url:"https://workteams.test/api/time/clock-out"},respondWith:()=>{intercepted=true;}});
+ assert.equal(intercepted,false,"API navigation remains untouched");
 });
 test("startup probe rejects old, silent and missing controllers and closes transferred ports",async()=>{
  const makeChannel=()=>({port1:{close(){}},port2:{close(){}}});

@@ -102,7 +102,11 @@ self.addEventListener("fetch", (event) => {
   const isNavigation = request.mode === "navigate";
   const isRsc = url.searchParams.has("_rsc");
   if (!isNavigation && !isRsc) return;
-  if (!(url.pathname === "/" || url.pathname === "/app" || url.pathname.startsWith("/app/"))) return;
+  // Safari may restore a sign-in or another saved entry URL. Every document
+  // navigation gets a public fallback; only clock routes expose the local clock.
+  // API/RSC requests outside the app remain untouched.
+  if (url.pathname.startsWith("/api/")) return;
+  if (!isNavigation && !(url.pathname === "/" || url.pathname === "/app" || url.pathname.startsWith("/app/"))) return;
   event.respondWith(
     (async () => {
       try {
@@ -150,6 +154,8 @@ self.addEventListener("fetch", (event) => {
   // Never cache Supabase API/auth or other cross-origin calls.
   if (url.origin !== self.location.origin) return;
   if (!STATIC_RE.test(url.pathname)) return;
+  // The document handler already owns navigations, even a URL ending in .js.
+  if (request.mode === "navigate") return;
   // NEVER run an old recorder / uploader after a production fix. Old
   // cache-first JavaScript made Android installed WorkTeams keep rejecting a
   // 9m30 walkthrough with a removed "Try a shorter walkthrough" error.
