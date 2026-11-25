@@ -124,6 +124,46 @@ test("the exact existing saved schedule shape is accepted, but explicit foreign 
  snap.time.shifts[0].member_id="someone-else";f.storage.setItem(key,JSON.stringify(snap));
  page=await screen(f);assert.equal(page.element("clock-in").disabled,true);
 });
+test("a sole saved location is visible and selected explicitly without opening the iPhone picker",async()=>{
+ const f=fixture();const page=await screen(f);
+ assert.equal(page.element("clock-location").options.length,1);
+ assert.equal(page.element("clock-location").options[0].textContent,"Office");
+ assert.equal(page.element("clock-location").value,"site");
+ assert.equal(page.element("clock-location").disabled,false);
+ assert.equal(page.element("clock-in").disabled,false);
+});
+test("expired and stale schedules keep their saved location visible and explain why clock-in is blocked",async()=>{
+ const f=fixture(),key=`workteams-offline-context-v1:${user}:${company}`,snap=JSON.parse(f.storage.getItem(key));
+ // Yesterday is always outside the shared late-start window, regardless of run time.
+ snap.time.shifts[0].shift_date="2000-01-01";
+ f.storage.setItem(key,JSON.stringify(snap));
+ let page=await screen(f);
+ assert.equal(page.element("clock-location").value,"site");assert.equal(page.element("clock-location").disabled,false);
+ assert.equal(page.element("clock-in").disabled,true);
+ assert.match(page.element("clock-summary").textContent,/available clock-in window/);
+ assert.ok(!page.element("clock-status").textContent.includes("clock ready"));
+ await page.element("clock-in").onclick();
+ globalThis.indexedDB=f.idb;assert.equal((await createIndexedDbStorage().getAll()).length,0);
+ snap.time.forDate="2000-01-01";f.storage.setItem(key,JSON.stringify(snap));page=await screen(f);
+ assert.match(page.element("clock-summary").textContent,/Today's schedule is not saved/);
+ assert.equal(page.element("clock-in").disabled,true);
+});
+test("multiple saved assignments require a deliberate location; missing assignments never show a blank control",async()=>{
+ const f=fixture(),key=`workteams-offline-context-v1:${user}:${company}`,snap=JSON.parse(f.storage.getItem(key));
+ snap.time.shifts.push({...snap.time.shifts[0],id:"shift-two",location_id:"site-two"});
+ snap.time.locations.push({id:"site-two",name:"School"});
+ f.storage.setItem(key,JSON.stringify(snap));let page=await screen(f);
+ assert.equal(page.element("clock-location").options.length,3);assert.equal(page.element("clock-location").value,"");
+ assert.equal(page.element("clock-in").disabled,true);
+ page.element("clock-location").value="site-two";page.element("clock-location").onchange();
+ assert.equal(page.element("clock-in").disabled,false);await page.element("clock-in").onclick();
+ globalThis.indexedDB=f.idb;assert.equal((await createIndexedDbStorage().getAll())[0].locationId,"site-two");
+ const empty=fixture(),none=JSON.parse(empty.storage.getItem(key));none.time.shifts=[];
+ empty.storage.setItem(key,JSON.stringify(none));page=await screen(empty);
+ assert.equal(page.element("clock-location").options[0].textContent,"No assigned locations saved");
+ assert.equal(page.element("clock-location").disabled,true);assert.equal(page.element("clock-in").disabled,true);
+ assert.match(page.element("clock-summary").textContent,/No assigned locations are saved/);
+});
 test("unreadable context fails closed and no startup code clears saved media",async()=>{
  const f=fixture();f.storage.getItem=()=>{throw Error("storage unavailable");};const page=await screen(f);assert.equal(page.element("clock-controls").hidden,true);
  assert.ok(!script.includes("vaultRemove("));assert.ok(!script.includes("deleteDatabase("));
