@@ -8,7 +8,7 @@ import { isManagerRole, isSupervisorRole } from "../../../../lib/roles";
 import { chicagoToday, chicagoDaysAgo } from "../../../../lib/dates";
 import { validateLocationGeofence } from "../../../../lib/location-geofence-validation.mjs";
 
-const emptyForm = { name: "", address: "", client_name: "", client_phone: "", notes: "", lat: "", lng: "", geofence_radius_m: 100, require_geofence: true, rate_area_id: "" };
+const emptyForm = { name: "", address: "", client_name: "", client_phone: "", notes: "", lat: "", lng: "", geofence_radius_m: 100, require_geofence: true, require_walkthrough_video: true, require_book_photo: true, rate_area_id: "" };
 
 async function geocodeAddress(address) {
   const url = "https://nominatim.openstreetmap.org/search?format=json&limit=1&q=" + encodeURIComponent(address);
@@ -126,6 +126,8 @@ export default function LocationsPage() {
       lng: Number.isFinite(lng) ? lng : null,
       geofence_radius_m: parseInt(form.geofence_radius_m, 10) || 100,
       require_geofence: form.require_geofence !== false,
+      require_walkthrough_video: form.require_walkthrough_video !== false,
+      require_book_photo: form.require_book_photo !== false,
       rate_area_id: form.rate_area_id || null,
     };
     // Gate codes, alarm notes, client phone numbers stay out of the main
@@ -264,6 +266,8 @@ export default function LocationsPage() {
       lng: l.lng ?? "",
       geofence_radius_m: l.geofence_radius_m ?? 100,
       require_geofence: l.require_geofence !== false,
+      require_walkthrough_video: l.require_walkthrough_video !== false,
+      require_book_photo: l.require_book_photo !== false,
       rate_area_id: l.rate_area_id || "",
     });
     window.scrollTo({ top: 0, behavior: "smooth" });
@@ -365,6 +369,8 @@ export default function LocationsPage() {
                   </span>
                 </span>
               </label>
+              <label style={{display:"block",marginTop:12}}><input type="checkbox" checked={form.require_walkthrough_video !== false} onChange={event=>setForm({...form,require_walkthrough_video:event.target.checked})} /> Require walkthrough video at this site when the company requirement is on</label>
+              {company.industry_key === "janitorial_cleaning" && <label style={{display:"block",marginTop:12}}><input type="checkbox" checked={form.require_book_photo !== false} onChange={event=>setForm({...form,require_book_photo:event.target.checked})} /> Require Communication Book at this site when the company requirement is on</label>}
               <p style={{ fontSize: "0.82rem", color: "var(--muted)", margin: "8px 0 0" }}>
                 Clock-ins outside this boundary are blocked. For Missouri sites, longitude must be negative (west). Confirm the pin at the building.
               </p>
@@ -595,3 +601,4 @@ const dangerButton = {
   fontWeight: 700,
   cursor: "pointer",
 };
+

@@ -57,7 +57,7 @@ export async function POST(req) {
 
     const { data: entry } = await sb
       .from("time_entries")
-      .select("id, member_id, company_id, clock_out, upload_pending")
+      .select("id, member_id, company_id, location_id, clock_out, upload_pending")
       .eq("id", entryId)
       .maybeSingle();
     if (!entry || entry.company_id !== companyId || entry.member_id !== member.id) {
@@ -72,12 +72,15 @@ export async function POST(req) {
     // requirement flag is on (feature-off companies need no proof).
     const { data: company, error: companyError } = await sb
       .from("companies")
-      .select("require_walkthrough_video, require_book_photo, enable_shift_videos, enable_comm_book")
+      .select("industry_key, require_walkthrough_video, require_book_photo, enable_shift_videos, enable_comm_book")
       .eq("id", companyId)
       .maybeSingle();
     if (companyError) console.warn("proof policy read fell back to defaults:", companyError.message);
-    const requireVideo = proofRequired(companyError ? null : company, "walkthrough");
-    const requirePhoto = proofRequired(companyError ? null : company, "book");
+    if (!entry.clock_out) return NextResponse.json({error:"Finishing time has not synchronized yet.",pending:"time"},{status:409});
+    const {data: location,error: locationError} = await sb.from("locations").select("require_walkthrough_video,require_book_photo").eq("id",entry.location_id).eq("company_id",companyId).maybeSingle();
+    if (locationError) throw locationError;
+    const requireVideo = proofRequired(companyError ? null : company, "walkthrough", location);
+    const requirePhoto = proofRequired(companyError ? null : company, "book", location);
 
     // Persisted employee overrides for this entry (migration 052). One row
     // per proof kind; a row satisfies its kind exactly like a proof row.
@@ -97,11 +100,13 @@ export async function POST(req) {
     if (requireVideo) {
       const { data: vid } = await sb
         .from("shift_videos")
-        .select("id")
+        .select("id,notes,video_url,file_size_bytes")
         .eq("time_entry_id", entryId)
+        .eq("company_id", companyId)
+        .eq("member_id", member.id)
         .limit(1)
         .maybeSingle();
-      if (!vid && !overrideKinds.has("walkthrough")) {
+      if ((!vid || !vid.video_url || Number(vid.file_size_bytes) <= 0 || String(vid.notes || "").startsWith("VIDEO PROOF NEEDS REVIEW:")) && !overrideKinds.has("walkthrough")) {
         return NextResponse.json(
           { error: "Required walkthrough video has not finished uploading.", pending: "walkthrough" },
           { status: 409 }
@@ -158,13 +163,9 @@ export async function POST(req) {
       .update({ upload_pending: false, proof_override_used: overrideKinds.size > 0 })
       .eq("id", entryId)
       .eq("company_id", companyId);
-    if (finalError) {
-      await sb
-        .from("time_entries")
-        .update({ upload_pending: false })
-        .eq("id", entryId)
-        .eq("company_id", companyId);
-    }
+    if (finalError) throw finalError;
+    const {data: finalEntry,error: verifyError}=await sb.from("time_entries").select("id,clock_out,upload_pending,proof_override_used").eq("id",entryId).eq("company_id",companyId).eq("member_id",member.id).maybeSingle();
+    if(verifyError || !finalEntry?.clock_out || finalEntry.upload_pending !== false) throw verifyError || new Error("Proof completion could not be verified.");
 
     return NextResponse.json({ ok: true, overrideUsed: overrideKinds.size > 0 });
   } catch (e) {
@@ -172,3 +173,4 @@ export async function POST(req) {
     return NextResponse.json({ error: "Failed to finalize proof." }, { status: 500 });
   }
 }
+

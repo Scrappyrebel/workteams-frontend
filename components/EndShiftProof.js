@@ -581,6 +581,14 @@ const EndShiftProof = forwardRef(function EndShiftProof(
           console.warn("Proof attachment retry may be needed", err);
         }
 
+        if (integrityWarningRef.current) {
+          // Storage success preserves the suspect original for management;
+          // it does not make a damaged picture track completed proof.
+          setVideoError(integrityWarningRef.current);
+          setVideoSaved(false); videoSavedRef.current=false;
+          setRecState("recorded"); setUploadFailed(true);
+          return;
+        }
         window.__endShiftVideoBlob = null;
         void vaultRemove(entryId, "video");
         videoSavedRef.current = true;
@@ -820,11 +828,17 @@ const EndShiftProof = forwardRef(function EndShiftProof(
       const { data: { session } } = await sb.auth.getSession();
       if (!session) throw new Error("You're signed out. Sign back in and retry.");
       const ext = (file.name.split(".").pop() || "jpg").toLowerCase();
-      const path = `${companyId}/${entryId}/book-${Date.now()}.${ext}`;
+      const digest=Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256",await file.arrayBuffer()))).map(v=>v.toString(16).padStart(2,"0")).join("");
+      const path = `${companyId}/${entryId}/book-${digest}.${ext}`;
       const { error: upErr } = await sb.storage.from("inspection-photos").upload(path, file);
-      if (upErr) throw new Error("Photo upload failed. Tap Retry.");
+      if (upErr && !/already exists|duplicate/i.test(upErr.message)) throw new Error("Photo upload failed. Tap Retry.");
+      const {data: object,error: objectError}=await sb.storage.from("inspection-photos").info(path);
+      if(objectError || Number(object?.size)!==file.size)throw new Error("Photo storage could not be verified. The original remains saved for retry.");
       setPhotoProgress(1);
 
+      const receipt=()=>sb.from("comm_book").select("id,photo_url").eq("company_id",companyId).eq("member_id",memberId).eq("time_entry_id",entryId).eq("photo_url",path).limit(1).maybeSingle();
+      const existing=await receipt();if(existing.error)throw existing.error;
+      if(!existing.data){
       const { error: dbErr } = await sb.from("comm_book").insert({
         company_id: companyId,
         member_id: memberId,
@@ -835,9 +849,11 @@ const EndShiftProof = forwardRef(function EndShiftProof(
         photo_url: path,
       });
       if (dbErr) throw dbErr;
+      }
+      const linked=await receipt();if(linked.error||linked.data?.photo_url!==path)throw new Error("Photo shift association is not confirmed. The original remains saved for retry.");
 
-      try {
-        await fetch("/api/time/clock-out/proof", {
+      {
+        const attached=await fetch("/api/time/clock-out/proof", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -845,9 +861,10 @@ const EndShiftProof = forwardRef(function EndShiftProof(
           },
           body: JSON.stringify({ companyId, entryId, kind: "book", storagePath: path }),
         });
-      } catch {}
+        if(!attached.ok)throw new Error("Photo proof receipt is pending. The original remains saved for retry.");
+      }
 
-      void vaultRemove(entryId, "photo");
+      await vaultRemove(entryId, "photo");
       photoSavedRef.current = true;
       setPhotoState("uploaded");
       setDone(true);

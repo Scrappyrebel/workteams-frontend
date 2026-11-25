@@ -46,7 +46,7 @@ test("EndShiftProof vaults captures before upload and removes them only on succe
     'kind: "video", companyId, entryId, memberId,',
     'kind: "photo", companyId, entryId, memberId,',
     'void vaultRemove(entryId, "video");',
-    'void vaultRemove(entryId, "photo");',
+    'await vaultRemove(entryId, "photo");',
     "📴 Saved on this phone — it will upload itself when you have signal.",
   ]) {
     assert.ok(src.includes(needle), `EndShiftProof keeps: ${needle}`);

@@ -9,7 +9,7 @@ import EmergencyButton from "../../../../components/EmergencyButton";
 import EndShiftProof from "../../../../components/EndShiftProof";
 import { chooseAssignedShift, shiftBounds } from "../../../../lib/attendance-shifts.mjs";
 import { dateInTz } from "../../../../lib/dates";
-import { proofRequired } from "../../../../lib/proof-policy";
+import { proofRequired, proofFeatureEnabled } from "../../../../lib/proof-policy";
 import { createPunchOutbox, openBrowserPunchStorage } from "../../../../lib/punch-outbox.mjs";
 import { browserOfflineStorage, loadOfflineContext, saveOfflineContext, clockInSnapshot, openEntrySnapshot } from "../../../../lib/offline-context.mjs";
 import { localShift } from "../../../../lib/local-shift.mjs";
@@ -104,24 +104,8 @@ export default function TimeClockPage() {
   const { company, member, loading, offline: shellOffline } = useCompany();
 
   const [serverOpen, setOpen] = useState(null);
+  const [serverReadStartedAt, setServerReadStartedAt] = useState(0);
   const [vaultCount, setVaultCount] = useState(0);
-  // Saved-offline proof (media vault): keep the waiting count current
-  // so the banner below is never stale. This effect MUST stay below the
-  // state declarations above: its dependency list reads `open`, and
-  // reading it before the declaration crashes the page on load
-  // (ReferenceError, HTTP 500 — hit production 2026-11-22).
-  useEffect(() => {
-    if (!company?.id || !member?.id) return;
-    let cancelled = false;
-    const recount = () => {
-      vaultCountFor({ companyId: company.id, memberId: member.id })
-        .then((n) => { if (!cancelled) setVaultCount(n); })
-        .catch(() => {});
-    };
-    recount();
-    window.addEventListener("online", recount);
-    return () => { cancelled = true; window.removeEventListener("online", recount); };
-  }, [company?.id, member?.id, open?.id]);
   const [entries, setEntries] = useState([]);
   const [locations, setLocations] = useState([]);
   const [myShifts, setMyShifts] = useState([]);
@@ -164,10 +148,28 @@ export default function TimeClockPage() {
   // mistaken for real proof.
   const [overridesByEntry, setOverridesByEntry] = useState({});
 
-  const projectedOpen = localShift(serverOpen, punchState.records, company?.id, member?.id);
+  const projectedOpen = localShift(serverOpen, punchState.records, company?.id, member?.id, punchState.receipts || [], serverReadStartedAt);
   const open = projectedOpen?.id === clockedOutEntryIdRef.current ? null : projectedOpen;
+  // Saved-offline proof (media vault): keep the waiting count current
+  // so the banner below is never stale. This effect MUST stay below the
+  // state declarations above: its dependency list reads `open`, and
+  // reading it before the declaration crashes the page on load
+  // (ReferenceError, HTTP 500 — hit production 2026-11-22).
+  useEffect(() => {
+    if (!company?.id || !member?.id) return;
+    let cancelled = false;
+    const recount = () => {
+      vaultCountFor({ companyId: company.id, memberId: member.id })
+        .then((n) => { if (!cancelled) setVaultCount(n); })
+        .catch(() => {});
+    };
+    recount();
+    window.addEventListener("online", recount);
+    return () => { cancelled = true; window.removeEventListener("online", recount); };
+  }, [company?.id, member?.id, open?.id]);
   const savedOut = punchState.records.find(r => r.companyId === company?.id && r.memberId === member?.id && r.type === "out");
   const evidenceEntry = open || proofEntry || (savedOut ? {id:savedOut.entryId,location_id:savedOut.locationId} : null) || entries.find(e => e.member_id === member?.id && e.company_id === company?.id && e.clock_out && e.upload_pending);
+  const evidenceLocation = locations.find(site => site.id === evidenceEntry?.location_id);
   const [elapsedNow,setElapsedNow] = useState(null);
   useEffect(() => {
     if (!open) return;
@@ -185,6 +187,18 @@ export default function TimeClockPage() {
   }, [loading, member, canViewTeam]);
 
   async function load() {
+    if(navigator.onLine===false) {
+      const snap=loadOfflineContext(browserOfflineStorage(),member.user_id,company.id);
+      const saved=openEntrySnapshot(snap);
+      setOpen(saved ? {...saved,company_id:company.id,member_id:member.id} : null);
+      const today=dateInTz(new Date(),company.timezone || "America/Chicago");
+      const time=clockInSnapshot(snap,today);
+      setLocations(time?.locations || snap?.time?.locations || []);setHats(time?.hats || []);
+      const assigned=(time?.shifts || []).filter(shift=>!!chooseAssignedShift([shift],new Date(),new Set(),company.timezone || "America/Chicago"));
+      setMyShifts(assigned);setShiftError(time ? "" : "No current assigned schedule is saved on this phone. Management must review unscheduled work.");
+      setLocationId(previous=>assigned.some(shift=>shift.location_id===previous) ? previous : assigned.length===1 ? assigned[0].location_id : "");
+      setOfflineMode(true);setShiftLoading(false);return;
+    }
     const sb = supabase();
     // Which hats can this member clock in as? (titles only, never pay rates)
     // `got` is declared here, outside the try, because the offline
@@ -207,6 +221,7 @@ export default function TimeClockPage() {
       /* hats unavailable — clock in normally */
     }
     const offlineSnap = loadOfflineContext(browserOfflineStorage(), member.user_id, company.id);
+    const openReadStartedAt=Date.now();
     const { data: openRows, error: openError } = await sb
       .from("time_entries")
       .select("*, locations(name)")
@@ -215,7 +230,8 @@ export default function TimeClockPage() {
       .is("clock_out", null)
       .order("clock_in", { ascending: false })
       .limit(1);
-    if (openRows) {
+    if (openRows && !openError) {
+      setServerReadStartedAt(openReadStartedAt);
       setOpen(openRows[0] ? openRows[0] : null);
     } else if (openError) {
       // No connection: an open shift saved on this phone still clocks
@@ -223,7 +239,7 @@ export default function TimeClockPage() {
       // carries its own time and GPS when it delivers.
       const savedOpen = openEntrySnapshot(offlineSnap);
       if (savedOpen) {
-        setOpen(savedOpen);
+        setOpen({...savedOpen,company_id:company.id,member_id:member.id});
         setOfflineMode(true);
       } else {
         setOpen(null);
@@ -240,22 +256,8 @@ export default function TimeClockPage() {
     const { data } = await q;
     setEntries(data || []);
 
-    // Outbox housekeeping: a BLOCKED punch whose effect is already true on
-    // the server (the member is clocked in; the entry is closed) is moot —
-    // clear it so the warning line never cries wolf after reality moved on.
-    try {
-      const ob = outboxRef.current;
-      if (ob) {
-        for (const r of ob.snapshot().records) {
-          if (r.status !== "blocked" || r.companyId !== company.id || r.memberId !== member.id) continue;
-          if (r.type === "in" && openRows && openRows[0]) void ob.drop(r.id);
-          if (r.type === "out") {
-            const e = (data || []).find((x) => x.id === r.entryId);
-            if (e?.clock_out) void ob.drop(r.id);
-          }
-        }
-      }
-    } catch { /* housekeeping only — the list above already rendered */ }
+    // A rejected original must remain visible until exact server read-back
+    // confirms THAT punch. A different open entry must never erase its time.
 
     // Overrides for the entries on screen. Tolerant: before migration 052
     // runs, the table is absent — keep the plain entry list, no crash.
@@ -279,7 +281,7 @@ export default function TimeClockPage() {
       }
     } catch { /* overrides unavailable — entries still render */ }
 
-    let locsRes = await sb.from("locations").select("id, name, lat, lng, geofence_radius_m, require_geofence").eq("company_id", company.id).order("name");
+    let locsRes = await sb.from("locations").select("id, name, lat, lng, geofence_radius_m, require_geofence, require_walkthrough_video, require_book_photo").eq("company_id", company.id).order("name");
     if (locsRes.error) locsRes = await sb.from("locations").select("id, name, lat, lng, geofence_radius_m").eq("company_id", company.id).order("name");
     const { data: locs } = locsRes;
     if (locs) {
@@ -1019,9 +1021,9 @@ export default function TimeClockPage() {
             locationName={evidenceEntry.locations?.name}
             onProofUploaded={finalizeProofUpload}
             enableVideo={company.enable_shift_videos !== false}
-            enableBook={company.enable_comm_book !== false}
-            requireVideo={proofRequired(company, "walkthrough")}
-            requireBook={proofRequired(company, "book")}
+            enableBook={proofFeatureEnabled(company, "book")}
+            requireVideo={proofRequired(company, "walkthrough", evidenceLocation)}
+            requireBook={proofRequired(company, "book", evidenceLocation)}
           />
         </section>
       )}

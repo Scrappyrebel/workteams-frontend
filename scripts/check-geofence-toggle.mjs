@@ -28,7 +28,7 @@ test("migration 102 adds the column defaulting to required", () => {
 test("locations form carries the tick and saves fail-soft", () => {
   const page = read("app/app/[companyId]/locations/page.js");
   for (const needle of [
-    "require_geofence: true, rate_area_id",
+    "require_geofence: true, require_walkthrough_video: true, require_book_photo: true, rate_area_id",
     "require_geofence: form.require_geofence !== false,",
     "require_geofence: l.require_geofence !== false,",
     "Require the geofence to clock in",

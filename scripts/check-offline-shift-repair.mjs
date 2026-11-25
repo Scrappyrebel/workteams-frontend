@@ -1,7 +1,8 @@
+import "fake-indexeddb/auto";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { localShift, devicePunchTime } from "../lib/local-shift.mjs";
-import { createPunchOutbox, createMemoryStorage } from "../lib/punch-outbox.mjs";
+import { createPunchOutbox, createMemoryStorage, createIndexedDbStorage } from "../lib/punch-outbox.mjs";
 
 const COMPANY="company-a", MEMBER="member-a";
 const clockInId="9a26fb9d-5d12-48ae-8148-77c93145a4ec";
@@ -86,4 +87,29 @@ console.log("ok - invalid and future device times require review");
  new Function("navigator","window","useEffect",source+"\nServiceWorkerRegister();")({serviceWorker:worker},{location:{reload:()=>reloads++},setInterval:fn=>{interval=fn;return 1},clearInterval:()=>{}},fn=>cleanup=fn());
  await Promise.resolve();await Promise.resolve();handlers.controllerchange?.();assert.equal(reloads,0);assert.equal(updates,1);interval();assert.equal(updates,2);cleanup();
  console.log("ok - service-worker updates check automatically without reloading active work");
+}
+
+{
+ const storage=createIndexedDbStorage("workteams-receipt-drill-"+crypto.randomUUID());let now=Date.parse(input.tappedAt);
+ const make=()=>createPunchOutbox({storage,now:()=>now,canSend:()=>true,drainIntervalMs:0,send:async p=>({id:p.type==="in"?p.id:p.entryId,clock_in:input.tappedAt,clock_out:p.type==="out"?p.tappedAt:null,location_id:"site-a"})});
+ const first=make();const start=await first.enqueue({type:"in",companyId:COMPANY,memberId:MEMBER,locationId:"site-a"});await first.drainOnce();first.stop();
+ const reopened=make();await reopened.load();const active=localShift(null,[],COMPANY,MEMBER,reopened.snapshot().receipts);assert.equal(active.id,start.id);assert.equal(localShift(null,[],COMPANY,"different-member",reopened.snapshot().receipts),null);
+ now+=7200000;await reopened.enqueue({type:"out",companyId:COMPANY,memberId:MEMBER,entryId:active.id});await reopened.drainOnce();reopened.stop();
+ const afterRestart=make();await afterRestart.load();assert.equal(afterRestart.snapshot().records.length,0);assert.equal(afterRestart.snapshot().receipts.length,2);assert.equal(localShift(active,[],COMPANY,MEMBER,afterRestart.snapshot().receipts),null);afterRestart.stop();
+ console.log("ok - actual IndexedDB confirmations survive reopening and stale reads cannot resurrect a finished shift");
+}
+{
+ const storage=createMemoryStorage();storage.putReceipt=async()=>{throw Error("quota")};const box=createPunchOutbox({storage,send:async()=>({id:"closed",clock_out:input.tappedAt}),canSend:()=>true,drainIntervalMs:0});
+ await box.enqueue({type:"out",companyId:COMPANY,memberId:MEMBER,entryId:"closed"});await assert.rejects(box.drainOnce(),/quota/);assert.equal(box.snapshot().records[0].status,"queued");assert.equal((await storage.getAll()).length,1);box.stop();
+ console.log("ok - failed confirmation persistence retains the original punch and remains retryable");
+}
+
+{
+ const entry={id:"receipt-in",company_id:COMPANY,member_id:MEMBER,clock_in:"2026-11-24T12:00Z",clock_out:null};
+ const receipts=[{punch:{companyId:COMPANY,memberId:MEMBER,type:"in",tappedAtMs:1},entry,deliveredAtMs:100}];
+ assert.equal(localShift(null,[],COMPANY,MEMBER,receipts,101),null);
+ const corrected={...entry,clock_in:"2026-11-24T12:30Z"};assert.equal(localShift(corrected,[],COMPANY,MEMBER,receipts,0).clock_in,corrected.clock_in);
+ assert.equal(localShift(null,[],COMPANY,MEMBER,receipts,99).id,entry.id);
+ const page=readFileSync(new URL("../app/app/[companyId]/time/page.js",import.meta.url),"utf8");assert.ok(page.indexOf("const open =")<page.indexOf("[company?.id, member?.id, open?.id]"));
+ console.log("ok - newer authoritative closure and corrections win over old receipts; clock-screen hooks read active state after initialization");
 }
