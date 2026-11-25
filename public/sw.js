@@ -1,7 +1,16 @@
-// WorkTeams v6: public offline clock with inline code and the existing punch outbox.
+// WorkTeams v7: build embeds the public offline clock into this worker.
 // No authenticated HTML, RSC payloads, API responses or account data are cached.
 importScripts("/offline-clock-shell.js");
-const CACHE = "workteams-v6-cold-clock-20261125";
+const CACHE = "workteams-v7-cold-clock-20261125";
+// This response comes from the worker controlling THIS browser and origin.
+self.addEventListener("message", (event) => {
+  if (event.data?.type !== "WORKTEAMS_OFFLINE_STARTUP_CHECK") return;
+  event.ports?.[0]?.postMessage({
+    version: "workteams-v7-cold-clock-20261125",
+    shellAvailable: typeof self.WORKTEAMS_OFFLINE_HTML === "string" && self.WORKTEAMS_OFFLINE_HTML.includes("Offline Time Clock"),
+    scope: self.registration.scope,
+  });
+});
 const STATIC_RE = /\.(js|css|png|jpg|jpeg|gif|svg|ico|woff2?)$/i;
 
 self.addEventListener("install", (event) => {
@@ -197,3 +206,4 @@ self.addEventListener("notificationclick", (event) => {
     })
   );
 });
+
