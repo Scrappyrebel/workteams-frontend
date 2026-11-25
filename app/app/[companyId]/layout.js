@@ -7,6 +7,7 @@ import IosInstallHint from "../../../components/IosInstallHint";
 import { supabase } from "../../../lib/supabase";
 import { getUser, getSession, linkMemberOnSignIn } from "../../../lib/session";
 import { browserOfflineStorage, loadOfflineContext, saveOfflineContext, shellSnapshot, cachedOfflineUser } from "../../../lib/offline-context.mjs";
+import { prepareColdClock } from "../../../lib/cold-clock-identity.mjs";
 import { CompanyContext } from "../../../lib/company-context";
 import { saveLastPath, clearLastPath } from "../../../lib/last-path";
 import { entitledTier } from "../../../lib/tiers";
@@ -110,6 +111,7 @@ export default function CompanyLayout({ children }) {
       saveOfflineContext(browserOfflineStorage(), user.id, companyId, {
         shell: { company, member },
       });
+      prepareColdClock(browserOfflineStorage(), user.id, companyId, process.env.NEXT_PUBLIC_SUPABASE_URL);
       setState({ company, member, loading: false, offline: false });
     })();
   }, [companyId, router]);
