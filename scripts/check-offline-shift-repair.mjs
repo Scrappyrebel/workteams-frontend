@@ -81,11 +81,21 @@ console.log("ok - invalid and future device times require review");
 }
 
 {
- const source=readFileSync(new URL("../components/ServiceWorkerRegister.js",import.meta.url),"utf8").replace(/^import .*;\n/gm,"").replace("export default function ServiceWorkerRegister","function ServiceWorkerRegister");
- let updates=0,reloads=0,interval,cleanup;const handlers={};
- const worker={controller:{},register:async()=>({update:()=>{updates++;return Promise.resolve()}}),addEventListener:(name,fn)=>handlers[name]=fn,removeEventListener:()=>{}};
- new Function("navigator","window","useEffect",source+"\nServiceWorkerRegister();")({serviceWorker:worker},{location:{reload:()=>reloads++},setInterval:fn=>{interval=fn;return 1},clearInterval:()=>{}},fn=>cleanup=fn());
- await Promise.resolve();await Promise.resolve();handlers.controllerchange?.();assert.equal(reloads,0);assert.equal(updates,1);interval();assert.equal(updates,2);cleanup();
+ const source=readFileSync(new URL("../components/ServiceWorkerRegister.js",import.meta.url),"utf8").replace(/^import .*;\n/gm,"").replace("export default function ServiceWorkerRegister","function ServiceWorkerRegister").replace(/return <aside[\s\S]*?<\/aside>;/,"return null;");
+ let updates=0,reloads=0,cleanup,now=100000;const handlers={},timers=new Map(),messages=[];
+ const worker={controller:{},register:async(url,options)=>{assert.equal(url,"/sw.js");assert.equal(options.scope,"/");assert.equal(options.updateViaCache,"none");return {update:()=>{updates++;return Promise.resolve()}};},addEventListener:(name,fn)=>handlers[name]=fn,removeEventListener:name=>delete handlers[name]};
+ const win={location:{reload:()=>reloads++},setInterval:(fn,ms)=>{timers.set(ms,fn);return ms;},clearInterval:id=>timers.delete(id),addEventListener:(name,fn)=>handlers[name]=fn,removeEventListener:name=>delete handlers[name]};
+ const doc={visibilityState:"visible",addEventListener:(name,fn)=>handlers[name]=fn,removeEventListener:name=>delete handlers[name]};
+ new Function("navigator","window","document","location","localStorage","Date","useEffect","useState","usePathname","probeOfflineStartup","readColdClock",source+"\nServiceWorkerRegister();")(
+   {serviceWorker:worker,onLine:true},win,doc,{origin:"https://workteams.test",pathname:"/app"},{},{now:()=>now},fn=>cleanup=fn(),()=>["",message=>messages.push(message)],()=>"/app",async()=>({scope:"https://workteams.test/"}),()=>({time:{}}));
+ const settle=async()=>{await Promise.resolve();await Promise.resolve();await Promise.resolve();};
+ await settle();handlers.controllerchange();await settle();assert.equal(reloads,0);assert.equal(updates,1);
+ now+=30001;handlers.pageshow();await settle();assert.equal(updates,2);
+ handlers.online();await settle();assert.equal(updates,2,"rapid resume events are throttled");
+ now+=30001;handlers.visibilitychange();await settle();assert.equal(updates,3);
+ now+=30*60*1000;timers.get(30*60*1000)();await settle();assert.equal(updates,4);
+ assert.ok(messages.some(message=>message.includes("current clock and saved sign-in confirmed")));
+ cleanup();assert.equal(timers.size,0);assert.deepEqual(Object.keys(handlers),[]);assert.equal(reloads,0);
  console.log("ok - service-worker updates check automatically without reloading active work");
 }
 

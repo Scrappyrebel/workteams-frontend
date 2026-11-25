@@ -154,11 +154,11 @@ check("browser native file share and download fallback", EX, src =>
   !src.includes('getPublicUrl('));
 
 // Cache name bumped v3 -> v4 by the offline-clock build (2026-11-21),
-// then v4 -> v5 for safe installs, and v5 -> v6 for standalone cold clocks:
+// then v4 -> v5 for safe installs, v6 for cold clocks, v7 for embedded clocks:
 // the purge-on-activate behaviour this pin protects is unchanged, and
 // scripts/styles are still network-first with no-store below.
 check("installed WorkTeams never keeps an old recorder script", "public/sw.js", src =>
-  src.includes("workteams-v6-cold-clock-20261125") &&
+  src.includes("workteams-v7-cold-clock-20261125") &&
   src.includes('fetch(request, { cache: "no-store" })') &&
   !src.includes("if (hit) return hit"));
 // Automatic ten-minute recording stop. The recorder must stop itself, not
@@ -229,4 +229,5 @@ if (failures.length) {
   process.exit(1);
 }
 console.log("\nAll end-of-shift proof guards passed.");
+
 

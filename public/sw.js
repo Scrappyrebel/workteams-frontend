@@ -1,7 +1,16 @@
-// WorkTeams v6: public offline clock with inline code and the existing punch outbox.
+// WorkTeams v7: build embeds the public offline clock into this worker.
 // No authenticated HTML, RSC payloads, API responses or account data are cached.
 importScripts("/offline-clock-shell.js");
-const CACHE = "workteams-v6-cold-clock-20261125";
+const CACHE = "workteams-v7-cold-clock-20261125";
+// This response comes from the worker controlling THIS browser and origin.
+self.addEventListener("message", (event) => {
+  if (event.data?.type !== "WORKTEAMS_OFFLINE_STARTUP_CHECK") return;
+  event.ports?.[0]?.postMessage({
+    version: "workteams-v7-cold-clock-20261125",
+    shellAvailable: typeof self.WORKTEAMS_OFFLINE_HTML === "string" && self.WORKTEAMS_OFFLINE_HTML.includes("Offline Time Clock"),
+    scope: self.registration.scope,
+  });
+});
 const STATIC_RE = /\.(js|css|png|jpg|jpeg|gif|svg|ico|woff2?)$/i;
 
 self.addEventListener("install", (event) => {
@@ -93,7 +102,11 @@ self.addEventListener("fetch", (event) => {
   const isNavigation = request.mode === "navigate";
   const isRsc = url.searchParams.has("_rsc");
   if (!isNavigation && !isRsc) return;
-  if (!(url.pathname === "/" || url.pathname === "/app" || url.pathname.startsWith("/app/"))) return;
+  // Safari may restore a sign-in or another saved entry URL. Every document
+  // navigation gets a public fallback; only clock routes expose the local clock.
+  // API/RSC requests outside the app remain untouched.
+  if (url.pathname.startsWith("/api/")) return;
+  if (!isNavigation && !(url.pathname === "/" || url.pathname === "/app" || url.pathname.startsWith("/app/"))) return;
   event.respondWith(
     (async () => {
       try {
@@ -141,6 +154,8 @@ self.addEventListener("fetch", (event) => {
   // Never cache Supabase API/auth or other cross-origin calls.
   if (url.origin !== self.location.origin) return;
   if (!STATIC_RE.test(url.pathname)) return;
+  // The document handler already owns navigations, even a URL ending in .js.
+  if (request.mode === "navigate") return;
   // NEVER run an old recorder / uploader after a production fix. Old
   // cache-first JavaScript made Android installed WorkTeams keep rejecting a
   // 9m30 walkthrough with a removed "Try a shorter walkthrough" error.
@@ -197,3 +212,4 @@ self.addEventListener("notificationclick", (event) => {
     })
   );
 });
+

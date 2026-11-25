@@ -6,6 +6,7 @@ import {webcrypto} from "node:crypto";
 import {IDBFactory} from "fake-indexeddb";
 import {prepareColdClock,readColdClock} from "../lib/cold-clock-identity.mjs";
 import {createIndexedDbStorage,createPunchOutbox} from "../lib/punch-outbox.mjs";
+import {probeOfflineStartup,OFFLINE_WORKER_VERSION} from "../lib/offline-startup-check.mjs";
 const read=p=>readFileSync(new URL(`../${p}`,import.meta.url),"utf8");
 const generated={self:{}};vm.runInNewContext(read("public/offline-clock-shell.js"),generated);
 const html=generated.self.WORKTEAMS_OFFLINE_HTML;
@@ -13,6 +14,43 @@ const script=html.match(/<script>([\s\S]*)<\/script>/)[1];
 const company="11111111-1111-4111-8111-111111111111",otherCompany="22222222-2222-4222-8222-222222222222";
 const user="user-1",member="member-1",key="sb-test-auth-token",now=Date.now();
 const day=new Intl.DateTimeFormat("en-CA",{timeZone:"America/Chicago",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date(now));
+test("built worker restarts with imports and all networking unavailable and answers from its own shell",async()=>{
+ const handlers={};
+ const worker={self:{registration:{scope:"https://workteams.test/"},location:{origin:"https://workteams.test"},addEventListener:(type,fn)=>{(handlers[type]||=[]).push(fn);}},
+   importScripts:()=>{throw Error("No imported scripts available after restart");},fetch:async()=>{throw Error("No network after restart");},Response,URL,AbortController,setTimeout,clearTimeout};
+ assert.ok(!read("public/sw.js").includes('importScripts("/offline-clock-shell.js")'));
+ vm.runInNewContext(read("public/sw.js"),worker);
+ let reply;handlers.message[0]({data:{type:"WORKTEAMS_OFFLINE_STARTUP_CHECK"},ports:[{postMessage:data=>{reply=data;}}]});
+ assert.equal(reply.version,OFFLINE_WORKER_VERSION);assert.equal(reply.shellAvailable,true);
+ for(const path of ["/","/app",`/app/${company}/time`]){
+   let result;
+   for(const fn of handlers.fetch)fn({request:{method:"GET",mode:"navigate",url:`https://workteams.test${path}`},respondWith:p=>{result=p;},waitUntil:()=>{}});
+   assert.match(await (await result).text(),/Offline Time Clock/);
+ }
+ for(const path of ["/login","/signup",`/app/${company}/schedule`,"/sw.js"]){
+   let result,count=0;
+   for(const fn of handlers.fetch)fn({request:{method:"GET",mode:"navigate",url:`https://workteams.test${path}`},respondWith:p=>{result=p;count++;},waitUntil:()=>{}});
+   assert.equal(count,1,"exactly one navigation handler owns "+path);
+   const fallback=await (await result).text();assert.match(fallback,/You're offline/);assert.match(fallback,/href="\/app"/);
+   assert.ok(!fallback.includes('id="clock-controls"'),"unrelated routes get a public fallback, not a saved company");
+ }
+ let intercepted=false;
+ for(const fn of handlers.fetch)fn({request:{method:"GET",mode:"navigate",url:"https://workteams.test/api/time/clock-out"},respondWith:()=>{intercepted=true;}});
+ assert.equal(intercepted,false,"API navigation remains untouched");
+});
+test("startup probe rejects old, silent and missing controllers and closes transferred ports",async()=>{
+ const makeChannel=()=>({port1:{close(){}},port2:{close(){}}});
+ await assert.rejects(probeOfflineStartup(null),/not controlled/);
+ await assert.rejects(probeOfflineStartup({postMessage(){}},{makeChannel,timeoutMs:1}),/did not answer/);
+ for(const reply of [{version:"old",shellAvailable:true},{version:OFFLINE_WORKER_VERSION,shellAvailable:false},{version:OFFLINE_WORKER_VERSION,shellAvailable:true}]){
+   let closed=0;const channel={port1:{close(){closed++;}},port2:{close(){closed++;}}};
+   const worker={postMessage(){queueMicrotask(()=>channel.port1.onmessage({data:reply}));}};
+   const result=probeOfflineStartup(worker,{makeChannel:()=>channel});
+   if(reply.version===OFFLINE_WORKER_VERSION && reply.shellAvailable)assert.equal((await result).version,OFFLINE_WORKER_VERSION);
+   else await assert.rejects(result,/not received/);
+   assert.equal(closed,2);
+ }
+});
 function fixture(cid=company,uid=user,mid=member){
  const map=new Map(),storage={getItem:k=>map.get(k)||null,setItem:(k,v)=>map.set(k,String(v)),removeItem:k=>map.delete(k)};
  const token=uid=>`header.${btoa(JSON.stringify({sub:uid,session_id:"session-1"}))}.signature`;
@@ -101,3 +139,4 @@ test("failed durable writes never claim saved; multiple working roles preserve t
  page.element("clock-role").value="cleaner";page.element("clock-role").onchange();await page.element("clock-in").onclick();
  globalThis.indexedDB=second.idb;assert.equal((await createIndexedDbStorage().getAll())[0].clockInRole,"cleaner");
 });
+
