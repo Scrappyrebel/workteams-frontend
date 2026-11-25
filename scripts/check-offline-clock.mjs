@@ -98,26 +98,12 @@ test("corrupt or partial snapshots read as absent, never crash", () => {
   assert.equal(openEntrySnapshot(snap), null);
 });
 
-// Supersession (Wendy, 2026-11-22): the cache-name needle below was
-// bumped v4 -> v5 with the never-strand-an-install build. Every
-// behaviour this test pins is unchanged — network-first pages, the
-// plain offline fallback, redirects never cached — v5 only makes the
-// worker's promise impossible to reject (a bad cache on a crew phone
-// jammed v4's loads with the browser's dead error page) and renames
-// the cache so activate purges the v4 copy.
-test("service worker serves cached app pages offline, network-first", () => {
-  const sw = read("public/sw.js");
-  for (const needle of [
-    "workteams-v5-safe-20261122",
-    'request.mode === "navigate"',
-    'url.searchParams.has("_rsc")',
-    "url.pathname.startsWith(\"/app/\")",
-    "!res.redirected",
-    "You're offline",
-    "WorkTeams needs a signal once to load this page",
-  ]) {
-    assert.ok(sw.includes(needle), `sw.js keeps: ${needle}`);
-  }
+// Cold startup now uses public inline clock code, with no private page cache.
+test("service worker serves a standalone clock without cached private pages", () => {
+  const sw=read("public/sw.js");
+  for(const needle of ['importScripts("/offline-clock-shell.js")','workteams-v6-cold-clock-20261125','coldClockResponse(request)', 'request.mode === "navigate"', 'url.searchParams.has("_rsc")', 'AbortController'])assert.ok(sw.includes(needle),needle);
+  const pageHandler=sw.slice(sw.indexOf("async function handlePageRequest"),sw.indexOf('self.addEventListener("fetch"'));
+  assert.ok(!pageHandler.includes("cachePut("));assert.ok(!pageHandler.includes("cacheMatch("));
 });
 
 test("layout falls back to the session + snapshot, login only when no session", () => {

@@ -24,3 +24,6 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
+
+# Generated standalone offline clock (prebuild/predev)
+/public/offline-clock-shell.js

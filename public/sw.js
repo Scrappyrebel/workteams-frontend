@@ -1,21 +1,7 @@
-// Service worker for WorkTeams: makes the app properly installable
-// (real "Install app" prompt, standalone window, home-screen icon that
-// behaves like an app). Static assets are cached; API/auth always hit
-// the network and are never cached.
-//
-// v5 (Wendy, 2026-11-22): an update must NEVER strand an existing
-// install. The v4 worker opened the cache before fetching a page, so
-// on a phone whose saved app data had gone bad (full or corrupt
-// storage) the cache call itself failed, the page load died with it,
-// and Chrome showed its dead "This page couldn't load" — reload-proof
-// and network-independent, while fresh browser copies loaded fine.
-// In v5 the network fetch happens FIRST and stands on its own: every
-// cache operation is individually wrapped so a cache failure can
-// never break, delay or replace a good network answer, cache writes
-// are fire-and-forget off the response path, and the respondWith
-// promise is built so it cannot reject — navigations fall back to
-// the plain offline page below, never to the browser's dead error.
-const CACHE = "workteams-v5-safe-20261122";
+// WorkTeams v6: public offline clock with inline code and the existing punch outbox.
+// No authenticated HTML, RSC payloads, API responses or account data are cached.
+importScripts("/offline-clock-shell.js");
+const CACHE = "workteams-v6-cold-clock-20261125";
 const STATIC_RE = /\.(js|css|png|jpg|jpeg|gif|svg|ico|woff2?)$/i;
 
 self.addEventListener("install", (event) => {
@@ -80,51 +66,23 @@ function gatewayTimeoutResponse() {
   return new Response("", { status: 504, statusText: "Gateway Timeout" });
 }
 
-// ---- Offline clock (Wendy, 2026-11-21): cached pages + context ----
-// App pages under /app/ (documents and their RSC payloads) are cached
-// network-first, exactly like the scripts below: online always wins,
-// the cached copy is only ever the OFFLINE fallback. That is what lets
-// the Time Clock open in a building with no signal — the page, its
-// saved context (lib/offline-context.mjs) and the punch outbox
-// (lib/punch-outbox.mjs) do the rest. A page never visited online has
-// no cached copy; the fallback below says so plainly instead of
-// leaving the browser's dead-page error.
-const OFFLINE_HTML =
-  "<!doctype html><html><head><meta charset=\"utf-8\">" +
-  "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">" +
-  "<title>WorkTeams — offline</title></head>" +
-  "<body style=\"font-family: system-ui, sans-serif; padding: 24px; text-align: center;\">" +
-  "<h2>📴 You're offline</h2>" +
-  "<p>WorkTeams needs a signal once to load this page. " +
-  "Reconnect, open the page, and after that it will open offline too.</p>" +
-  "</body></html>";
-
-// Network-first page handling that cannot reject: the fetch stands
-// alone, the cache is consulted only after the network has failed,
-// and every exit returns a real Response.
+// Private HTML and RSC payloads are never cached. The standalone clock reads
+// only the current sign-in's prepared scope and writes to the existing outbox.
+const OFFLINE_HTML = "<!doctype html><html><head><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"></head><body><h2>You're offline</h2><p>Reconnect to open this page. The offline Time Clock is available from your WorkTeams app icon.</p><a href=\"/app\">Open offline Time Clock</a></body></html>";
+function coldClockResponse(request) {
+  const path = new URL(request.url).pathname;
+  if (!(["/", "/app", "/app/"].includes(path) || new RegExp("^/app/[0-9a-f-]{36}(?:/time)?/?$","i").test(path))) return offlineResponse();
+  return new Response(self.WORKTEAMS_OFFLINE_HTML, {headers:{"Content-Type":"text/html; charset=utf-8", "Cache-Control":"no-store",
+    "Content-Security-Policy":"default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'none'; base-uri 'none'; form-action 'none'"}});
+}
 async function handlePageRequest(event, request, isNavigation) {
-  let res = null;
+  const controller = new AbortController(), timer = setTimeout(()=>controller.abort(),8000);
   try {
-    res = await fetch(request);
-  } catch (err) {
-    res = null;
-  }
-  if (res) {
-    // Never cache a redirect (e.g. to the login page): offline we
-    // must serve the real page or nothing, never a sign-in wall
-    // wearing the page's address.
-    if (res.ok && !res.redirected) {
-      // Fire-and-forget: the write is not awaited in the response
-      // path, so a slow or broken cache can never hold up the page.
-      event.waitUntil(cachePut(request, res.clone()));
-    }
-    return res;
-  }
-  // The network itself failed: the cached copy is the offline answer.
-  const cachedPage = await cacheMatch(request);
-  if (cachedPage) return cachedPage;
-  if (isNavigation) return offlineResponse();
-  return gatewayTimeoutResponse();
+    const res=await fetch(request,{signal:controller.signal});
+    if(res.status<500)return res;
+  } catch { /* A public clock does not need a cached authenticated page. */ }
+  finally { clearTimeout(timer); }
+  return isNavigation ? coldClockResponse(request) : gatewayTimeoutResponse();
 }
 
 self.addEventListener("fetch", (event) => {
@@ -148,7 +106,7 @@ self.addEventListener("fetch", (event) => {
         try {
           return await fetch(request);
         } catch (err2) {
-          if (isNavigation) return offlineResponse();
+          if (isNavigation) return coldClockResponse(request);
           return gatewayTimeoutResponse();
         }
       }
