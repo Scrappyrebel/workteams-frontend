@@ -50,11 +50,10 @@ test("clock-in route skips the fence only when the tick is off", () => {
   }
 });
 
-test("time page pre-check and hint honor the tick", () => {
+test("time page hint honors the tick; server authorizes after durable capture", () => {
   const page = read("app/app/[companyId]/time/page.js");
   for (const needle of [
     "geofence_radius_m, require_geofence",
-    "loc.require_geofence !== false",
     "sel.require_geofence !== false",
   ]) {
     assert.ok(page.includes(needle), `time page keeps: ${needle}`);
@@ -70,3 +69,4 @@ test("owner verification report treats tick-off locations as not required", () =
     assert.ok(route.includes(needle), `geofence-check keeps: ${needle}`);
   }
 });
+

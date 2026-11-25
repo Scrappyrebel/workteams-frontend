@@ -17,6 +17,7 @@
 //     waiting count, so vaulted proof is never invisible.
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import "fake-indexeddb/auto";
 import { readFileSync, existsSync } from "node:fs";
 
 const read = (p) => readFileSync(new URL(`../${p}`, import.meta.url), "utf8");
@@ -28,7 +29,7 @@ test("vault lib is a durable blob store that uploads nothing itself", async () =
   const src = read("lib/media-vault.mjs");
   assert.ok(src.includes("indexedDB.open"), "IndexedDB-backed");
   assert.ok(!src.includes("fetch("), "the vault never uploads");
-  // Memory fallback round-trip (no IndexedDB in this environment).
+  // Real IndexedDB API round-trip in the fake IndexedDB implementation.
   const item = { kind: "photo", companyId: "c1", entryId: "e1", memberId: "m1", blob: { size: 3 }, mime: "image/jpeg", fileName: "b.jpg" };
   assert.equal(await lib.vaultPut(item), true);
   assert.equal(await lib.vaultCountFor({ companyId: "c1", memberId: "m1" }), 1);
@@ -80,4 +81,9 @@ test("time page banner makes saved-offline proof unmistakable", () => {
   ]) {
     assert.ok(page.includes(needle), `time page keeps: ${needle}`);
   }
+});
+
+
+test("vault never claims durable success when IndexedDB is unavailable",async()=>{
+ const original=globalThis.indexedDB;try{globalThis.indexedDB=undefined;const lib=await import("../lib/media-vault.mjs");assert.equal(await lib.vaultPut({entryId:"failed",kind:"video",blob:new Blob(["video"])}),false)}finally{globalThis.indexedDB=original}
 });

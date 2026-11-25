@@ -12,6 +12,7 @@ import { dateInTz } from "../../../../lib/dates";
 import { proofRequired } from "../../../../lib/proof-policy";
 import { createPunchOutbox, openBrowserPunchStorage } from "../../../../lib/punch-outbox.mjs";
 import { browserOfflineStorage, loadOfflineContext, saveOfflineContext, clockInSnapshot, openEntrySnapshot } from "../../../../lib/offline-context.mjs";
+import { localShift } from "../../../../lib/local-shift.mjs";
 import { vaultCountFor } from "../../../../lib/media-vault.mjs";
 
 function getPosition() {
@@ -102,7 +103,7 @@ function chooseRosterShift(entry, candidates, timeZone) {
 export default function TimeClockPage() {
   const { company, member, loading, offline: shellOffline } = useCompany();
 
-  const [open, setOpen] = useState(null);
+  const [serverOpen, setOpen] = useState(null);
   const [vaultCount, setVaultCount] = useState(0);
   // Saved-offline proof (media vault): keep the waiting count current
   // so the banner below is never stale. This effect MUST stay below the
@@ -163,6 +164,16 @@ export default function TimeClockPage() {
   // mistaken for real proof.
   const [overridesByEntry, setOverridesByEntry] = useState({});
 
+  const projectedOpen = localShift(serverOpen, punchState.records, company?.id, member?.id);
+  const open = projectedOpen?.id === clockedOutEntryIdRef.current ? null : projectedOpen;
+  const savedOut = punchState.records.find(r => r.companyId === company?.id && r.memberId === member?.id && r.type === "out");
+  const evidenceEntry = open || proofEntry || (savedOut ? {id:savedOut.entryId,location_id:savedOut.locationId} : null) || entries.find(e => e.member_id === member?.id && e.company_id === company?.id && e.clock_out && e.upload_pending);
+  const [elapsedNow,setElapsedNow] = useState(null);
+  useEffect(() => {
+    if (!open) return;
+    const tick = () => setElapsedNow(Date.now());tick();
+    const timer=window.setInterval(tick,1000);return () => window.clearInterval(timer);
+  },[open?.id]);
   const isManager = isManagerRole(member?.role);
   // Supervisors and up see the team's entries and who's on the clock.
   const canViewTeam = isSupervisorRole(member?.role);
@@ -559,6 +570,7 @@ export default function TimeClockPage() {
           lat: punch.lat,
           lng: punch.lng,
           punchId: punch.id,
+          tappedAt: punch.tappedAt,
         });
         return res1?.entry || null;
       }
@@ -569,6 +581,7 @@ export default function TimeClockPage() {
         lng: punch.lng,
         clockInRole: punch.clockInRole,
         punchId: punch.id,
+        tappedAt: punch.tappedAt,
       });
       return res?.entry || null;
     } catch (e) {
@@ -585,6 +598,10 @@ export default function TimeClockPage() {
 
   async function confirmPunch(punch) {
     const sb = supabase();
+    if (punch.type === "in") {
+      const {data} = await sb.from("time_entries").select("id,clock_in,clock_out,location_id").eq("id",punch.id).eq("company_id",punch.companyId).eq("member_id",punch.memberId).maybeSingle();
+      return data || null;
+    }
     if (punch.type === "out") {
       const { data } = await sb
         .from("time_entries")
@@ -593,30 +610,19 @@ export default function TimeClockPage() {
         .maybeSingle();
       return data && data.clock_out ? data : null;
     }
-    const { data } = await sb
-      .from("time_entries")
-      .select("id, clock_in, clock_out, location_id")
-      .eq("company_id", punch.companyId)
-      .eq("member_id", punch.memberId)
-      .is("clock_out", null)
-      .order("clock_in", { ascending: false })
-      .limit(1);
-    const openEntry = data && data[0];
-    if (!openEntry) return null;
-    // Only THIS punch's result counts: an open entry that predates the tap
-    // is an older stuck shift, not a confirmation.
-    const skewMs = 5 * 60 * 1000;
-    return new Date(openEntry.clock_in).getTime() >= punch.tappedAtMs - skewMs ? openEntry : null;
+    return null;
   }
 
   async function handlePunchDelivered(punch, entry) {
     if (punch.type === "in") {
+      if (entry) setOpen({...entry,company_id:punch.companyId,member_id:punch.memberId});
       await load();
       return;
     }
     // Clock-out delivered AND confirmed against the server's record. Only
     // now may the screen say the shift is over.
     clockedOutEntryIdRef.current = punch.entryId;
+    setOpen(previous => previous?.id === punch.entryId ? null : previous);
     if (entry?.clock_in && entry?.clock_out) {
       const ms = new Date(entry.clock_out).getTime() - new Date(entry.clock_in).getTime();
       if (ms > 0) {
@@ -724,36 +730,13 @@ export default function TimeClockPage() {
     }
     setBusy(true);
     try {
-      // Fast client-side pre-check for a friendly message; the server
-      // re-checks the geofence authoritatively before writing anything.
-      const loc = locations.find((l) => l.id === locationId);
-      const fence = geoEnforced && loc && loc.lat != null && loc.lng != null && loc.require_geofence !== false
-        ? { lat: parseFloat(loc.lat), lng: parseFloat(loc.lng), radius: parseInt(loc.geofence_radius_m, 10) || 100, name: loc.name }
-        : null;
-      const pos = await getPosition();
-      if (fence) {
-        if (!pos) throw new Error(`Could not get your location. You must be at ${fence.name} to clock in — allow location access and try again.`);
-        const dist = haversineMeters(pos.lat, pos.lng, fence.lat, fence.lng);
-        if (dist > fence.radius) {
-          throw new Error(`You must be at ${fence.name} to clock in. You're about ${Math.round(dist)}m away (limit: ${fence.radius}m).`);
-        }
-      }
-      // LOCAL FIRST: the tap is written to the on-device outbox before any
-      // network call. The outbox delivers it (with retries + read-back)
-      // until the server confirms; this screen shows "saved on this phone"
-      // until then. The server still re-checks schedule + geofence at
-      // delivery — queuing never weakens those gates.
       const outbox = await ensureOutbox();
-      await outbox.enqueue({
-        type: "in",
-        companyId: company.id,
-        memberId: member.id,
-        locationId,
-        lat: pos?.lat ?? null,
-        lng: pos?.lng ?? null,
-        clockInRole: hats.length > 1 ? clockInHat : null,
-        awaitingGps: false,
+      const punch = await outbox.enqueue({
+        type: "in", companyId: company.id, memberId: member.id, locationId,
+        clockInRole: hats.length > 1 ? clockInHat : null, awaitingGps: true,
       });
+      // Authorization remains on the server; no GPS result can erase the tap.
+      void getPosition().then(pos => outbox.attachGps(punch.id, pos)).catch(() => {});
     } catch (e) {
       alert("Clock-in failed: " + e.message);
     }
@@ -778,6 +761,7 @@ export default function TimeClockPage() {
         companyId: company.id,
         memberId: member.id,
         entryId: open.id,
+        locationId: open.location_id,
         lat: null,
         lng: null,
         awaitingGps: true,
@@ -919,10 +903,11 @@ export default function TimeClockPage() {
         {open ? (
           <div>
             <p style={{ fontWeight: 800, fontSize: "1.1rem" }}>
-              🟢 You're clocked in{open.locations ? ` at ${open.locations.name}` : ""} since{" "}
+              {open.local ? "Saved on this phone — awaiting authorization/synchronization. " : ""}🟢 You're clocked in{open.locations ? ` at ${open.locations.name}` : ""} since{" "}
               {new Date(open.clock_in).toLocaleTimeString([], { hour: "numeric", minute: "2-digit", hour12: true })}
               {open.clock_in_role ? ` (${open.clock_in_role === "manager" ? "Manager" : "Cleaner"})` : ""}
             </p>
+            {elapsedNow !== null && <p>Elapsed time: {Math.max(0,Math.floor((elapsedNow-Date.parse(open.clock_in))/3600000))}h {Math.max(0,Math.floor((elapsedNow-Date.parse(open.clock_in))/60000)) % 60}m {Math.max(0,Math.floor((elapsedNow-Date.parse(open.clock_in))/1000)) % 60}s</p>}
             <button onClick={clockOut} disabled={busy || outPunchPending} style={{ ...bigButton, background: "#28704a" }}>
               {busy ? "Working…" : outPunchPending ? "Clock-out saved ✓" : "Clock out"}
             </button>
@@ -1016,22 +1001,22 @@ export default function TimeClockPage() {
 
       {proofNotice && <p role="status" style={{ fontWeight: 700, padding: 12, border: "1px solid var(--border)", borderRadius: 8 }}>{proofNotice}</p>}
 
-      {(open || proofEntry) && (
+      {evidenceEntry && (
         <section id="end-shift-proof" className="panel" style={{ padding: 20, margin: "18px 0", scrollMarginTop: 90 }}>
           <h3 style={{ margin: "0 0 4px" }}>📋 End of shift</h3>
           <p style={{ color: "var(--muted)", fontSize: "0.88rem", margin: "0 0 14px" }}>
             Clock out first — your time is saved right away, even with no signal. Then record your
             walkthrough and book photo here, no need to hunt through tabs; they upload after.
             {(proofRequired(company, "walkthrough") || proofRequired(company, "book")) &&
-              " Your shift is finished once the required proof is uploaded — or an override reason is saved."}
+              " Required proof remains pending separately until verified or an authorized exception is saved."}
           </p>
           <EndShiftProof
             ref={proofRef}
             companyId={company.id}
             memberId={member.id}
-            entryId={(open || proofEntry).id}
-            locationId={(open || proofEntry).location_id}
-            locationName={(open || proofEntry).locations?.name}
+            entryId={evidenceEntry.id}
+            locationId={evidenceEntry.location_id}
+            locationName={evidenceEntry.locations?.name}
             onProofUploaded={finalizeProofUpload}
             enableVideo={company.enable_shift_videos !== false}
             enableBook={company.enable_comm_book !== false}
@@ -1200,3 +1185,4 @@ const filterBtn = (active) => ({
   cursor: "pointer",
   fontSize: "0.85rem",
 });
+

@@ -299,17 +299,15 @@ const EndShiftProof = forwardRef(function EndShiftProof(
           // is written to the on-phone vault before any upload attempt,
           // so closing this page or losing signal can no longer lose it.
           // Removed only when the verified upload below succeeds.
-          void vaultPut({
+          const stored = await vaultPut({
             kind: "video", companyId, entryId, memberId,
             locationId: locationId || null, locationName: locationName || null,
             blob, mime: actualMime,
             durationSeconds: Math.min(MAX_VIDEO_SECONDS, Math.round(activeMsRef.current / 1000)),
             integrityWarning: integrityWarningRef.current || "",
-          }).then((stored) => {
-            if (stored && typeof navigator !== "undefined" && !navigator.onLine) {
-              setVaultNote("📴 Saved on this phone — it will upload itself when you have signal.");
-            }
           });
+          if (!stored) setVideoError("Device storage failed. This recording is only on this open page; keep it open and retry uploading.");
+          else if (!navigator.onLine) setVaultNote("📴 Saved on this phone — it will upload itself when you have signal.");
           // Always upload original immediately after inspection, including
           // damaged evidence, and preserve the Blob for Retry on failure.
           await uploadVideo(blob);
@@ -804,12 +802,10 @@ const EndShiftProof = forwardRef(function EndShiftProof(
       locationId: locationId || null, locationName: locationName || null,
       blob: f, mime: f.type || "", fileName: f.name || "book-photo.jpg",
     }).then((stored) => {
-      if (stored && typeof navigator !== "undefined" && !navigator.onLine) {
-        setVaultNote("📴 Saved on this phone — it will upload itself when you have signal.");
-      }
+      if (!stored) setPhotoError("Device storage failed. This photo is only on this open page; keep it open and retry uploading.");
+      else if (!navigator.onLine) setVaultNote("📴 Saved on this phone — it will upload itself when you have signal.");
+      return uploadPhoto(f);
     });
-    // Auto-upload so the crew doesn't wait
-    uploadPhoto(f);
   }
 
   async function uploadPhoto(f) {
@@ -1135,3 +1131,4 @@ const EndShiftProof = forwardRef(function EndShiftProof(
 });
 
 export default EndShiftProof;
+

@@ -1,3 +1,4 @@
+import { devicePunchTime } from "../../../../lib/local-shift.mjs";
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { checkRateLimit, clientIp } from "../../../../lib/rate-limit";
@@ -63,7 +64,7 @@ export async function POST(req) {
     const user = await authedUser(req);
     if (!user) return NextResponse.json({ error: "Sign in required" }, { status: 401 });
 
-    const { companyId, locationId, lat, lng, clockInRole } = await req.json();
+    const { companyId, locationId, lat, lng, clockInRole, punchId, tappedAt } = await req.json();
     if (!companyId || !locationId) {
       return NextResponse.json({ error: "companyId and locationId are required" }, { status: 400 });
     }
@@ -71,6 +72,11 @@ export async function POST(req) {
       return NextResponse.json({ error: "Invalid role selection." }, { status: 400 });
     }
 
+    let originalTime;
+    try {
+      originalTime = punchId ? devicePunchTime(tappedAt) : new Date().toISOString();
+      if (punchId && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(punchId)) throw new Error("Invalid punch identity");
+    } catch (error) { return NextResponse.json({error:error.message},{status:400}); }
     const sb = admin();
 
     const { data: member } = await sb
@@ -80,6 +86,11 @@ export async function POST(req) {
       .eq("user_id", user.id)
       .maybeSingle();
     if (!member) return NextResponse.json({ error: "No access to this company" }, { status: 403 });
+
+    if (punchId) {
+      const {data: prior} = await sb.from("time_entries").select("*").eq("id",punchId).eq("company_id",companyId).eq("member_id",member.id).maybeSingle();
+      if (prior) return NextResponse.json({entry:prior});
+    }
 
     const { data: existing } = await sb
       .from("time_entries")
@@ -123,7 +134,7 @@ export async function POST(req) {
     // this exact company + location permits an ordinary clock-in. Read the
     // schedule BEFORE inserting any time entry. Management exceptions use the
     // separately authenticated manager-clock endpoint and audit notes.
-    const now = new Date();
+    const now = new Date(originalTime);
     const todayStr = zonedDate(now, company?.timezone);
     // Yesterday as a calendar day in the company's zone (exact
     // across daylight-saving changes, where "24 hours ago" can
@@ -164,7 +175,7 @@ export async function POST(req) {
     if (geoEnforced) {
       const plat = Number(lat);
       const plng = Number(lng);
-      if (!Number.isFinite(plat) || !Number.isFinite(plng)) {
+      if (lat == null || lng == null || lat === "" || lng === "" || !Number.isFinite(plat) || !Number.isFinite(plng)) {
         return NextResponse.json(
           { error: `Location sharing is required to clock in at ${location.name}.` },
           { status: 400 }
@@ -199,11 +210,12 @@ export async function POST(req) {
     const { data: entry, error } = await sb
       .from("time_entries")
       .insert({
+        ...(punchId ? { id: punchId } : {}),
         company_id: companyId,
         member_id: member.id,
         location_id: locationId,
         shift_id: shift.id,
-        clock_in: new Date().toISOString(), // server time, not client time
+        clock_in: originalTime, // original durable device punch time
         clock_in_lat: Number.isFinite(Number(lat)) ? Number(lat) : null,
         clock_in_lng: Number.isFinite(Number(lng)) ? Number(lng) : null,
         clock_in_role: clockInRole || null,
@@ -221,3 +233,4 @@ export async function POST(req) {
     return NextResponse.json({ error: "Clock-in failed. Try again." }, { status: 500 });
   }
 }
+
