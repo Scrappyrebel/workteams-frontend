@@ -49,7 +49,8 @@ test("cold restart saves both original punches through the existing queue; recon
  assert.equal(page.element("clock-in").disabled,false);await page.element("clock-in").onclick();
  page=await screen(f);assert.equal(page.element("clock-in").disabled,true);assert.equal(page.element("clock-out").disabled,false);
  await page.element("clock-out").onclick();page=await screen(f);assert.equal(page.element("clock-out").disabled,true);
- globalThis.indexedDB=f.idb;const storage=createIndexedDbStorage();const queued=await storage.getAll();assert.equal(queued.length,2);
+ globalThis.indexedDB=f.idb;const storage=createIndexedDbStorage();// IndexedDB returns key order (random UUIDs), not tap order.
+ const queued=(await storage.getAll()).sort((a,b)=>a.tappedAtMs-b.tappedAtMs||a.createdSeq-b.createdSeq);assert.equal(queued.length,2);
  assert.deepEqual(queued.map(p=>p.type),["in","out"]);assert.equal(queued[1].entryId,queued[0].id);
  page.context.navigator.onLine=true;await page.listeners.online();await new Promise(resolve=>setImmediate(resolve));assert.deepEqual(page.navigations,[`/app/${company}/time`]);
  const entries=new Map();const sender=createPunchOutbox({storage,send:async p=>{
