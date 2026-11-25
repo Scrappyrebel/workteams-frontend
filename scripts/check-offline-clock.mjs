@@ -101,7 +101,7 @@ test("corrupt or partial snapshots read as absent, never crash", () => {
 // Cold startup now uses public inline clock code, with no private page cache.
 test("service worker serves a standalone clock without cached private pages", () => {
   const sw=read("public/sw.js");
-  for(const needle of ['self.WORKTEAMS_OFFLINE_HTML=','workteams-v7-cold-clock-20261125','coldClockResponse(request)', 'request.mode === "navigate"', 'url.searchParams.has("_rsc")', 'AbortController'])assert.ok(sw.includes(needle),needle);
+  for(const needle of ['self.WORKTEAMS_OFFLINE_HTML=','workteams-v8-cold-clock-20261125','coldClockResponse(request)', 'request.mode === "navigate"', 'url.searchParams.has("_rsc")', 'AbortController'])assert.ok(sw.includes(needle),needle);
   assert.ok(!sw.includes('importScripts("/offline-clock-shell.js")'));
   const pageHandler=sw.slice(sw.indexOf("async function handlePageRequest"),sw.indexOf('self.addEventListener("fetch"'));
   assert.ok(!pageHandler.includes("cachePut("));assert.ok(!pageHandler.includes("cacheMatch("));
